@@ -3,7 +3,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 cfg_p = ROOT/"config.yaml"
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--role", required=True, choices=["architect","dev","qa"])
+ap.add_argument("--role", required=True, choices=["ba","architect","dev","qa"])
 ap.add_argument("--provider", required=False, choices=["ollama","openai"])
 ap.add_argument("--model", required=False)
 args = ap.parse_args()

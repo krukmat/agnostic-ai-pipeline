@@ -6,13 +6,14 @@ PY    := ./.venv/bin/python
 help:
 	@echo "Targets:"
 	@echo "  setup        -> venv + deps base"
+	@echo "  ba           -> Business Analyst (genera requirements.yaml)"
 	@echo "  plan         -> Arquitecto + normaliza historias"
 	@echo "  dev          -> Developer (toma siguiente 'todo')"
 	@echo "  qa           -> QA textual (+tests si QA_RUN_TESTS=1)"
 	@echo "  loop         -> Orquestador Dev→QA (auto-promueve)"
 	@echo "  fix-stories  -> Normaliza planning/stories.yaml"
 	@echo "  show-config  -> Muestra config.yaml"
-	@echo "  set-role     -> role=<architect|dev|qa> provider=<ollama|openai> model=..."
+	@echo "  set-role     -> role=<ba|architect|dev|qa> provider=<ollama|openai> model=..."
 	@echo "  set-quality  -> profile=<low|normal|high> [role=...]"
 
 setup:
@@ -20,6 +21,11 @@ setup:
 	./.venv/bin/pip install -U pip
 	./.venv/bin/pip install -r requirements.txt
 	./.venv/bin/pip install pyyaml httpx openai >/dev/null
+
+ba:
+	@if [ -z "$$CONCEPT" ]; then echo 'Set CONCEPT="..."'; exit 1; fi
+	CONCEPT="$$CONCEPT" $(PY) scripts/run_ba.py
+	@echo "==> planning/requirements.yaml generado"
 
 plan:
 	@if [ -z "$$CONCEPT" ]; then echo 'Set CONCEPT="..."'; exit 1; fi

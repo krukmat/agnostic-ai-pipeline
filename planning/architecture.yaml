@@ -1,12 +1,16 @@
-# Arquitectura:
-Web: 
-  Components: Servidor HTTP (Express.js)
-  Datasources: No especificado, interactuarán directamente con los módulos del backend.
-Backend:
-  Frameworks: FastAPI (Python 3.8+)
-  Decisiones ADRs:
-    - Técnicas de manejo de datos sensibles (https://example.com/docs/adrs/data-handling.html).
-Entidades (Productos, Usuarios):
-- Usuario
-- Producto
-API endpoints (Métodos y Paths, Estandarizaciones según las normativas existentes)
+components:
+  - Express.js backend for web
+  - FastAPI backend for APIs
+  - React Native frontend for mobile
+data model:
+  users: id, username, password_hash, email
+  products: id, name, description, price, category
+  cart_items: user_id, product_id, quantity
+  orders: id, user_id, status
+  order_items: order_id, product_id, quantity, price_at_order
+APIs:
+  auth: registration, login
+  catalog: list_products, get_product_details
+  cart: add_to_cart, update_quantity, remove_from_cart, view_cart
+  checkout: initiate_checkout, complete_checkout
+  orders: place_order, track_order

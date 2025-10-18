@@ -1,9 +1,8 @@
-# Objetivos: Desarrollar un carrito de compras MVP con funciones básicas para registro, login, catálogo y pedidos.
-Personas:
-- Persona 1: Usuario final
-- Persona 2: Desarrollador web frontend
-Alcance Fase 1 (sin pagos reales):
-Registro/Login, Catálogo de productos, Carrito (añadir/quitar/actualizar), Checkout simulado, Creación de pedido, Consulta de estado de pedido.
-Restricciones: Plataforma móvil Android 9+, Sin implementación de pago real en fase 1.
-KPIs: Complejidad técnica del backend, Tasa de implementación, Calidad de la interfaz de usuario en el mobile
-Supuestos: Sistema externo de almacenamiento seguro para los datos (como Firebase o similar).
+scope: Both web and mobile interfaces using Express.js backend with FastAPI, and React Native for mobile
+roles: User (buyer), Merchant/Store Owner, System Administrator
+feature list:
+  - Registration/login system
+  - Product catalog browsing
+  - Shopping cart management
+  - Simulated checkout process
+  - Order tracking

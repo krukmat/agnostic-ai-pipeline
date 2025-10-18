@@ -22,7 +22,7 @@ def main():
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
     roles = cfg.setdefault("roles", {})
 
-    target_roles = [args.role] if args.role else (list(roles.keys()) or ["architect", "dev", "qa"])
+    target_roles = [args.role] if args.role else (list(roles.keys()) or ["ba", "architect", "dev", "qa"])
     # asegura estructura si faltan
     for r in target_roles:
         roles.setdefault(r, {})
@@ -36,4 +36,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

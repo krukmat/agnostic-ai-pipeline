@@ -1,85 +1,93 @@
-id: S1
-epic: E2
-description: Crear sistema backend de usuario que permita login, logout, registrar nuevos usuarios y enviar verificaciones.
-acceptance: - Autenticación exitosa 
-              - Sesión expira después del periodo configurado  
-             - Verificación exitosa por correo electrónico / número celular.
-priority: P1
-status: todo
-
-id: S2
-epic: E3
-description: Diseñar y crear una base de pantalla web para la gestión administrativa y la visibilidad del catálogo
-acceptance: La vista principal del usuario se verá refrescante e interactiva con diseño atractivo, además mostrar el stock en tiempo real
-priority: P1 
-status: todo
-
-id: S3 
-epic: E3
-description: Diseñar la vista para agregar items al carrito.
-acceptance: La aplicación permite seleccionar varios productos e añadirlos o actualizar los mismos de su lista. Cada selección debe tener opciones como sumar/restar o remover producto
-priority: P2  
-status: todo
-
-id: S4 
-epic: E3 
-description: Crear una funcionalidad checkout en móvil
-acceptance: Un usuario final debe ser capaz de completar el checkout de la compra y seleccionar datos de envío ficticios (datos generados aleatoriamente), un evento “Gracias por tu compra” que desbloqueará el botón "Enviar".
-priority: P1 
-status: todo 
-
-id: S5 
-epic: E4
-description: Añadir componentes al frontend basado en las decisiones previamente realizadas. Diseñar interfaces útiles para realizar tareas en móvil.
-acceptance: Interfaz debe mostrar todos los productos disponibles con el estilo elegido (color, tipo de tipografía etc.) e incluir elementos visuales de interacción y control como íconos para agregar o eliminar del carrito de compras.
-priority: P1
-status: todo
-
-id: S6 
-epic: E3 
-description: Añadir los detalles correspondientes a la entidad "usuario"
-acceptance: Al usuario final le proporcionaremos todos los datos solicitados, junto con una forma rápida y eficiente de hacer actualizaciones del mismo (como correo electrónico / teléfono celular). Todos estos deben estar bien estructurados, seguros en transito e incluidos en nuestro catálogo principal de productos
-priority: P2 
-status: todo
-
-id: S7 
-epic: E5 
-description: Protección y almacenamiento de la privacidad y seguridad de datos sensibles 
-acceptance: No proporcionaremos acceso innecesario o información sensible a las personas. Además garantizará una configuración adecuada del servicio y protocolo que cumpla con las mejores prácticas recomendadas.
-priority: P2  
-status: todo 
-
-id: S8 
-epic: E1 
-description: Crear sistema de carrito web interactivo que muestre la suma total en tiempo real
-acceptance: Los usuarios pueden visualizar los productos que se encuentran dentro del carrito de compras. También se reflejarán todos los precios actualizados en tiempos reales en una zona de subtotal. Si ocurre un cambio en las tarifas (como aumentos) los detalles del carrito y el precio total se actualizan.
-priority: P3 
-status: todo 
-
-id: S9 
-epic: E2 
-description: Añadir servicios web necesarios para realizar pedido.
-acceptance: Se debería ser capaz de procesar solicitudes para la creación, envío e investigación de los pedidos. Los usuarios finalmente tendrán un identificador del pedido.
-priority: P3 
-status: todo
-
-id: S10 
-epic: E4
-description: Integrar sistema backend con la frontend en móvil (por ejemplo implementar funcionalidad login/registration para móviles, manejo de errores en mobile, renderizado del catalogo).
-acceptance: Integración debe estar hecha utilizando métodos estandarizados de diseño responsive e integrarse todos los aspectos del backend
-priority: P1  
-status: todo
-
-id: S11 
-epic: E2
-description: Desarrollar una interfaz visual simple pero efectiva que facilite la realización y gestión de pedidos, consulte el estado.
-acceptance: Crearemos componentes gráficos intuitivos y presentación limpias, donde el usuario puede interactuar para seleccionar items del carrito e interactuar con los campos para verificar su dirección (incluye autocompletado) así como botones claros para procesar pedido.
-priority: P1
-status: todo 
-
-id: S12 
-epic: E3 
-description: Optimización del código para mejor rendimiento en la mobile (si requiere actualizaciones significativas o si necesita nuevas optimizaciones al margen de las existentes).
-acceptance: Tasa máxima de carga web bajo condiciones estándar del cliente y velocidad a lo largo del ciclo completo, y que funcione sin fallo y con el mayor nivel de fluidez posible. 
-priority: P1 
-status: todo
+- id: S1
+  epic: E1
+  description: Register new users via email with a secure password hash
+  acceptance:
+  - Successful registration creates a user profile
+  - logs can access their orders and data securely
+  priority: P1
+  status: todo
+- id: S2
+  epic: E1
+  description: Implement a user login feature allowing customers to view past orders,
+    save, or edit information.
+  acceptance:
+  - Logged-in users can retrieve and manage past orders through the system's dashboard
+    interface.
+  priority: P1
+  status: todo
+- id: S3
+  epic: E2
+  description: Retrieve all product categories and product listings based on various
+    filter options like price, category, name etc.,
+  acceptance:
+  - Catalog listing includes an image, product details like name, description and
+    a unique product identifier
+  priority: P1
+  status: todo
+- id: S4
+  epic: E2
+  description: Each listed product contains actions buttons to allow customers to
+    add or update their order and/or navigate away from the page.
+  acceptance:
+  - Upon pressing an "Add To Cart" button, the associated quantity value of this particular
+    product should increment accordingly on web frontend side
+  - a list is created if it doesn't already exist, displaying this newly added product
+    details in tabular form where customers have access to fields for changing their
+    orders as per needs. Upon completion, user must click 'save and checkout' which
+    updates relevant database table
+  priority: P1
+  status: todo
+- id: S5
+  epic: E4
+  description: On a secure login attempt to place an order from cart system with all
+    essential details, including name of card holder or payee, payment mode selection
+    etc.,
+  acceptance:
+  - Upon submitting final order button (simulate payment) after reviewing products
+    and quantity, summary of purchased products are shown alongside delivery/payment
+    address, also the checkout summary must provide details regarding product pricing
+  priority: P1
+  status: todo
+- id: S6
+  epic: E5
+  description: Track each purchase once user makes order, allowing retrieval through
+    a dedicated link with the respective user.
+  acceptance:
+  - Upon successfully placing an order through above checkout button and successful
+    processing by system for tracking order - customers must receive email notification
+    mentioning 'Your order has been placed!' accompanied with reference no for the
+    same so as to follow up later at convenience of customers to check on its current
+    status which can also be found through his profile
+  priority: P1
+  status: todo
+- id: S7
+  epic: E3
+  description: Implement an action to enable customers updating quantities for products
+    added into the cart
+  acceptance:
+  - Once users successfully navigate onto this feature after clicking the edit link
+    beside their specific order quantity, modal pops up for allowing modification.
+    Any updates will reflect back automatically upon confirmation button clicked
+  priority: P1
+  status: todo
+- id: S8
+  epic: E5
+  description: Users can follow progress and delivery of all previous orders
+  acceptance:
+  - The dashboard on customer account includes historical list displaying current
+    order number with reference date alongwith a summary field having respective details
+  - in the backend order statuses get stored against particular users' identifier
+    after every action carried out by system while handling these orders throughout
+    various stages right from pending payment confirmation through delivered
+  priority: P1
+  status: todo
+- id: S9
+  epic: E3
+  description: Provide options to add product quantity from the main catalog listing
+    for quicker checkout process if needed by customer.
+  acceptance:
+  - Each item on list of all products must display quantity fields so users can quickly
+    adjust these quantities as per need and initiate shopping cart or checkout without
+    manual actions like search/add
+  priority: P1
+  status: todo

@@ -16,8 +16,15 @@ async def main():
     prov = role.get("provider","ollama")
     base = cfg["providers"]["ollama"].get("base_url","http://localhost:11434") if prov=="ollama" else cfg["providers"].get("openai",{}).get("base_url")
 
+    # Read requirements if available
+    requirements_file = PLANNING/"requirements.yaml"
+    requirements_content = ""
+    if requirements_file.exists():
+        requirements_content = requirements_file.read_text(encoding="utf-8")
+
     client = LLMClient(prov, role["model"], role.get("temperature",0.2), role.get("max_tokens",2048), base)
-    text = await client.chat(system=ARCH_PROMPT, user=f"CONCEPT:\n{concept}\n\nFollow the exact output format.")
+    user_input = f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\nFollow the exact output format."
+    text = await client.chat(system=ARCH_PROMPT, user=user_input)
 
     def grab(tag, label):
         m = re.search(rf"```{tag}\s+{label}\s*([\s\S]*?)```", text)

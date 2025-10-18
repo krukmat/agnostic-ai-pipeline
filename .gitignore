@@ -200,3 +200,4 @@ planning/stories.yaml.bak.*
 
 # Artefactos generados del pipeline
 artifacts/
+planning/*

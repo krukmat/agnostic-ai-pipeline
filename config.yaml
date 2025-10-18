@@ -7,6 +7,11 @@ providers:
     # si quisieras usar un proxy OpenAI-compat:
     # base_url: http://localhost:4010/v1
 roles:
+  ba:
+    provider: ollama
+    model: granite:7b
+    temperature: 0.3
+    max_tokens: 2048
   architect:
     provider: ollama
     model: mistral:7b-instruct
@@ -22,4 +27,3 @@ roles:
     model: qwen2.5-coder:7b
     temperature: 0.2
     max_tokens: 1536
-

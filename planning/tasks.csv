@@ -1,6 +1,6 @@
 id,story,title,detail,priority
-T1,S2,Definir rutas FastAPI backend,/login,/register y similares,P1
-T2,S2,Añadir servicios para verificar credenciales usuario,/auth/P1
-T3,S4,Creación del carrito web simple,P2 
-T4,S7,Hacer cumplir reglas de seguridad,P3  
-T5,S3,Diseño gráfico inicial de app móviles usando componentes de primer nivel con diseño responsivo a pantalla y botones claros, que incluyen interacción en agregar/quitar del carrito P1
+T1,S3,Implement backend service for product category filter,A synchronous call should be created on FastAPI endpoint which accepts request with necessary attributes (such as min price and max price or search query or specific category names etc.), retrieve results accordingly, convert into appropriate response format which will then get consumed by client side.,P1
+T2,S3,Build out React Native catalog screen component for user interface of browsing products,Fulfill FR002 from react-native code, which requires to fetch list of available items based on filter selected, create grid-like presentation and navigate when clicked item.P2
+T3,S4,Build a cart items repository with SQLAlchemy model mappings to provide functionality related CRUD operations against our local or remote data storage system which might be database like MongoDB,P2
+T4,S1,Design API end-points for registering user with necessary attributes like name/email/password_hash in backend with POST request handler and hash their passwords properly before storing into db.,P3
+T5,S5,Create new routes/paths on fastAPI which would validate carts and present user with fields where they need to fill payment method info/P1

@@ -1,24 +1,15 @@
-E1:
-  id: E1
-  name: Módulo Web
-  goal: Implementar funcionalidad básica web que se comunica con el backend FastAPI.
-  
-E2:
-  id: E2
-  name: Backend Core Services
-  goal: Diseñar y construir un sistema eficiente de servicio back-end capaz de soportar la lógica empresarial de la aplicación.
-
-E3:
-  id: E3
-  name: Modulo Mobile 
-  goal: Implementar una aplicación react native basada en componentes de primer nivel con la arquitectura ya definida. 
-
-E4:
-  id: E4
-  name: Diseño Responsivo y Front-End para móvil y web
-  goal: Crear diseño responsive a pantalla para las pantallas necesarias, adaptadas para web, móviles.
-
-E5:
-  id: E5 
-  name: Seguridad del Producto
-  goal: Garantizar la privacidad, seguridad y control de acceso del usuario para el producto MVP.
+- id: E1
+  name: User Registration and Login
+  description: Users can create accounts or log in with email, username, and password.
+- id: E2
+  name: Product Catalog Management
+  description: Provide a searchable catalog of products categorized by attributes.
+- id: E3
+  name: Shopping Cart Features
+  description: Implement features allowing users to add/remove items from their cart and adjust quantities.
+- id: E4
+  name: Simulated Checkout Process
+  description: Validate carts and ask for delivery/billing details without processing real transactions.
+- id: E5
+  name: Order Tracking System
+  description: Provide order tracking and updates to users after successful checkout.
