@@ -28,3 +28,13 @@ Pipeline multi-agente, agnóstico al stack, basado en modelos abiertos (Ollama) 
     make set-role role=dev provider=ollama model="qwen2.5-coder:14b"
     make set-role role=qa provider=openai model="gpt-4o-mini"
     make set-quality profile=low|normal|high
+
+## Archivo .gitignore
+El archivo `.gitignore` ignora archivos de entorno y artefactos temporales:
+- Archivos compilados de Python (`__pycache__/`, `*.pyc`)
+- Entornos virtuales (`venv/`, `.env`)
+- Dependencias de Node.js (`node_modules/`)
+- Archivos de IDE (`.vscode/`, `.idea/`)
+- Logs y bases de datos temporales (`*.log`, `*.db`)
+- Artefactos generados del pipeline (`artifacts/`)
+- Backups y archivos temporales
