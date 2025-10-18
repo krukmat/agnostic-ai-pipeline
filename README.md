@@ -128,6 +128,35 @@ make set-role role=<ba|architect|dev|qa> provider=<ollama|openai> model="<id>"
 make set-quality profile=<low|normal|high>
 ```
 
+## Advanced Features
+
+### Architect Intervention
+When stories are in review status, the Architect can intervene to adjust acceptance criteria for better developer implementation:
+
+```bash
+# Enable architect intervention in loops
+ARCHITECT_INTERVENTION=1 make loop
+
+# Disable architect intervention (default behavior)
+ARCHITECT_INTERVENTION=0 make loop
+```
+
+The Architect will:
+- Review stories in "in_review" status
+- Adjust acceptance criteria for clarity
+- Provide more specific technical requirements
+- Analyze QA failure details to provide targeted corrections
+- Escalate detail level with each rejection attempt
+
+### Quality Assurance Intelligence
+QA provides detailed failure analysis to improve iteration:
+
+- **Pytest Analysis**: Extracts specific test failures, assertion errors, and exception details
+- **Jest Analysis**: Captures failed test info and error contexts
+- **Architect Context**: QA details are passed to architect for targeted criterion adjustments
+- **Progressive Escalation**: More detail required with each iteration
+- **Force Approval**: Critical priorities (P1/P0) can be force-approved after 3 failures
+
 Environment variables:
 
 - CONCEPT — Architect prompt (use heredoc).

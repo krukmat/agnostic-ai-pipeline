@@ -41,7 +41,7 @@ qa:
 	QA_RUN_TESTS="$${QA_RUN_TESTS:-0}" $(PY) scripts/run_qa.py
 
 loop:
-	MAX_LOOPS="$${MAX_LOOPS:-1}" ALLOW_NO_TESTS="$${ALLOW_NO_TESTS:-0}" $(PY) scripts/orchestrate.py
+	MAX_LOOPS="$${MAX_LOOPS:-1}" ALLOW_NO_TESTS="$${ALLOW_NO_TESTS:-0}" ARCHITECT_INTERVENTION="$${ARCHITECT_INTERVENTION:-1}" $(PY) scripts/orchestrate.py
 
 fix-stories:
 	$(PY) scripts/fix_stories.py
