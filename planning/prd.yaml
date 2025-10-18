@@ -1,8 +1,0 @@
-scope: Both web and mobile interfaces using Express.js backend with FastAPI, and React Native for mobile
-roles: User (buyer), Merchant/Store Owner, System Administrator
-feature list:
-  - Registration/login system
-  - Product catalog browsing
-  - Shopping cart management
-  - Simulated checkout process
-  - Order tracking
