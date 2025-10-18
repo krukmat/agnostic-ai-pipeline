@@ -1,0 +1,73 @@
+- id: S1
+  epic: E1
+  description: Registro e inicio de sesión del usuario
+  acceptance:
+  - Se permite el registro del nuevo usuario con un correo y contraseña - Los usuarios
+    registrados pueden iniciar sesión - El login al sistema confirma los datos correctos.
+  priority: P1
+  status: blocked
+- id: S2
+  epic: E1
+  description: Cátalogo de productos
+  acceptance:
+  - El backend permite listar todos los productos - Los productos deben estar disponibles
+    para la vista en la web y móvil
+  priority: P1
+  status: blocked
+- id: S3
+  epic: E1
+  description: Carrito
+  acceptance:
+  - La adición o quitar producto del carrito debe incrementar y disminuir su respectivo
+    número. - El estado del carrito puede mostrar la información actual de productos
+    agregados al mismo, sus detalles, total general del pedido.
+  priority: P1
+  status: blocked
+- id: S4
+  epic: E1
+  description: Checkout Simulado
+  acceptance:
+  - La pantalla del checkout permitirá que los usuarios llenen datos simulados. -
+    La verificación del formulario de checkout no realzia cambios ni verifica credenciales
+    de pago reales, sino simplemente confirma que la información sea válida.
+  priority: P2
+  status: blocked
+- id: S5
+  epic: E1
+  description: Creación de pedido
+  acceptance:
+  - Crear pedidos desde el carrito permitiendo que el usuario proporcione los detalles
+    de envío necesarios.
+  priority: P2
+  status: blocked
+- id: S1-TESTS
+  epic: E1
+  description: 'Escribir tests automatizados para S1: Registro e inicio de sesión
+    del usuario'
+  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
+  priority: P1
+  status: blocked
+- id: S2-TESTS
+  epic: E1
+  description: 'Escribir tests automatizados para S2: Cátalogo de productos'
+  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
+  priority: P1
+  status: blocked
+- id: S3-TESTS
+  epic: E1
+  description: 'Escribir tests automatizados para S3: Carrito'
+  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
+  priority: P1
+  status: blocked
+- id: S4-TESTS
+  epic: E1
+  description: 'Escribir tests automatizados para S4: Checkout Simulado'
+  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
+  priority: P2
+  status: blocked
+- id: S5-TESTS
+  epic: E1
+  description: 'Escribir tests automatizados para S5: Creación de pedido'
+  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
+  priority: P2
+  status: blocked

@@ -1,0 +1,3 @@
+- id: E1
+  name: Fase 1 del MVP del carrito de compras
+  goal: Crear las principales funcionalidades requeridas del sistema sin integración a pagos reales.
