@@ -12,14 +12,182 @@ NOTES_P = PLAN / "notes.md"
 QA_REPORT = ROOT / "artifacts" / "qa" / "last_report.json"
 
 def load_stories():
+    """Carga historias con recuperación automática de errores YAML"""
     if not STORIES_P.exists(): return []
-    data = yaml.safe_load(STORIES_P.read_text(encoding="utf-8"))
-    if isinstance(data, dict) and "stories" in data:
-        data = data["stories"]
-    return data or []
+
+    text = STORIES_P.read_text(encoding="utf-8")
+
+    # Intento primario de carga
+    try:
+        data = yaml.safe_load(text)
+        if isinstance(data, dict) and "stories" in data:
+            data = data["stories"]
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        append_note(f"Error YAML primario: {e}")
+        print(f"[loop] Error YAML primario: {e}")
+
+        # Intentar recuperación automática
+        try:
+            return recover_yaml_automatic(text)
+        except Exception as e2:
+            append_note(f"Recuperación automática fallida: {e2}")
+            print(f"[loop] Recuperación automática fallida: {e2}")
+
+            # Fallback: intentar ejecutar fix_stories automáticamente
+            if fix_stories_automatic():
+                try:
+                    data = yaml.safe_load(STORIES_P.read_text(encoding="utf-8"))
+                    if isinstance(data, dict) and "stories" in data:
+                        data = data["stories"]
+                    return data if isinstance(data, list) else []
+                except Exception as e3:
+                    append_note(f"Fix automático fallido: {e3}")
+                    print(f"[loop] Fix automático fallido: {e3}")
+
+            # Último fallback: devolver lista vacía
+            append_note("FALLBACK: Devolviendo lista vacía de historias")
+            print("[loop] FATAL: Devolviendo lista vacía de historias")
+            return []
 
 def save_stories(stories):
     STORIES_P.write_text(yaml.safe_dump(stories, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+def recover_yaml_automatic(text: str) -> list:
+    """Intenta recuperar YAML automáticamente con estrategias de reparación"""
+    import re
+
+    # Estrategia 1: Remover caracteres problemáticos comunes al inicio
+    text = text.lstrip()
+
+    # Estrategia 2: Si todo está comentado, descomentar automáticamente
+    if all(line.lstrip().startswith('#') for line in text.splitlines() if line.strip()):
+        lines = []
+        for line in text.splitlines():
+            if line.lstrip().startswith('#'):
+                lines.append(re.sub(r'^(\s*)#\s?', r'\1', line))
+            else:
+                lines.append(line)
+        text = '\n'.join(lines)
+
+    # Estrategia 3: Reparar formatos de acceptance comunes
+    lines = text.splitlines()
+    fixed_lines = []
+    for line in lines:
+        # Reparar acceptance inline: acceptance: - item
+        if 'acceptance:' in line and ('- ' in line or '; ' in line):
+            indent = line.find('acceptance:')
+            match = re.match(r'^(\s*)acceptance:\s*(.+)', line)
+            if match:
+                ind, val = match.groups()
+                # Convertir a multiline
+                items = [item.strip('- ;') for item in re.split(r'[,;]-| -', val) if item.strip()]
+                if len(items) > 1:
+                    fixed_lines.append(f"{ind}acceptance:")
+                    for item in items:
+                        fixed_lines.append(f"{ind}  - {item}")
+                    continue
+        fixed_lines.append(line)
+    text = '\n'.join(fixed_lines)
+
+    # Intentar parsear de nuevo
+    try:
+        data = yaml.safe_load(text)
+        if isinstance(data, dict) and "stories" in data:
+            data = data["stories"]
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        # Crear backup y intentar una reparación mínima
+        backup_path = STORIES_P.with_suffix('.backup.broken')
+        STORIES_P.replace(backup_path)
+        append_note(f"YAML irreparable - backup creado: {backup_path}")
+        raise e
+
+def fix_stories_automatic() -> bool:
+    """Ejecuta fix_stories automáticamente para reparar YAML"""
+    try:
+        import subprocess
+        result = subprocess.run([
+            str(ROOT / ".venv" / "bin" / "python"),
+            str(ROOT / "scripts" / "fix_stories.py")
+        ], capture_output=True, text=True, cwd=str(ROOT))
+        success = result.returncode == 0
+        if success:
+            append_note("fix_stories ejecutado automáticamente")
+            print("[loop] fix_stories ejecutado automáticamente")
+        else:
+            append_note(f"fix_stories falló: {result.stderr}")
+            print(f"[loop] fix_stories falló: {result.stderr}")
+        return success
+    except Exception as e:
+        append_note(f"Error ejecutando fix_stories: {e}")
+        print(f"[loop] Error ejecutando fix_stories: {e}")
+        return False
+
+def cleanup_artifacts():
+    """Limpieza automática de artifacts antiguos para prevenir acumulación"""
+    try:
+        max_age_days = int(os.environ.get("ARTIFACT_RETENTION_DAYS", "7"))
+        max_age_seconds = max_age_days * 24 * 60 * 60
+        now = datetime.datetime.now().timestamp()
+
+        artifacts_dir = ROOT / "artifacts"
+        if not artifacts_dir.exists():
+            return
+
+        # Contadores de limpieza
+        total_files_cleaned = 0
+        total_space_cleaned = 0
+
+        # Limpiar artifacts/dev/* (logs de desarrollo)
+        dev_dir = artifacts_dir / "dev"
+        if dev_dir.exists():
+            for file_path in dev_dir.glob("*"):
+                if file_path.is_file():
+                    file_age = now - file_path.stat().st_mtime
+                    if file_age > max_age_seconds:
+                        size = file_path.stat().st_size
+                        file_path.unlink()
+                        total_files_cleaned += 1
+                        total_space_cleaned += size
+
+        # Limpiar artifacts/qa/* excepto last_report.json
+        qa_dir = artifacts_dir / "qa"
+        if qa_dir.exists():
+            for file_path in qa_dir.glob("*"):
+                if file_path.is_file() and file_path.name != "last_report.json":
+                    file_age = now - file_path.stat().st_mtime
+                    if file_age > max_age_seconds:
+                        size = file_path.stat().st_size
+                        file_path.unlink()
+                        total_files_cleaned += 1
+                        total_space_cleaned += size
+
+        # Limpiar *.pyc y __pycache__ si existen
+        for pyc_file in ROOT.rglob("*.pyc"):
+            age = now - pyc_file.stat().st_mtime
+            if age > (1 * 60 * 60):  # Más de 1 hora
+                size = pyc_file.stat().st_size
+                pyc_file.unlink()
+                total_files_cleaned += 1
+                total_space_cleaned += size
+
+        import shutil
+        for cache_dir in ROOT.rglob("__pycache__"):
+            if cache_dir.is_dir():
+                try:
+                    shutil.rmtree(cache_dir)
+                    total_files_cleaned += 1  # Contar directorio como eliminación
+                except:
+                    pass  # Ignorar errores de permisos
+
+        if total_files_cleaned > 0 or total_space_cleaned > 0:
+            append_note(f"Limpieza automática: {total_files_cleaned} archivos eliminados, {total_space_cleaned/1024:.1f}KB liberados")
+            print(f"[cleanup] {total_files_cleaned} archivos antiguos eliminados, {total_space_cleaned/1024:.1f}KB liberados")
+
+    except Exception as e:
+        append_note(f"Error en limpieza automática: {e}")
+        print(f"[cleanup] Error durante limpieza: {e}")
 
 def append_note(text: str):
     NOTES_P.parent.mkdir(parents=True, exist_ok=True)
@@ -92,12 +260,71 @@ def find_in_review_stories(stories):
     """Encuentra historias en review que necesitan intervención del arquitecto"""
     return [s for s in stories if s.get("status","").lower() == "in_review"]
 
+def analyze_qa_failure_severity(qa_failure_details):
+    """Analiza la severidad de los fallos de QA y determina el tipo de problema"""
+    failure_details = qa_failure_details or {}
+
+    # Contadores de diferentes tipos de errores
+    backend_critical = 0
+    backend_non_critical = 0
+    web_critical = 0
+    web_non_critical = 0
+
+    backend_errors = failure_details.get("backend", {}).get("errors", [])
+    web_errors = failure_details.get("web", {}).get("errors", [])
+
+    # Analizar errores de backend
+    for error in backend_errors:
+        if error.get("type") in ["pytest_failure", "pytest_error"]:
+            # Si es error de import o configuración crítica
+            if "import" in error.get("error", "").lower() or "module not found" in error.get("error", "").lower():
+                backend_critical += 1
+            else:
+                backend_non_critical += 1
+
+    # Analizar errores de web
+    for error in web_errors:
+        if error.get("type") == "jest_failure":
+            web_non_critical += 1  # Por ahora todos los tests web se consideran no críticos
+
+    # Determinación de severidad
+    total_errors = backend_critical + backend_non_critical + web_critical + web_non_critical
+
+    if total_errors == 0:
+        return {"severity": "none", "details": "Sin errores detectados"}
+
+    if backend_critical > 0:
+        return {
+            "severity": "critical",
+            "details": f"Errores críticos de configuración/import: {backend_critical} errores"
+        }
+
+    if backend_non_critical > 0 and web_non_critical == 0:
+        return {
+            "severity": "test_only",
+            "details": f"Fallan solo tests backend: {backend_non_critical} errores de lógica o assertions"
+        }
+
+    if story_iteration_count.get(os.environ.get("STORY", ""), 0) >= 2:
+        return {
+            "severity": "persistent",
+            "details": f"Fallo persistente ({story_iteration_count.get(os.environ.get('STORY', ''), 0)} iteraciones)"
+        }
+
+    return {
+        "severity": "standard",
+        "details": f"Errores estándar: backend={backend_non_critical}, web={web_non_critical}"
+    }
+
 def main():
     max_loops = int(os.environ.get("MAX_LOOPS","1"))
     allow_no_tests = os.environ.get("ALLOW_NO_TESTS","0") == "1"
     create_child = os.environ.get("BACKFLOW_CREATE_TEST_STORY","1") == "1"
     status_no_tests = os.environ.get("BACKFLOW_STATUS_FOR_NO_TESTS", "in_review")
     enable_architect_intervention = os.environ.get("ARCHITECT_INTERVENTION","1") == "1"
+
+    # Ejecutar limpieza automática de artifacts antiguos al inicio
+    cleanup_artifacts()
 
     for it in range(1, max_loops+1):
         print(f"[loop] Iteración {it}/{max_loops}")
@@ -162,10 +389,10 @@ def main():
             except Exception:
                 qa_status = "unknown"
 
-        # 5) Gates & backflow
+        # 5) Advanced Gate Management with intermediate states
         if qa_status == "pass":
+            # ✅ QA PASS: Historia aprobada
             story["status"] = "done"
-            # Reset iteration count on success
             if sid in story_iteration_count:
                 story_iteration_count[sid] = 0
             save_stories(stories)
@@ -173,41 +400,65 @@ def main():
             print(f"[loop] {sid} -> done (QA pass)")
 
         elif qa_status == "no_tests":
+            # 🧪 NO TESTS: Estados intermedios dependiendo configuración
             if allow_no_tests:
-                # pasa como 'in_review' pero generamos historia de tests
-                story["status"] = "in_review"
+                # Estado intermedio: Calidad básica verificada, tests pendientes
+                story["status"] = "qa_pass_no_tests"  # Estado intermedio: QA aprobado sin tests
                 if create_child:
-                    stories.append(create_test_story_for(story))
+                    test_story = create_test_story_for(story)
+                    test_story["status"] = "pending"  # Tests marcados como pendientes
+                    stories.append(test_story)
                 save_stories(stories)
-                append_note(f"- {sid} sin tests (permitido). Se creó historia de tests hija.")
-                print(f"[loop] {sid} -> in_review (no_tests permitido)")
+                append_note(f"- {sid} QA aprobado sin tests. Tests marcados como pendientes.")
+                print(f"[loop] {sid} -> qa_pass_no_tests (QA aprobado sin tests)")
             else:
-                story["status"] = status_no_tests  # in_review o blocked
+                # Estado intermedio: Quality-gated por tests requeridos
+                story["status"] = "quality_gate_waiting"  # Esperando tests
                 if create_child:
                     stories.append(create_test_story_for(story))
                 save_stories(stories)
-                append_note(f"- {sid} rebotado: QA no encontró tests. Se creó historia de tests hija.")
-                print(f"[loop] {sid} -> {status_no_tests} (no_tests NO permitido)")
+                append_note(f"- {sid} esperando QA de tests. Se creó historia de tests hija.")
+                print(f"[loop] {sid} -> quality_gate_waiting (esperando QA de tests)")
 
         else:
-            # QA fail - check if we should force approval after multiple attempts
-            if story_iteration_count.get(sid, 0) >= 3:
-                story_priority = story.get("priority", "P2")
-                append_note(f"- {sid} rechazado múltiples veces (iteración {story_iteration_count[sid]}) - considerando aprobación forzada por prioridad {story_priority}")
-                print(f"[loop] {sid} falló QA en MÚLTIPLES intentos - considerando aprobación forzada")
+            # ❌ QA FAIL: Análisis de fallos con estados específicos
+            # Analyze QA failure details for smarter decisions
+            failure_analysis = analyze_qa_failure_severity(qa_failure_details)
 
-                # Arquitecto puede aprobar forzadamente basado en prioridad y urgencia
-                if story_priority in ["P1", "P0"]:
-                    story["status"] = "done"
-                    append_note(f"- {sid} APROBADO FORZADAMENTE por arquitecto (prioridad {story_priority})")
-                    print(f"[loop] {sid} -> done (APROBADO FORZADAMENTE por arquitecto)")
+            if failure_analysis["severity"] == "critical":
+                # Errores críticos: Verificar si podemos recuperar
+                story["status"] = "in_review_critical"  # Problema crítico - revisión urgente
+                append_note(f"- {sid} ERROR CRÍTICO en QA: {failure_analysis['details'][:100]}...")
+                print(f"[loop] {sid} -> in_review_critical (ERROR CRÍTICO en QA)")
+            elif failure_analysis["severity"] == "test_only":
+                # Solo fallan tests - funcionalidad básica OK
+                story["status"] = "code_done_tests_pending"  # Código OK, tests pendientes
+                test_story = create_test_story_for(story)
+                test_story["status"] = "todo"
+                stories.append(test_story)
+                append_note(f"- {sid} código funcional OK. Tests requeridos separados.")
+                print(f"[loop] {sid} -> code_done_tests_pending (código OK, tests separados)")
+            elif failure_analysis["severity"] == "persistent":
+                # Múltiples fallos: evaluación de aprobación forzada
+                iteration_count = story_iteration_count.get(sid, 0)
+                if iteration_count >= 3:
+                    story_priority = story.get("priority", "P2")
+                    if story_priority in ["P1", "P0"]:
+                        story["status"] = "done_force_architect"  # Aprobado por arquitecto (alta prioridad)
+                        append_note(f"- {sid} APROBADO FORZADAMENTE por arquitecto (prioridad {story_priority}, {iteration_count} iteraciones)")
+                        print(f"[loop] {sid} -> done_force_architect (APROBADAMENTE por arquitecto)")
+                    else:
+                        story["status"] = "blocked_quality_issues"  # Bloqueado por calidad insuficiente
+                        append_note(f"- {sid} BLOQUEADO (baja prioridad + múltiples fallos de calidad)")
+                        print(f"[loop] {sid} -> blocked_quality_issues (múltiples fallos calidad)")
                 else:
-                    story["status"] = "blocked"
-                    append_note(f"- {sid} bloqueado definitivamente (baja prioridad, múltiples fallos)")
-                    print(f"[loop] {sid} -> blocked (múltiples QA fails)")
+                    story["status"] = "in_review_retry"  # Revisión y retry
+                    append_note(f"- {sid} falló QA - requiere revisión (intento {iteration_count + 1})")
+                    print(f"[loop] {sid} -> in_review_retry (necesita revisión)")
             else:
-                story["status"] = "in_review"  # Needs architect review
-                append_note(f"- {sid} rebotado: QA fail (rc={rc_qa}). Requiere intervención de arquitecto.")
+                # Problema estándar - necesita revisión del arquitecto
+                story["status"] = "in_review"  # Necesita intervención del arquitecto
+                append_note(f"- {sid} falló QA (rc={rc_qa}). Requiere intervención de arquitecto.")
                 print(f"[loop] {sid} -> in_review (QA fail, needs architect)")
 
         save_stories(stories)

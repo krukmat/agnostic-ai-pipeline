@@ -151,11 +151,30 @@ The Architect will:
 ### Quality Assurance Intelligence
 QA provides detailed failure analysis to improve iteration:
 
-- **Pytest Analysis**: Extracts specific test failures, assertion errors, and exception details
-- **Jest Analysis**: Captures failed test info and error contexts
+- **Advanced Failure Analysis**: Extracts specific test failures, assertion errors, and exception details
+- **Pytest & Jest Intelligence**: Captures failed test info, error contexts, and error types
 - **Architect Context**: QA details are passed to architect for targeted criterion adjustments
-- **Progressive Escalation**: More detail required with each iteration
-- **Force Approval**: Critical priorities (P1/P0) can be force-approved after 3 failures
+- **Smart Severity Classification**: Critical errors, test-only failures, and persistent issues
+- **Progressive Escalation**: More detail required with each rejection iteration
+
+### Resource Management
+Automatic cleanup prevents accumulation and maintains performance:
+
+- **Artifact Cleanup**: Removes old dev/qa logs, .pyc files, and __pycache__ directories
+- **Configurable Retention**: Controlled via ARTIFACT_RETENTION_DAYS (default: 7 days)
+- **Smart Recovery**: Automatic YAML repair, backup creation, and fallback handling
+- **Proactive Maintenance**: Pre-iteration cleanup prevents performance degradation
+
+### Advanced State Management
+Multiple intermediate states provide granular control:
+
+- **qa_pass_no_tests**: QA approved without tests (tests marked as pending)
+- **quality_gate_waiting**: Waiting for test validation
+- **in_review_critical**: Urgent critical error review
+- **code_done_tests_pending**: Code functional, tests separated
+- **in_review_retry**: Standard retry mechanism
+- **done_force_architect**: Force-approved by architect (high priority)
+- **blocked_quality_issues**: Permanently blocked (quality issues)
 
 Environment variables:
 
