@@ -1,19 +1,9 @@
-objetivos: MVP para un carrito de compras con funcionalidades básicas.
-personas:
-  - id: usuario_regular
-    tipo: persona general del sistema
-    objetivo: utilizar la aplicación para comprar productos.
-
-alcance: 
-  web: Registro, login, catálogo, carrito y consulta de pedido.
-  backend: Registro, login, CRUD de productos, gestión de pedidos.
-  mobile: Funcionalidades básicas para interactuar con el carrito de compras en Android 9+.
-restricciones:
-  - sin integración a servicios financieros
-  - Android minimo version 9
-KPIs:
-  tiempo hasta lanzamiento MVP
-  cantidad de funcionalidades completadas en cada fase.
-supuestos: 
-  los clientes conocen las bases del funcionamiento del carrito de compras
-  existen recursos disponibles para el desarrollo completo.
+# Objetivos: Desarrollar un carrito de compras MVP con funciones básicas para registro, login, catálogo y pedidos.
+Personas:
+- Persona 1: Usuario final
+- Persona 2: Desarrollador web frontend
+Alcance Fase 1 (sin pagos reales):
+Registro/Login, Catálogo de productos, Carrito (añadir/quitar/actualizar), Checkout simulado, Creación de pedido, Consulta de estado de pedido.
+Restricciones: Plataforma móvil Android 9+, Sin implementación de pago real en fase 1.
+KPIs: Complejidad técnica del backend, Tasa de implementación, Calidad de la interfaz de usuario en el mobile
+Supuestos: Sistema externo de almacenamiento seguro para los datos (como Firebase o similar).

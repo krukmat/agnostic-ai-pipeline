@@ -1,73 +1,85 @@
-- id: S1
-  epic: E1
-  description: Registro e inicio de sesión del usuario
-  acceptance:
-  - Se permite el registro del nuevo usuario con un correo y contraseña - Los usuarios
-    registrados pueden iniciar sesión - El login al sistema confirma los datos correctos.
-  priority: P1
-  status: blocked
-- id: S2
-  epic: E1
-  description: Cátalogo de productos
-  acceptance:
-  - El backend permite listar todos los productos - Los productos deben estar disponibles
-    para la vista en la web y móvil
-  priority: P1
-  status: blocked
-- id: S3
-  epic: E1
-  description: Carrito
-  acceptance:
-  - La adición o quitar producto del carrito debe incrementar y disminuir su respectivo
-    número. - El estado del carrito puede mostrar la información actual de productos
-    agregados al mismo, sus detalles, total general del pedido.
-  priority: P1
-  status: blocked
-- id: S4
-  epic: E1
-  description: Checkout Simulado
-  acceptance:
-  - La pantalla del checkout permitirá que los usuarios llenen datos simulados. -
-    La verificación del formulario de checkout no realzia cambios ni verifica credenciales
-    de pago reales, sino simplemente confirma que la información sea válida.
-  priority: P2
-  status: blocked
-- id: S5
-  epic: E1
-  description: Creación de pedido
-  acceptance:
-  - Crear pedidos desde el carrito permitiendo que el usuario proporcione los detalles
-    de envío necesarios.
-  priority: P2
-  status: blocked
-- id: S1-TESTS
-  epic: E1
-  description: 'Escribir tests automatizados para S1: Registro e inicio de sesión
-    del usuario'
-  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
-  priority: P1
-  status: blocked
-- id: S2-TESTS
-  epic: E1
-  description: 'Escribir tests automatizados para S2: Cátalogo de productos'
-  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
-  priority: P1
-  status: blocked
-- id: S3-TESTS
-  epic: E1
-  description: 'Escribir tests automatizados para S3: Carrito'
-  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
-  priority: P1
-  status: blocked
-- id: S4-TESTS
-  epic: E1
-  description: 'Escribir tests automatizados para S4: Checkout Simulado'
-  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
-  priority: P2
-  status: blocked
-- id: S5-TESTS
-  epic: E1
-  description: 'Escribir tests automatizados para S5: Creación de pedido'
-  acceptance: Ejecutar runners (pytest/jest) y obtener exit code 0.
-  priority: P2
-  status: blocked
+id: S1
+epic: E2
+description: Crear sistema backend de usuario que permita login, logout, registrar nuevos usuarios y enviar verificaciones.
+acceptance: - Autenticación exitosa 
+              - Sesión expira después del periodo configurado  
+             - Verificación exitosa por correo electrónico / número celular.
+priority: P1
+status: todo
+
+id: S2
+epic: E3
+description: Diseñar y crear una base de pantalla web para la gestión administrativa y la visibilidad del catálogo
+acceptance: La vista principal del usuario se verá refrescante e interactiva con diseño atractivo, además mostrar el stock en tiempo real
+priority: P1 
+status: todo
+
+id: S3 
+epic: E3
+description: Diseñar la vista para agregar items al carrito.
+acceptance: La aplicación permite seleccionar varios productos e añadirlos o actualizar los mismos de su lista. Cada selección debe tener opciones como sumar/restar o remover producto
+priority: P2  
+status: todo
+
+id: S4 
+epic: E3 
+description: Crear una funcionalidad checkout en móvil
+acceptance: Un usuario final debe ser capaz de completar el checkout de la compra y seleccionar datos de envío ficticios (datos generados aleatoriamente), un evento “Gracias por tu compra” que desbloqueará el botón "Enviar".
+priority: P1 
+status: todo 
+
+id: S5 
+epic: E4
+description: Añadir componentes al frontend basado en las decisiones previamente realizadas. Diseñar interfaces útiles para realizar tareas en móvil.
+acceptance: Interfaz debe mostrar todos los productos disponibles con el estilo elegido (color, tipo de tipografía etc.) e incluir elementos visuales de interacción y control como íconos para agregar o eliminar del carrito de compras.
+priority: P1
+status: todo
+
+id: S6 
+epic: E3 
+description: Añadir los detalles correspondientes a la entidad "usuario"
+acceptance: Al usuario final le proporcionaremos todos los datos solicitados, junto con una forma rápida y eficiente de hacer actualizaciones del mismo (como correo electrónico / teléfono celular). Todos estos deben estar bien estructurados, seguros en transito e incluidos en nuestro catálogo principal de productos
+priority: P2 
+status: todo
+
+id: S7 
+epic: E5 
+description: Protección y almacenamiento de la privacidad y seguridad de datos sensibles 
+acceptance: No proporcionaremos acceso innecesario o información sensible a las personas. Además garantizará una configuración adecuada del servicio y protocolo que cumpla con las mejores prácticas recomendadas.
+priority: P2  
+status: todo 
+
+id: S8 
+epic: E1 
+description: Crear sistema de carrito web interactivo que muestre la suma total en tiempo real
+acceptance: Los usuarios pueden visualizar los productos que se encuentran dentro del carrito de compras. También se reflejarán todos los precios actualizados en tiempos reales en una zona de subtotal. Si ocurre un cambio en las tarifas (como aumentos) los detalles del carrito y el precio total se actualizan.
+priority: P3 
+status: todo 
+
+id: S9 
+epic: E2 
+description: Añadir servicios web necesarios para realizar pedido.
+acceptance: Se debería ser capaz de procesar solicitudes para la creación, envío e investigación de los pedidos. Los usuarios finalmente tendrán un identificador del pedido.
+priority: P3 
+status: todo
+
+id: S10 
+epic: E4
+description: Integrar sistema backend con la frontend en móvil (por ejemplo implementar funcionalidad login/registration para móviles, manejo de errores en mobile, renderizado del catalogo).
+acceptance: Integración debe estar hecha utilizando métodos estandarizados de diseño responsive e integrarse todos los aspectos del backend
+priority: P1  
+status: todo
+
+id: S11 
+epic: E2
+description: Desarrollar una interfaz visual simple pero efectiva que facilite la realización y gestión de pedidos, consulte el estado.
+acceptance: Crearemos componentes gráficos intuitivos y presentación limpias, donde el usuario puede interactuar para seleccionar items del carrito e interactuar con los campos para verificar su dirección (incluye autocompletado) así como botones claros para procesar pedido.
+priority: P1
+status: todo 
+
+id: S12 
+epic: E3 
+description: Optimización del código para mejor rendimiento en la mobile (si requiere actualizaciones significativas o si necesita nuevas optimizaciones al margen de las existentes).
+acceptance: Tasa máxima de carga web bajo condiciones estándar del cliente y velocidad a lo largo del ciclo completo, y que funcione sin fallo y con el mayor nivel de fluidez posible. 
+priority: P1 
+status: todo

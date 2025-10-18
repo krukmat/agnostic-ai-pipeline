@@ -1,0 +1,6 @@
+id,story,title,detail,priority
+T1,S2,Definir rutas FastAPI backend,/login,/register y similares,P1
+T2,S2,Añadir servicios para verificar credenciales usuario,/auth/P1
+T3,S4,Creación del carrito web simple,P2 
+T4,S7,Hacer cumplir reglas de seguridad,P3  
+T5,S3,Diseño gráfico inicial de app móviles usando componentes de primer nivel con diseño responsivo a pantalla y botones claros, que incluyen interacción en agregar/quitar del carrito P1

@@ -1,8 +1,12 @@
-modulos: web, backend, mobile.
-entidades: usuarios, productos, pedidos, detalles_de_envío.
-api_endpoints:
-  POST /usuario/register - crear cuenta de usuario.
-  GET /catalogo/productos - listar todos los productos.
-  PUT /carrito/{idProducto}/agregar - añadir producto al carrito.
-  PUT /carrito/{idProducto}/quitar - quitar producto del carrito.
-  GET /pedido - obtener lista de pedidos del usuario actual.
+# Arquitectura:
+Web: 
+  Components: Servidor HTTP (Express.js)
+  Datasources: No especificado, interactuarán directamente con los módulos del backend.
+Backend:
+  Frameworks: FastAPI (Python 3.8+)
+  Decisiones ADRs:
+    - Técnicas de manejo de datos sensibles (https://example.com/docs/adrs/data-handling.html).
+Entidades (Productos, Usuarios):
+- Usuario
+- Producto
+API endpoints (Métodos y Paths, Estandarizaciones según las normativas existentes)
