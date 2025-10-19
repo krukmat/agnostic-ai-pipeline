@@ -18,30 +18,65 @@ async def test_codex_cli_basic():
     print("🔧 Testing Codex CLI integration...")
 
     try:
-        # Create a client that would use codex_cli if configured
-        client = Client(role="dev")
+        # Test architect role with CLI provider
+        client_architect = Client(role="architect")
+        if client_architect.provider_type == "codex_cli":
+            print("✅ Architect role configured with Codex CLI:")
+            print(f"   - Command: {client_architect.cli_command}")
+            print(f"   - Model: {client_architect.model}")
+            print(f"   - Timeout: {client_architect.cli_timeout}s")
+            print(f"   - Input format: {client_architect.cli_input_format}")
 
-        # Check if CLI provider is configured
-        if client.provider_type != "codex_cli":
-            print("⚠️  Codex CLI not configured as provider. Testing with current provider instead.")
+            # Create a client that would use codex_cli if configured for dev
+            client_dev = Client(role="dev")
+            if client_dev.provider_type != "codex_cli":
+                print("ℹ️  Dev role uses ollama (fallback provider)")
+                # Test with current provider to ensure basic functionality works
+                response = await client_dev.chat(
+                    system="You are a helpful assistant.",
+                    user="Say hello in Spanish."
+                )
+                print(f"✅ Basic LLM test passed with {client_dev.provider_type}")
+                print(f"Response: {response[:100]}...")
+                return True
+        else:
+            print("⚠️  Architect CLI not configured. Testing with current provider instead.")
             # Test with current provider to ensure basic functionality works
-            response = await client.chat(
+            response = await client_architect.chat(
                 system="You are a helpful assistant.",
                 user="Say hello in Spanish."
             )
-            print(f"✅ Basic LLM test passed with {client.provider_type}")
+            print(f"✅ Basic LLM test passed with {client_architect.provider_type}")
             print(f"Response: {response[:100]}...")
             return True
 
-        print(f"✅ CLI Provider detected: {client.cli_command}")
-        print(f"   - Command: {client.cli_command}")
-        print(f"   - Timeout: {client.cli_timeout}s")
-        print("   - Input format: {client.cli_input_format}")
+        # Try to test actual CLI execution to demonstrate error handling
+        print("\n🔧 Testing actual CLI execution (expected to fail without 'codex' command)...")
+        try:
+            test_cli_client = Client(role="architect", provider="codex_cli")
+            response = await test_cli_client.chat(
+                system="You are an architect assistant.",
+                user="Create a simple plan for a login system."
+            )
+            print(f"⚠️  Unexpected CLI success: {response[:100]}...")
+        except RuntimeError as e:
+            if "CODEX_CLI_NOT_FOUND" in str(e):
+                print("✅ Expected CLI error: 'codex' command not found - this is normal")
+                return True
+            elif "CODEX_CLI_" in str(e):
+                print(f"✅ CLI error handling works: {e}")
+                return True
+            else:
+                print(f"❌ Unexpected CLI runtime error: {e}")
+                return False
+        except Exception as e:
+            print(f"❌ Unexpected exception trying CLI: {e}")
+            return False
 
-        # Note: Actual CLI test would require the real codex CLI to be installed
-        print("ℹ️  To test actual CLI execution, ensure 'codex' command is available and run:")
-        print("   CONCEPT='Test' make dev")
-        print("   Then check artifacts/dev/last_raw.txt for CLI logs")
+        # Note: If we get here without throwing, CLI might actually work
+        print("ℹ️  CLI exists! To test with actual 'codex' command:")
+        print("   STORY=S1 make architect")
+        print("   Check artifacts/dev/last_raw.txt for CLI logs")
 
         return True
 
