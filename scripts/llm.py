@@ -4,6 +4,10 @@ import os
 import sys
 import json
 import pathlib
+import asyncio
+import subprocess
+import time
+import re
 from typing import Any, Dict, Optional
 
 import httpx
@@ -65,6 +69,14 @@ class Client:
         self.oai_base = os.environ.get("OPENAI_API_BASE") or "http://localhost:4010/v1"
         self.oai_key = os.environ.get("OPENAI_API_KEY", "dummy")
 
+        # CLI provider defaults
+        self.cli_command = None
+        self.cli_cwd = "."
+        self.cli_env = {}
+        self.cli_timeout = 300
+        self.cli_input_format = "stdin"
+        self.cli_output_clean = True
+
         # Load from config.yaml (roles/providers)
         roles = cfg.get("roles", {}) if isinstance(cfg.get("roles", {}), dict) else {}
         role_cfg = roles.get(self.role, {}) if isinstance(roles, dict) else {}
@@ -81,8 +93,16 @@ class Client:
 
         if self.provider_type == "ollama":
             self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or base_url or self.ollama_base
-        else:
+        elif self.provider_type == "openai":
             self.oai_base = os.environ.get("OPENAI_API_BASE") or base_url or self.oai_base
+        elif self.provider_type == "codex_cli":
+            self.cli_command = provider_cfg.get("command", ["codex", "chat"])
+            self.cli_cwd = provider_cfg.get("cwd", self.cli_cwd)
+            self.cli_env = provider_cfg.get("env", self.cli_env)
+            self.cli_timeout = int(provider_cfg.get("timeout", self.cli_timeout))
+            self.cli_input_format = provider_cfg.get("input_format", self.cli_input_format)
+            self.cli_output_clean = bool(provider_cfg.get("output_clean", self.cli_output_clean))
+            self.cli_extra_args = provider_cfg.get("extra_args", [])
 
         # Legacy positional override (provider, model, temp, max_tokens, base_url)
         if legacy_args:
@@ -124,13 +144,16 @@ class Client:
                 self.oai_base = str(overrides["base_url"])
 
     async def chat(self, system: str, user: str) -> str:
-        if self.provider_type == "openai":
+        if self.provider_type == "codex_cli":
+            return await asyncio.to_thread(self._codex_cli_chat, system, user)
+        elif self.provider_type == "openai":
             return await self._openai_chat(system, user)
-        # prefer /api/chat, fallback to /api/generate for older Ollama
-        try:
-            return await self._ollama_chat(system, user)
-        except Exception:
-            return await self._ollama_generate(system, user)
+        else:
+            # prefer /api/chat, fallback to /api/generate for older Ollama
+            try:
+                return await self._ollama_chat(system, user)
+            except Exception:
+                return await self._ollama_generate(system, user)
 
     async def _ollama_chat(self, system: str, user: str) -> str:
         url = f"{self.ollama_base.rstrip('/')}/api/chat"
@@ -196,6 +219,167 @@ class Client:
                 return data["choices"][0]["message"]["content"]
             except Exception:
                 return json.dumps(data)
+
+    def _codex_cli_chat(self, system: str, user: str) -> str:
+        """Execute Codex CLI command and return response with timing and logging."""
+        if not self.cli_command:
+            raise RuntimeError("CODEX_CLI_NO_COMMAND")
+
+        start_time = time.perf_counter()
+
+        # Build command arguments
+        cmd_args = list(self.cli_command)  # Copy the command list
+
+        # Add any extra args from config
+        if hasattr(self, 'cli_extra_args') and self.cli_extra_args:
+            cmd_args.extend(self.cli_extra_args)
+
+        # Prepare input based on format
+        input_data = None
+        if self.cli_input_format == "stdin":
+            # Send parameters through stdin as JSON
+            cmd_args.extend(["--model", self.model])
+            cmd_args.extend(["--temperature", str(self.temperature)])
+            cmd_args.extend(["--max-tokens", str(self.max_tokens)])
+            payload = {
+                "system": system,
+                "user": user,
+                "model": self.model,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens
+            }
+            input_data = json.dumps(payload, ensure_ascii=False)
+        else:
+            # For this specific CLI: only --model flag supported, combine prompts as direct argument
+            cmd_args.extend(["--model", self.model])
+            combined_prompt = f"System: {system}\n\nUser: {user}\n\nSettings: temperature={self.temperature}, max_tokens={self.max_tokens}"
+            cmd_args.extend([combined_prompt])
+
+        try:
+            # Prepare environment
+            env = os.environ.copy()
+            env.update(self.cli_env)
+
+            # Execute command with pty to handle terminal requirements
+            try:
+                import pty
+            except ImportError:
+                # Fallback without pty if not available
+                result = subprocess.run(
+                    cmd_args,
+                    input=input_data,
+                    capture_output=True,
+                    text=True,
+                    cwd=self.cli_cwd,
+                    env=env,
+                    timeout=self.cli_timeout
+                )
+            else:
+                # Use pty to simulate terminal for CLI that requires it
+                master, slave = pty.openpty()
+
+                try:
+                    proc = subprocess.Popen(
+                        cmd_args,
+                        stdin=slave if input_data else None,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        cwd=self.cli_cwd,
+                        env=env,
+                        text=True
+                    )
+
+                    if input_data:
+                        os.write(master, input_data.encode('utf-8'))
+                        os.close(master)
+
+                    try:
+                        stdout, stderr = proc.communicate(timeout=self.cli_timeout)
+                        result = subprocess.CompletedProcess(
+                            args=cmd_args,
+                            returncode=proc.returncode,
+                            stdout=stdout,
+                            stderr=stderr
+                        )
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        raise subprocess.TimeoutExpired(cmd_args, self.cli_timeout)
+                finally:
+                    try:
+                        os.close(slave)
+                    except:
+                        pass
+                    try:
+                        os.close(master)
+                    except:
+                        pass
+
+            duration = time.perf_counter() - start_time
+
+            if result.returncode != 0:
+                error_msg = result.stderr.strip()[:200] if result.stderr else "Unknown error"
+                # Log timing and error for debugging
+                self._log_cli_operation(cmd_args, duration, error_msg, success=False)
+                raise RuntimeError(f"CODEX_CLI_FAILED: {error_msg}")
+
+            response = result.stdout
+
+            # Clean response if configured
+            if self.cli_output_clean:
+                # Remove ANSI escape codes
+                response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
+                # Trim whitespace
+                response = response.strip()
+
+            if not response:
+                self._log_cli_operation(cmd_args, duration, "Empty response", success=False)
+                raise RuntimeError("CODEX_CLI_EMPTY_RESPONSE")
+
+            # Log successful operation
+            self._log_cli_operation(cmd_args, duration, response, success=True)
+
+            return response
+
+        except subprocess.TimeoutExpired:
+            duration = time.perf_counter() - start_time
+            self._log_cli_operation(cmd_args, duration, "Timeout", success=False)
+            raise RuntimeError("CODEX_CLI_TIMEOUT")
+        except FileNotFoundError:
+            raise RuntimeError("CODEX_CLI_NOT_FOUND")
+        except Exception as e:
+            duration = time.perf_counter() - start_time
+            self._log_cli_operation(cmd_args, duration, str(e), success=False)
+            raise RuntimeError(f"CODEX_CLI_ERROR: {str(e)[:200]}")
+
+    def _log_cli_operation(self, cmd_args: list, duration: float, response_or_error: str, success: bool):
+        """Log CLI operation details for monitoring and debugging."""
+        try:
+            role_dir = re.sub(r"[^a-z0-9_\-]", "-", (self.role or "generic"))
+            if not role_dir:
+                role_dir = "generic"
+
+            artifacts_dir = ROOT / "artifacts" / role_dir
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            raw_file = artifacts_dir / "last_raw.txt"
+
+            timestamp = time.time()
+            log_entry = {
+                "timestamp": timestamp,
+                "role": self.role,
+                "provider": "codex_cli",
+                "command": cmd_args,
+                "duration_seconds": round(duration, 3),
+                "response_length": len(response_or_error) if success else 0,
+                "success": success,
+                "response": response_or_error if success else None,
+                "error": response_or_error if not success else None
+            }
+
+            raw_file.write_text(json.dumps(log_entry, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as e:
+            # Don't let logging errors break the flow
+            print(f"[CLI_LOGGING] Failed to log operation: {e}")
+            pass
 
 
 # Backward-compat alias

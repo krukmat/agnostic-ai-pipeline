@@ -4,6 +4,14 @@ providers:
     base_url: http://localhost:11434
   openai:
     type: openai
+  codex_cli:
+    type: codex_cli
+    command: ["codex", "exec"]  # Usar modo no-interactivo con exec
+    cwd: "."
+    timeout: 300
+    input_format: flags  # --model <model> <prompt> directo
+    output_clean: true   # limpiar ANSI codes y espacios
+    extra_args: []  # Sin argumentos extra por ahora
 roles:
   ba:
     provider: ollama
@@ -12,8 +20,8 @@ roles:
     max_tokens: 8192
     top_p: 0.95
   architect:
-    provider: ollama
-    model: qwen2.5-coder:7b
+    provider: codex_cli  # default to Codex CLI for architecture role
+    model: gpt-5-codex
     temperature: 0.2
     max_tokens: 4096
     top_p: 0.95

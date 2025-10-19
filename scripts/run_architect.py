@@ -1,15 +1,20 @@
 from __future__ import annotations
-import os, re, asyncio, pathlib
-from common import load_config, ensure_dirs, PLANNING, ROOT
-from llm import LLMClient
 
-ARCH_PROMPT = ""
+import asyncio
+import json
+import os
+import re
+from typing import List, Tuple
 
-# Select appropriate prompt based on mode
-architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
-if architect_mode == "review_adjustment":
-    # Special prompt for review adjustment mode
-    ARCH_PROMPT = """You are a Technical Requirements Analyst that adjusts a SINGLE user story when it fails QA.
+import yaml
+
+from common import ensure_dirs, PLANNING, ROOT
+from llm import Client
+
+
+DEFAULT_ARCHITECT_PROMPT = (ROOT / "prompts" / "architect.md").read_text(encoding="utf-8")
+
+REVIEW_ADJUSTMENT_PROMPT = """You are a Technical Requirements Analyst that adjusts a SINGLE user story when it fails QA.
 
 IMPORTANT: DO NOT CREATE NEW EPICS OR STORIES. ONLY ADJUST THE EXISTING STORY.
 
@@ -32,239 +37,221 @@ Example output:
 ```
 
 Include specific technical requirements, test cases, missing imports, missing dependencies not installed, validation rules, error codes, and edge cases in the acceptance criteria."""
-else:
-    # Normal architect prompt
-    ARCH_PROMPT = (ROOT/"prompts"/"architect.md").read_text(encoding="utf-8")
 
-async def main():
-    ensure_dirs()
-    cfg = load_config()
 
-    # Check if this is a review adjustment call
-    architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
+def get_architect_prompt(mode: str) -> str:
+    return REVIEW_ADJUSTMENT_PROMPT if mode == "review_adjustment" else DEFAULT_ARCHITECT_PROMPT
+
+
+def load_stories() -> Tuple[str, List[dict]]:
+    stories_file = PLANNING / "stories.yaml"
+    if not stories_file.exists():
+        return ("", [])
+
+    content = stories_file.read_text(encoding="utf-8")
+    try:
+        data = yaml.safe_load(content) or []
+    except Exception:
+        data = []
+
+    if isinstance(data, dict) and "stories" in data:
+        data = data["stories"]
+
+    if not isinstance(data, list):
+        return (content, [])
+    return (content, data)
+
+
+def save_stories(stories: List[dict]) -> None:
+    stories_file = PLANNING / "stories.yaml"
+    stories_file.write_text(
+        yaml.safe_dump(stories, sort_keys=False, allow_unicode=True, default_flow_style=False),
+        encoding="utf-8",
+    )
+
 
 def extract_qa_failure_context(story_id: str) -> str:
-    """Extracts QA failure details from the last report for architect context"""
+    """Extract detailed QA failure context for the requested story."""
     try:
         qa_report_path = ROOT / "artifacts" / "qa" / "last_report.json"
         if not qa_report_path.exists():
             return "No QA report available"
 
-        with open(qa_report_path, 'r', encoding='utf-8') as f:
-            qa_data = json.load(f)
-
+        qa_data = json.loads(qa_report_path.read_text(encoding="utf-8"))
         failure_details = qa_data.get("failure_details", {})
         story_context = qa_data.get("story_context", "")
 
-        if story_context != story_id:
-            return f"QA failures do not correspond to this story ({story_context} vs {story_id})"
+        if story_context and story_context != story_id:
+            return f"QA failures correspond to {story_context}, not {story_id}"
 
-        # Format failure details
-        failure_info = []
+        failure_info: List[str] = []
         for module, details in failure_details.items():
-            if details:
-                errors = details.get("errors", [])
-                warnings = details.get("warnings", [])
-                if errors:
-                    failure_info.append(f"Module {module.upper()}:")
-                    for error in errors:
-                        failure_info.append(f"  - Test {error['test']}: {error['error'][:200]}...")
-                if warnings:
-                    failure_info.append(f"Warnings {module.upper()}:")
-                    for warning in warnings:
-                        failure_info.append(f"  - {warning}")
+            errors = details.get("errors", []) if isinstance(details, dict) else []
+            warnings = details.get("warnings", []) if isinstance(details, dict) else []
+            if errors:
+                failure_info.append(f"Module {module.upper()}:")
+                for error in errors:
+                    failure_info.append(f"  - Test {error.get('test','?')}: {error.get('error','')[:200]}...")
+            if warnings:
+                failure_info.append(f"Warnings {module.upper()}:")
+                for warning in warnings:
+                    failure_info.append(f"  - {warning}")
 
-        if failure_info:
-            return "\n".join(failure_info)
+        return "\n".join(failure_info) if failure_info else "No detailed QA errors extracted"
+    except Exception as exc:
+        return f"Error extracting QA context: {exc}"
+
+
+def try_programmatic_adjustment(story_id: str, detail_level: str) -> bool:
+    """Attempt to adjust a story without invoking the LLM."""
+    stories_content, stories = load_stories()
+    if not stories:
+        print(f"[ARCHITECT] No stories available to adjust for {story_id}")
+        return False
+
+    target = None
+    for story in stories:
+        if isinstance(story, dict) and str(story.get("id")) == story_id:
+            target = story
+            break
+
+    if not target:
+        print(f"[ARCHITECT] Story {story_id} not found for programmatic adjustment")
+        return False
+
+    acceptance = target.get("acceptance", [])
+    if not isinstance(acceptance, list):
+        acceptance = [acceptance] if acceptance else []
+
+    additions: List[str] = []
+    level = detail_level.lower()
+    if level == "high":
+        additions = [
+            "Documentar validaciones exhaustivas con formatos y límites claros.",
+            "Definir códigos HTTP o mensajes de error específicos para cada fallo esperado.",
+            "Cubrir escenarios edge incluyendo datos nulos, duplicados o inconsistentes.",
+        ]
+        print(f"[ARCHITECT] Adding HIGH detail acceptance criteria to {story_id}")
+    elif level == "maximum":
+        qa_context = extract_qa_failure_context(story_id)
+        if "pytest_execution" in qa_context:
+            additions = [
+                "Configurar correctamente backend/.venv/bin/pytest y asegurar su disponibilidad.",
+                "Verificar instalación de dependencias de testing y rutas relativas.",
+            ]
+            print(f"[ARCHITECT] Adding pytest-focused fixes to {story_id}")
         else:
-            return "Could not analyze specific failure details from QA"
+            additions = [
+                "Aplicar validaciones con expresiones regulares para cada entrada crítica.",
+                "Agregar logging detallado a nivel debug para rastrear incidentes.",
+                "Manejar timeouts y reconexiones en llamados externos involucrados.",
+            ]
+            print(f"[ARCHITECT] Adding MAXIMUM technical requirements to {story_id}")
 
-    except Exception as e:
-        return f"Error extracting QA context: {e}"
+    for item in additions:
+        if item not in acceptance:
+            acceptance.append(item)
 
-def get_story_priority(stories_content: str, story_id: str) -> str:
-    """Extrae la prioridad de una historia específica del contenido YAML"""
-    import yaml
-    try:
-        stories = yaml.safe_load(stories_content)
-        if isinstance(stories, dict) and "stories" in stories:
-            stories = stories["stories"]
+    if not additions:
+        print(f"[ARCHITECT] No programmatic additions computed for {story_id} (detail level {detail_level})")
+        return False
 
-        for story in stories:
-            if isinstance(story, dict) and story.get("id") == story_id:
-                return story.get("priority", "P2")
-        return "P2"
-    except Exception as e:
-        print(f"Error parsing stories for priority: {e}")
-        return "P2"
+    target["acceptance"] = acceptance
+    target["status"] = "todo"
+    save_stories(stories)
+    print(f"[ARCHITECT] Programmatic adjustment complete for {story_id}")
+    return True
 
 
-async def main():
+def mark_story_todo(story_id: str) -> bool:
+    """Fallback: mark story as todo when adjustments cannot be automated."""
+    _, stories = load_stories()
+    if not stories:
+        return False
+
+    updated = False
+    for story in stories:
+        if isinstance(story, dict) and str(story.get("id")) == story_id:
+            story["status"] = "todo"
+            updated = True
+            break
+
+    if not updated:
+        return False
+
+    save_stories(stories)
+    return True
+
+
+async def main() -> None:
     ensure_dirs()
-    cfg = load_config()
 
-    # Check if this is a review adjustment call
     architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
-
-    role = cfg["roles"]["architect"]
-    prov = role.get("provider","ollama")
-    base = cfg["providers"]["ollama"].get("base_url","http://localhost:11434") if prov=="ollama" else cfg["providers"].get("openai",{}).get("base_url")
-
-    # Read requirements if available
-    requirements_file = PLANNING/"requirements.yaml"
-    requirements_content = ""
-    if requirements_file.exists():
-        requirements_content = requirements_file.read_text(encoding="utf-8")
-
-    client = LLMClient(prov, role["model"], role.get("temperature",0.2), role.get("max_tokens",2048), base)
-    concept = os.environ.get("CONCEPT","")
-
-    if architect_mode == "review_adjustment":
-        # Mode for adjusting stories in review
-        story_id = os.environ.get("STORY", "")
-        detail_level = os.environ.get("DETAIL_LEVEL", "medium")
+    concept = os.environ.get("CONCEPT", "").strip()
+    story_id = os.environ.get("STORY", "").strip()
+    detail_level = os.environ.get("DETAIL_LEVEL", "medium")
+    try:
         iteration_count = int(os.environ.get("ITERATION_COUNT", "1"))
+    except ValueError:
+        iteration_count = 1
 
-        if story_id:
-            # Read current stories to find the one in review
-            stories_file = PLANNING/"stories.yaml"
-            if stories_file.exists():
-                stories_content = stories_file.read_text(encoding="utf-8")
+    requirements_path = PLANNING / "requirements.yaml"
+    requirements_content = requirements_path.read_text(encoding="utf-8") if requirements_path.exists() else ""
+    stories_content, _stories_snapshot = load_stories()
 
-                # Adjust detail level based on iteration
-                # DIRECT TEMPLATE-BASED ADJUSTMENTS - More reliable than LLM
-                print(f"[ARCHITECT] Aplicando ajustes programáticos para {story_id} - nivel {detail_level}")
+    if architect_mode == "review_adjustment" and story_id:
+        print(f"[ARCHITECT] Programmatic review adjustment for {story_id} (level={detail_level}, iteration={iteration_count})")
+        if try_programmatic_adjustment(story_id, detail_level):
+            print(f"✓ Arquitecto ajustó criterios de {story_id} (programático)")
+            return
+        if mark_story_todo(story_id):
+            print(f"✓ Arquitecto marcó {story_id} como todo (fallback)")
+            return
+        print(f"[ARCHITECT] Programmatic adjustment failed; falling back to LLM for {story_id}")
 
-                # Parse current stories
-                import yaml
-                try:
-                    stories = yaml.safe_load(stories_content)
-                    if isinstance(stories, dict) and "stories" in stories:
-                        stories = stories["stories"]
-                    elif isinstance(stories, list):
-                        pass
-                    else:
-                        raise ValueError("Invalid stories format")
+    arch_prompt = get_architect_prompt(architect_mode)
 
-                    # Find the story to adjust
-                    story_found = None
-                    for story in stories:
-                        if isinstance(story, dict) and story.get("id") == story_id:
-                            story_found = story
-                            break
-
-                    if story_found:
-                        acceptance = story_found.get("acceptance", [])
-                        if not isinstance(acceptance, list):
-                            acceptance = [acceptance] if acceptance else []
-
-                        # Apply template-based improvements based on detail level
-                        if detail_level == "high":
-                            # Add technical requirements template
-                            technical_reqs = [
-                                "Implementar validaciones específicas con formatos y límites claros",
-                                "Definir códigos HTTP apropiados para diferentes escenarios de error",
-                                "Incluir manejo de casos edge como datos nulos o inválidos"
-                            ]
-                            acceptance.extend(technical_reqs)
-                            print(f"[ARCHITECT] Added HIGH technical requirements to criteria")
-
-                        elif detail_level == "maximum":
-                            qa_context = extract_qa_failure_context(story_id)
-                            # Add specific improvements based on QA errors
-                            if "pytest_execution" in qa_context:
-                                acceptance.append("Configurar entorno pytest correctamente en backend/.venv/bin/pytest")
-                                acceptance.append("Asegurar que dependencias de testing estén instaladas")
-                                print("[ARCHITECT] Added pytest-specific requirements to criteria")
-                            else:
-                                technical_reqs = [
-                                    "Validar todos los inputs con regex patterns específicos",
-                                    "Implementar logging detallado para debugging",
-                                    "Verificar manejo de conexiones de red y timeouts"
-                                ]
-                                acceptance.extend(technical_reqs)
-                                print(f"[ARCHITECT] Added MAXIMUM technical requirements to criteria")
-
-                        # Update the story
-                        story_found["acceptance"] = acceptance
-                        story_found["status"] = "todo"  # Ready for dev rework
-
-                        # Save back to file
-                        with open(PLANNING / "stories.yaml", 'w', encoding='utf-8') as f:
-                            yaml.safe_dump(stories, f, sort_keys=False, allow_unicode=True, default_flow_style=False)
-
-                        print(f"✓ Arquitecto ajustó criterios de {story_id} (programáticamente)")
-                        return  # Exit successfully after programatic adjustment
-
-                except Exception as e:
-                    print(f"[ARCHITECT] Error en ajustes programáticos: {e}")
-                    # Fall back to minimal fallback - just mark story as todo
-                    print(f"[ARCHITECT] Fallback: marking {story_id} as todo for reattempt")
-
-                    try:
-                        import yaml
-                        stories = yaml.safe_load(stories_content)
-                        if isinstance(stories, dict) and "stories" in stories:
-                            stories = stories["stories"]
-                        elif isinstance(stories, list):
-                            pass
-
-                        for story in stories:
-                            if isinstance(story, dict) and story.get("id") == story_id:
-                                story["status"] = "todo"
-                                break
-
-                        with open(PLANNING / "stories.yaml", 'w', encoding='utf-8') as f:
-                            yaml.safe_dump(stories, f, sort_keys=False, allow_unicode=True, default_flow_style=False)
-
-                        print(f"✓ Arquitecto marcó {story_id} como todo (fallback)")
-                        return
-
-                    except Exception as e2:
-                        print(f"[ARCHITECT] Critical fallback error: {e2}")
-                        return
-        else:
-            user_input = f"REQUIREMENTS:\n{requirements_content}\n\nINSTRUCTION: Revisa y ajusta las historias que están en review para mejorar su claridad técnica y criterios de aceptación."
-    else:
-        # Normal planning mode - BREAKDOWN INCREMENTAL para proyectos enterprise
-        user_input = f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\nFollow the exact output format."
-
-    # Log the input for debugging
-    print(f"[DEBUG] Architect input length: {len(user_input)}")
-    print(f"[DEBUG] Architect mode: {architect_mode}")
     if architect_mode == "review_adjustment":
-        print(f"[DEBUG] Reviewing story: {story_id}, level: {detail_level}, iteration: {iteration_count}")
+        user_input = (
+            f"CURRENT_STORIES:\n{stories_content}\n\n"
+            f"DETAIL_LEVEL: {detail_level}\nITERATION_COUNT: {iteration_count}\n"
+            "INSTRUCTION: Ajusta únicamente las historias en estado in_review o bloqueadas, "
+            "añadiendo criterios de aceptación técnicos y accionables."
+        )
+        if story_id:
+            user_input += f"\nTARGET_STORY: {story_id}"
+    else:
+        user_input = (
+            f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\n"
+            "Follow the exact output format."
+        )
 
-    print(f"Using CONCEPT: {os.environ.get('CONCEPT', 'No concept defined')}")
+    client = Client(role="architect")
+    print(f"Using CONCEPT: {concept or 'No concept defined'}")
     print(f"Architect mode: {architect_mode}")
-    print(f"Model: {role['model']}, Temp: {role.get('temperature', 0.2)}, Max tokens: {role.get('max_tokens', 2048)}")
-    print(f"System prompt length: {ARCH_PROMPT}")
-    print(f"User input: {user_input}...")
+    print(
+        f"Provider: {client.provider_type} | Model: {client.model} | "
+        f"Temp: {client.temperature} | Max tokens: {client.max_tokens}"
+    )
+    print(f"System prompt length: {len(arch_prompt)}")
+    print(f"User input preview: {user_input[:300]}...")
 
-    text = await client.chat(system=ARCH_PROMPT, user=user_input)
+    text = await client.chat(system=arch_prompt, user=user_input)
 
-    # DEBUG: Save full response
     (ROOT / "debug_architect_response.txt").write_text(text, encoding="utf-8")
 
-    def grab(tag, label):
-        m = re.search(rf"```{tag}\s+{label}\s*([\s\S]*?)```", text)
-        return m.group(1).strip() if m else ""
+    def grab(tag: str, label: str) -> str:
+        match = re.search(rf"```{tag}\s+{label}\s*([\s\S]*?)```", text)
+        return match.group(1).strip() if match else ""
 
-    # Extract sections
-    prd_content = grab("yaml","PRD")
-    arch_content = grab("yaml","ARCH")
-    epics_content = grab("yaml","EPICS")
-    stories_content = grab("yaml","STORIES")
-    tasks_content = grab("csv","TASKS")
-
-    # Write sections to files
-    (PLANNING/"prd.yaml").write_text(prd_content, encoding="utf-8")
-    (PLANNING/"architecture.yaml").write_text(arch_content, encoding="utf-8")
-    (PLANNING/"epics.yaml").write_text(epics_content, encoding="utf-8")
-    (PLANNING/"stories.yaml").write_text(stories_content, encoding="utf-8")
-    (PLANNING/"tasks.csv").write_text(tasks_content, encoding="utf-8")
+    (PLANNING / "prd.yaml").write_text(grab("yaml", "PRD"), encoding="utf-8")
+    (PLANNING / "architecture.yaml").write_text(grab("yaml", "ARCH"), encoding="utf-8")
+    (PLANNING / "epics.yaml").write_text(grab("yaml", "EPICS"), encoding="utf-8")
+    (PLANNING / "stories.yaml").write_text(grab("yaml", "STORIES"), encoding="utf-8")
+    (PLANNING / "tasks.csv").write_text(grab("csv", "TASKS"), encoding="utf-8")
 
     print("✓ planning written under planning/")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

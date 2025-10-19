@@ -217,6 +217,37 @@ roles:
     temperature: 0.2
 ```
 
+### Local Codex CLI Provider (Alternative)
+```yaml
+# For using local CLI instead of Ollama/OpenAI
+providers:
+  codex_cli:
+    type: codex_cli
+    command: ["codex", "exec"]  # Usar 'exec' para modo no-interactivo
+    cwd: "."
+    timeout: 300
+    input_format: flags         # 'flags' para --model + prompt directo
+    output_clean: true          # Limpieza ANSI codes automática
+    extra_args: []              # Argumentos adicionales opcionales
+
+roles:
+  architect:                   # ✅ Cualquier rol puede usar CLI
+    provider: codex_cli
+    model: gpt-5-codex        # Modelo específico para el CLI
+    temperature: 0.2
+    max_tokens: 4096
+  dev:
+    provider: codex_cli        # Cambiar provider por rol
+    model: codex-local         # Distintos modelos por rol posible
+    temperature: 0.2
+```
+
+**✅ Proven Working Configuration:**
+- Architect role tested with `gpt-5-codex` via `make plan`
+- Generates complete user stories and epics
+- Logging in `artifacts/architect/last_raw.txt`
+- Zero API keys required
+
 ### Demonstrated Enterprise Application
 ```bash
 Result: 15 stories → complete e-commerce → >200 passing tests

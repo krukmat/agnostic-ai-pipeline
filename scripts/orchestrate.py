@@ -441,14 +441,44 @@ def main():
 
         append_note(f"- Dev implementando {sid} (iteración {story_iteration_count[sid]})")
 
-        # 3) DEV
-        rc_dev = run_cmd([str(ROOT/".venv/bin/python"), str(ROOT/"scripts"/"run_dev.py")], env={**os.environ, "STORY": sid, "DEV_RETRIES": os.environ.get("DEV_RETRIES","3")})
-        if rc_dev != 0:
-            append_note(f"- Dev no pudo implementar {sid} (rc={rc_dev}). Revisa artifacts/auto-dev.")
-            story["status"] = "blocked"
-            save_stories(stories)
-            print(f"[loop] {sid} -> blocked (Dev rc {rc_dev})")
-            continue
+        # 3) DEV - with CLI error handling
+        dev_env = {**os.environ, "STORY": sid, "DEV_RETRIES": os.environ.get("DEV_RETRIES","3")}
+        try:
+            rc_dev = run_cmd([str(ROOT/".venv/bin/python"), str(ROOT/"scripts"/"run_dev.py")], env=dev_env)
+            if rc_dev != 0:
+                append_note(f"- Dev no pudo implementar {sid} (rc={rc_dev}). Revisa artifacts/auto-dev.")
+                story["status"] = "blocked"
+                save_stories(stories)
+                print(f"[loop] {sid} -> blocked (Dev rc {rc_dev})")
+                continue
+        except RuntimeError as e:
+            error_str = str(e)
+            if error_str.startswith("CODEX_"):
+                # Handle CLI-specific errors
+                if "CODEX_CLI_NOT_FOUND" in error_str or "CODEX_CLI_FAILED" in error_str:
+                    # Fatal error - CLI not available or command failed
+                    append_note(f"- Dev bloqueado fatal: {sid} - CLI error: {error_str}")
+                    story["status"] = "blocked_fatal"
+                    save_stories(stories)
+                    print(f"[loop] {sid} -> blocked_fatal (CLI error: {error_str})")
+                    continue
+                elif "CODEX_CLI_TIMEOUT" in error_str:
+                    # Timeout - retry logic (similar to connection issues)
+                    append_note(f"- Dev timeout CLI: {sid} - {error_str} - considera rollback a ollama/openai")
+                    story["status"] = "blocked_timeout"
+                    save_stories(stories)
+                    print(f"[loop] {sid} -> blocked_timeout (CLI timeout: {error_str})")
+                    continue
+                else:
+                    # Other CLI errors - mark as blocked
+                    append_note(f"- Dev error CLI: {sid} - {error_str}")
+                    story["status"] = "blocked"
+                    save_stories(stories)
+                    print(f"[loop] {sid} -> blocked (CLI error: {error_str})")
+                    continue
+            else:
+                # Re-raise non-CLI RuntimeErrors
+                raise
 
         # 4) QA
         qa_env = {**os.environ, "ALLOW_NO_TESTS": "1" if allow_no_tests else "0"}
