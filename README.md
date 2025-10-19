@@ -1,296 +1,161 @@
-# AGNOSTIC AI PIPELINE 🏗️
+# Loop Release Workflow – AGNOSTIC AI PIPELINE 🏗️
 
-**Enterprise-Grade AI Pipeline for Automated Application Generation**
+**Deliver finished products through repeatable BA → Architect → Dev → QA release loops.**
 
-Autonomous system that generates **complete commercial web applications** with integrated QA, Intelligent Architecture, and End-to-End Quality Cycles.
+---
 
-## 🔥 Main Features
+## Why Loop Releases Matter
 
-- **🏆 INTEGRAL TDD**: Tests are mandatory part of each user story - no separate test stories
-- **🧠 Intelligent QA**: Severity analysis for selective force-approval (only P1/P0 with valid reasons)
-- **🔄 AUTO-RESTART**: Automatic quality assessment and rework when necessary
-- **🎯 Intelligent Dependencies**: Stories automatically released when dependencies are completed
-- **📊 Advanced Quality Gates**: Multiple states (debugging, quality_gate_waiting, blocked_various)
-- **👐 Modular Architecture**: FastAPI + Express.js + Optional React Native
-- **🚀 End-to-End Generation**: From business concept → deployable functional application
+- Wraps the entire multi-agent pipeline into a single iteration artifact.
+- Guarantees every release includes stories, code, tests, QA evidence, and reproducible state.
+- Enables strict or exploratory runs (QA strict vs relaxed) while preserving audit trails.
 
-## 📊 Proven Results
+---
 
-**Generates complete applications:** 15 user stories → functional e-commerce (auth, catalog, cart, checkout) with >200 passing tests.
+## 1. Loop Release at a Glance
 
-**Executions:**
 ```bash
-15 stories completed in 13 iterations = 100% success rate
-System demonstrated: Full TDD + Intelligent QA + Selective force-approval
+make iteration CONCEPT="Login MVP" LOOPS=2 ITERATION_NAME="release-2025Q1"
 ```
 
-## 🎯 System Differentiation
+- **CONCEPT** – Plain-text business goal consumed by BA and Architect.
+- **LOOPS** – Number of Dev→QA passes in the iteration (defaults to 1).
+- **ITERATION_NAME** – Human-readable label for snapshots under `artifacts/iterations/`.
+- **ALLOW_NO_TESTS** – Set to `0` for strict QA, `1` for exploratory prototyping.
+- **SKIP_BA / SKIP_PLAN** – Reuse existing requirements/stories without re-running those roles.
 
-### ❌ Before (Basic Systems)
-```yaml
-- Some basic dev tool
-- Optional/desynchronized tests
-- Manual/blind force-approval
-- Stories separated from quality
+Each call orchestrates BA → Architect → Dev → QA, snapshots the full state, and writes a `summary.json` with story status counts and configuration flags.
+
+---
+
+## 2. Release Loop Lifecycle
+
+1. **Concept intake** – BA converts the concept into requirements (`planning/requirements.yaml`).
+2. **Architecture & stories** – Architect creates PRD, architecture, epics, stories, and tasks.
+3. **Development** – Dev agent iterates through stories, updating `project/` code and tests.
+4. **Quality gate** – QA executes pytest/Jest suites and enforces TDD:
+   - Missing tests → `blocked_no_tests`
+   - Test failures → `in_review` + auto Architect adjustment (`ARCHITECT_INTERVENTION=1`)
+   - Severity-based force approval allowed after ≥3 retries on P1/P0 stories
+5. **Snapshot** – `artifacts/iterations/<iteration>/` stores planning, project, and `summary.json`.
+6. **Follow-up** – Use `make loop MAX_LOOPS=1` to retry blocked stories with the refined criteria.
+
+---
+
+## 3. Anatomy of a Snapshot
+
+```
+artifacts/iterations/<iteration-name>/
+├── planning/
+│   ├── requirements.yaml
+│   ├── prd.yaml
+│   ├── architecture.yaml
+│   ├── epics.yaml
+│   ├── stories.yaml
+│   └── tasks.csv
+├── project/
+│   ├── backend-fastapi/
+│   └── web-express/
+└── summary.json
 ```
 
-### ✅ Now (AGNOSTIC AI PIPELINE)
-```yaml
-- Mandatory TDD: integral tests in each story
-- Intelligent QA: force-approval only for P1/P0 with severity analysis
-- Dependency system: automatic release when dependencies complete
-- Advanced Quality Gates: debugging, blocked_critical, quality_gate_waiting, etc.
-```
+`summary.json` includes:
+- Concept used, timestamps, loop count, QA strictness.
+- Counts of stories by status (`done`, `blocked`, `pending`).
+- Lists of story IDs per status for quick inspection.
 
-## 🚀 Quick Start
+---
 
-### 1. Optimized Setup
+## 4. Supporting Infrastructure
+
+### 4.1 Project Defaults Skeleton
+
+`project-defaults/` provides a minimal scaffold copied into `project/` whenever missing:
+- `backend-fastapi/app/__init__.py` ensures imports like `from app.foo import ...` always work.
+- Placeholder test packages and `.gitkeep` files for web assets.
+- Stub modules for FastAPI/Pydantic (optional) so QA runs even if dependencies are offline.
+
+`common.ensure_dirs()` clones these defaults without overwriting existing files, meaning release loops always start from a consistent baseline after cleanup.
+
+### 4.2 Multi-Stack Extensibility & Providers
+
+- Roles are configured in `config.yaml`; each loop release can target Ollama, OpenAI, or Codex CLI per agent.
+- Extending to new stacks (e.g., mobile apps, additional services) is as simple as adding a skeleton under `project-defaults/`—release loops will copy the structure automatically.
+- `scripts/llm.py` handles provider selection, including CLI logging per role under `artifacts/<role>/last_raw.txt`.
+
+---
+
+## 5. Getting Started (Strict Release)
+
+1. **Install dependencies**
+   ```bash
+   make setup
+   ```
+2. **Set providers/models**
+   ```bash
+   make set-role role=architect provider=codex_cli model="gpt-5-codex"
+   make set-role role=dev provider=ollama model="mistral:7b-instruct"
+   ```
+3. **Run a strict loop release**
+   ```bash
+   make iteration CONCEPT="CoffeeClub Inventory & Ordering" LOOPS=2 ALLOW_NO_TESTS=0
+   ```
+4. **Inspect results**
+   ```bash
+   cat artifacts/iterations/<iteration>/summary.json
+   tree artifacts/iterations/<iteration>/
+   ```
+5. **Retry blocked stories**
+   ```bash
+   make loop MAX_LOOPS=1
+   ```
+
+---
+
+## 6. Advanced Controls
+
+| Flag | Purpose |
+| ---- | ------- |
+| `ALLOW_NO_TESTS` | TDD strictness (0 = strict, 1 = relaxed) |
+| `ARCHITECT_INTERVENTION` | Enables auto story refinements when QA fails |
+| `STRICT_TDD` | Forces Architect to embed additional TDD requirements |
+| `LOOP_MODE=dev_only` | Skip QA for exploratory coding loops |
+| `SKIP_BA` / `SKIP_PLAN` | Reuse existing requirements/stories for incremental releases |
+
+Use these flags in `make iteration` or directly in `make loop` for lower-level control.
+
+---
+
+## 7. Reference Commands
+
 ```bash
-make setup
-# Installs: httpx, PyYAML, typer, rich, pytest
+# One-off actions
+make ba                          # BA → requirements
+make plan                        # Architect → PRD, epics, stories, tasks
+make dev STORY=S1                # Dev implements a specific story
+make qa QA_RUN_TESTS=1           # Run QA with tests
 
-make set-role role=ba        provider=ollama model="granite4:latest"
-make set-role role=architect provider=ollama model="qwen2.5-coder:32b-instruct-q8_0"
-make set-role role=dev       provider=ollama model="mistral:7b-instruct-v0.1"
-make set-role role=qa        provider=ollama model="qwen2.5-coder:7b"
-```
-
-### 2. Business Concept → Complete Application
-```bash
-read -r -d '' CONCEPT <<'TXT'
-Product: E-commerce MVP (FastAPI backend, Express.js frontend).
-Features: signup/login, catalog, shopping cart, simulated checkout.
-Goal: Mobile-first retail platform with quality focus.
-TXT
-
-# Execute complete pipeline
-ALLOW_NO_TESTS=1 MAX_LOOPS=20 ARCHITECT_INTERVENTION=1 make ba plan loop
-# Result: Complete application generated automatically
-```
-
-### 3. Iterative Development
-```bash
-# Automatically assess quality
-make loop MAX_LOOPS=10
-
-# With intelligent force-approval (only critical P1/P0)
-ARCHITECT_INTERVENTION=1 make loop
-
-# Development-only mode (no QA)
-LOOP_MODE=dev_only make dev-loop
-```
-
-### 4. Product Iteration Loop
-```bash
-make iteration CONCEPT="Login MVP" LOOPS=2
-# Optional flags:
-#   ALLOW_NO_TESTS=1   -> Permite QA laxo durante exploración
-#   SKIP_BA=1          -> Reutiliza requirements existentes
-#   SKIP_PLAN=1        -> Reutiliza stories vigentes
-```
-- Ejecuta BA → Architect → Dev→QA en cadena para cada iteración solicitada.
-- Al finalizar, genera un snapshot en `artifacts/iterations/<nombre>` con planning, proyecto y `summary.json` para trazabilidad.
-- Usa `ITERATION_NAME="beta-2025Q1"` para etiquetar explícitamente la entrega.
-
-## 🚛 Loop Release Workflow
-- Un “release loop” corresponde a una iteración completa desde el concepto hasta QA aprobado.
-- `scripts/run_iteration.py` orquesta el flujo y asegura que cualquier estructura faltante en `project/` se restaure desde `project-defaults/`.
-- `make iteration` acepta los siguientes parámetros clave:
-  - `CONCEPT="..."` → requisito de negocio para BA/Architect.
-  - `LOOPS=n` → cuántas pasadas Dev→QA ejecutar para depurar historias pendientes.
-  - `ALLOW_NO_TESTS=0/1` → ejecuta QA en modo estricto o permisivo.
-  - `ITERATION_NAME="release-X"` → etiqueta la entrega y su snapshot.
-- Cada release deja evidencia auditable:
-  - `planning/` y `project/` guardados en `artifacts/iterations/<iteration>/`.
-  - `summary.json` con métricas de historias (`done`, `blocked`, `pending`) y configuración usada.
-- Para reintentar historias bloqueadas tras una iteración, ejecuta `make loop MAX_LOOPS=1` con el mismo concepto; `ARCHITECT_INTERVENTION=1` (por defecto) re-planifica automáticamente cuando QA falla.
-
-### Project Defaults
-- El repositorio incluye `project-defaults/`, que contiene la estructura mínima para backend y frontend.
-- Cada vez que un flujo llama a `common.ensure_dirs()`, cualquier archivo ausente en `project/` se replica desde este esqueleto sin sobrescribir cambios existentes.
-- Útil tras limpiar `project/` o al iniciar un nuevo concepto: garantiza que existan paquetes (`app/__init__.py`), carpetas de tests y placeholders básicos.
-
-## 🏗️ Supported Architectures
-
-### Full-Stack Web Application
-```
-Frontend: Express.js + Node.js
-Backend: FastAPI + Python
-Database: ORM (SQLAlchemy/SQLite)
-Testing: pytest + Jest
-```
-
-### Enterprise E-commerce (Demonstrated)
-- ✅ **Authentication**: User registration/login with 2FA
-- ✅ **Catalog**: Product listing with search/filter
-- ✅ **Shopping Cart**: Add/remove/update with totals
-- ✅ **Checkout**: Simulated payment processing
-- ✅ **Testing**: >200 automated tests
-
-## 🔧 Advanced Features
-
-### TDD Enforcement (Mandatory Test-Driven Development)
-```yaml
-# All stories REQUIRE integral tests:
-- id: S1
-  description: User registration with email verification
-  acceptance:
-    - User enters details and receives confirmation email
-    - Verification redirects to login
-  tests_required: true  # AUTOMATIC - not optional
-```
-
-### Intelligent QA Severity Analysis
-```
-❌ CRITICAL ERRORS (NEVER force-approve):
-   - SyntaxError, ImportError, environment_fail
-
-✅ FORCE-APPLICABLE (P1/P0 ≥3 iterations):
-   - Coverage issues, timeout, temporary issues
-
-🔧 TEST-ONLY (Code OK, tests fail):
-   - Assertion failures, separate test stories
-```
-
-### Dependency Management System
-```
-✅ DEPENDENT STORY RELEASED:
-   - Parent story ← quality_gate_waiting
-   - Test story completes → parent ← todo automatically
-   - Intelligent dependency system
-```
-
-### Advanced Quality Gates
-```yaml
-status: done                    # Successfully completed
-status: blocked_fatal          # Critical errors - permanently blocked
-status: done_force_architect    # Force-approved P1/P0 by architect
-status: code_done_tests_pending # Code OK, tests separated
-status: quality_gate_waiting   # Waiting for test validation
-status: debug_only             # Debugging mode
-```
-
-## 📊 System Architectures
-
-### Intelligent Pipeline Flow
-```
-BA (Business Analysis)
-  ↓
-Architect (Technical Planning + Test Integration)
-  ↓
-Dev (Code + Tests Generation)
-  ↓
-QA (TDD Validation + Severity Analysis)
-  ↓
-[I/F Loop] Architect Intervention (Intelligent force-approval)
-  ↓
-[NEXT CYCLE] Re-evaluation when ALL STORIES COMPLETE
-```
-
-### Quality Assurance Intelligence
-```
-❌ FAIL → SEVERITY ANALYSIS → APPROPRIATE PLACEMENT
-✅ PASS → DEPENDENCY RESOLUTION → WAITING STORIES RELEASED
-🔄 PERSISTENT → ESCALATION → ARCHITECT INTERVENTION
-```
-
-## 🔍 Common Commands
-
-### Complete Command Interface
-```bash
-# Configuration
-make setup                           # Install dependencies
-make set-role role=<ba|architect|dev|qa> provider=ollama model=<model>
-make set-quality profile=<low|normal|high>
-
-# Pipeline Stages
-make ba                              # Business analysis → requirements.yaml
-make plan                            # Architect → planning/{epics,stories,tasks}
-make dev STORY=S1                    # Developer → code in project/
-make qa QA_RUN_TESTS=1               # QA validation
-
-# Integration Cycles
-make loop MAX_LOOPS=10               # Dev→QA automatic loop
-make loop-dev                        # Development-only cycles
-make iteration CONCEPT="Login MVP" LOOPS=2  # BA→Architect→Dev→QA + snapshot in artifacts/iterations/
-
-# Quality Intelligence
-ARCHITECT_INTERVENTION=1 make loop  # Intelligent force-approval
-ALLOW_NO_TESTS=1 make loop          # Permissive for bootstrap
-STRICT_TDD=1 make plan              # Enforce TDD from architect
+# Orchestration
+make loop MAX_LOOPS=10           # Dev↔QA loop (includes Architect adjustments)
+make iteration CONCEPT="..."     # Full loop release with snapshot
 
 # Utilities
-./.venv/bin/python scripts/fix_stories.py     # Normalize stories
-./.venv/bin/python scripts/reopen_stories.py  # Reset stories to todo
-make show-config                     # Display current settings
+./.venv/bin/python scripts/fix_stories.py    # Normalize planning/stories.yaml
+./.venv/bin/python scripts/reopen_stories.py # Reset stories to todo
+make show-config                             # Inspect resolved provider/model per role
 ```
 
-## ⚡ Optimized Configuration (2025)
+---
 
-### Recommended Models - Performance/Quality Balance
-```yaml
-roles:
-  ba:
-    provider: ollama
-    model: granite4:latest                  # ⚡ Fast BA analysis
-    temperature: 0.4
-  architect:
-    provider: ollama
-    model: qwen2.5-coder:32b-instruct-q8_0   # 📐 Precision planning + TDD
-    temperature: 0.2
-  dev:
-    provider: ollama
-    model: mistral:7b-instruct-v0.1          # 🛠️ Proven code+tests generation
-    temperature: 0.2
-  qa:
-    provider: ollama
-    model: qwen2.5-coder:7b                  # 🔍 Quality analysis
-    temperature: 0.2
-```
+## 8. Proven Outcome
 
-### Local Codex CLI Provider (Alternative)
-```yaml
-# For using local CLI instead of Ollama/OpenAI
-providers:
-  codex_cli:
-    type: codex_cli
-    command: ["codex", "exec"]  # Usar 'exec' para modo no-interactivo
-    cwd: "."
-    timeout: 300
-    input_format: flags         # 'flags' para --model + prompt directo
-    output_clean: true          # Limpieza ANSI codes automática
-    extra_args: []              # Argumentos adicionales opcionales
+Loop releases have already generated:
+- A full e-commerce platform (auth, catalog, cart, checkout) across 15 stories.
+- >200 automated tests validated by QA in strict mode.
+- Zero manual coding once the concept is defined.
 
-roles:
-  architect:                   # ✅ Cualquier rol puede usar CLI
-    provider: codex_cli
-    model: gpt-5-codex        # Modelo específico para el CLI
-    temperature: 0.2
-    max_tokens: 4096
-  dev:
-    provider: codex_cli        # Cambiar provider por rol
-    model: codex-local         # Distintos modelos por rol posible
-    temperature: 0.2
-```
+---
 
-**✅ Proven Working Configuration:**
-- Architect role tested with `gpt-5-codex` via `make plan`
-- Generates complete user stories and epics
-- Logging in `artifacts/architect/last_raw.txt`
-- Zero API keys required
+## 9. Conclusion
 
-### Demonstrated Enterprise Application
-```bash
-Result: 15 stories → complete e-commerce → >200 passing tests
-Architecture: Fully-tested FastAPI + Express.js application
-Capabilities: Auth, Product catalog, Shopping cart, Simulated checkout
-Quality: 100% success rate in end-to-end pipeline
-```
-
-## 🌟 Conclusion
-
-**This is not a development tool - it is an AI pipeline for AUTOMATED GENERATION OF COMMERCIAL APPLICATIONS.**
-
-Generates professional code with mandatory integrated tests, intelligent QA, and automatic quality cycles. Completely demonstrated capable of creating enterprise-scale applications.
-
-**Production-ready - generates real software with guaranteed quality.** 🚀
+Treat each loop release as a self-contained product increment: enter a concept, run `make iteration`, and receive code, tests, and documentation. The AGNOSTIC AI PIPELINE turns this workflow into a repeatable process that scales from MVPs to enterprise backlogs while maintaining audit-ready artifacts. 🚀
