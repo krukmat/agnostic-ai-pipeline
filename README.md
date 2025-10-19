@@ -80,6 +80,18 @@ ARCHITECT_INTERVENTION=1 make loop
 LOOP_MODE=dev_only make dev-loop
 ```
 
+### 4. Product Iteration Loop
+```bash
+make iteration CONCEPT="Login MVP" LOOPS=2
+# Optional flags:
+#   ALLOW_NO_TESTS=1   -> Permite QA laxo durante exploración
+#   SKIP_BA=1          -> Reutiliza requirements existentes
+#   SKIP_PLAN=1        -> Reutiliza stories vigentes
+```
+- Ejecuta BA → Architect → Dev→QA en cadena para cada iteración solicitada.
+- Al finalizar, genera un snapshot en `artifacts/iterations/<nombre>` con planning, proyecto y `summary.json` para trazabilidad.
+- Usa `ITERATION_NAME="beta-2025Q1"` para etiquetar explícitamente la entrega.
+
 ## 🏗️ Supported Architectures
 
 ### Full-Stack Web Application
@@ -182,6 +194,7 @@ make qa QA_RUN_TESTS=1               # QA validation
 # Integration Cycles
 make loop MAX_LOOPS=10               # Dev→QA automatic loop
 make loop-dev                        # Development-only cycles
+make iteration CONCEPT="Login MVP" LOOPS=2  # BA→Architect→Dev→QA + snapshot in artifacts/iterations/
 
 # Quality Intelligence
 ARCHITECT_INTERVENTION=1 make loop  # Intelligent force-approval

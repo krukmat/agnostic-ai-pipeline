@@ -12,6 +12,7 @@ help:
 	@echo "  qa           -> QA textual (+tests si QA_RUN_TESTS=1)"
 	@echo "  loop         -> Orquestador Dev→QA (auto-promueve, LOOP_MODE=dev_only para solo Dev)"
 	@echo "  loop-dev     -> Development loop (solo dev, no QA)"
+	@echo "  iteration    -> BA→Architect→Dev→QA en cadena + snapshot bajo artifacts/iterations/"
 	@echo "  fix-stories  -> Normaliza planning/stories.yaml"
 	@echo "  show-config  -> Muestra config.yaml"
 	@echo "  set-role     -> role=<ba|architect|dev|qa> provider=<ollama|openai> model=..."
@@ -64,3 +65,14 @@ set-role:
 
 set-quality:
 	$(PY) scripts/set_quality.py --profile $(profile) $(if $(role),--role $(role),)
+
+iteration:
+	@ITERATION_NAME=$${ITERATION_NAME:-iteration-$$(date +%Y%m%d-%H%M%S)}; \
+	echo "==> Running iteration $$ITERATION_NAME"; \
+	ITERATION_NAME="$$ITERATION_NAME" \
+	CONCEPT="$$CONCEPT" \
+	LOOPS="$${LOOPS:-1}" \
+	ALLOW_NO_TESTS="$${ALLOW_NO_TESTS:-0}" \
+	SKIP_BA="$${SKIP_BA:-0}" \
+	SKIP_PLAN="$${SKIP_PLAN:-0}" \
+	$(PY) scripts/run_iteration.py

@@ -5,6 +5,7 @@ The pipeline lives in `scripts/` (orchestrators, role runners, QA tools) and per
 
 ## Build, Test, and Development Commands
 Use `make setup` once to create `.venv` and install requirements. `make ba`, `make plan`, `make dev STORY=S#`, and `make qa QA_RUN_TESTS=1` drive the BA→Architect→Dev→QA loop; `make loop` automates the sequence with optional overrides (`MAX_LOOPS`, `ALLOW_NO_TESTS`). Run backend tests directly with `./.venv/bin/pytest -q project/backend-fastapi` and web tests with `npm test -- --passWithNoTests` inside `project/web-express` when a `package.json` is present.
+When you need a full product pass from concept to QA in una sola orden, use `make iteration CONCEPT="..." LOOPS=2`; it snapshots deliverables under `artifacts/iterations/`.
 
 ## Coding Style & Naming Conventions
 Python follows 4-space indentation, snake_case modules, and short, purposeful docstrings; keep FastAPI routers in lowercase files that match route purpose. JavaScript uses ES modules with camelCase functions inside snake_case filenames. Prefer pure functions per feature and mirror API signatures between tiers. Update stubs instead of inlining logic inside routers; add targeted comments only where flow is non-obvious.
