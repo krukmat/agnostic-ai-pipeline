@@ -92,6 +92,19 @@ make iteration CONCEPT="Login MVP" LOOPS=2
 - Al finalizar, genera un snapshot en `artifacts/iterations/<nombre>` con planning, proyecto y `summary.json` para trazabilidad.
 - Usa `ITERATION_NAME="beta-2025Q1"` para etiquetar explícitamente la entrega.
 
+## 🚛 Loop Release Workflow
+- Un “release loop” corresponde a una iteración completa desde el concepto hasta QA aprobado.
+- `scripts/run_iteration.py` orquesta el flujo y asegura que cualquier estructura faltante en `project/` se restaure desde `project-defaults/`.
+- `make iteration` acepta los siguientes parámetros clave:
+  - `CONCEPT="..."` → requisito de negocio para BA/Architect.
+  - `LOOPS=n` → cuántas pasadas Dev→QA ejecutar para depurar historias pendientes.
+  - `ALLOW_NO_TESTS=0/1` → ejecuta QA en modo estricto o permisivo.
+  - `ITERATION_NAME="release-X"` → etiqueta la entrega y su snapshot.
+- Cada release deja evidencia auditable:
+  - `planning/` y `project/` guardados en `artifacts/iterations/<iteration>/`.
+  - `summary.json` con métricas de historias (`done`, `blocked`, `pending`) y configuración usada.
+- Para reintentar historias bloqueadas tras una iteración, ejecuta `make loop MAX_LOOPS=1` con el mismo concepto; `ARCHITECT_INTERVENTION=1` (por defecto) re-planifica automáticamente cuando QA falla.
+
 ### Project Defaults
 - El repositorio incluye `project-defaults/`, que contiene la estructura mínima para backend y frontend.
 - Cada vez que un flujo llama a `common.ensure_dirs()`, cualquier archivo ausente en `project/` se replica desde este esqueleto sin sobrescribir cambios existentes.
