@@ -6,13 +6,12 @@ providers:
     type: openai
   codex_cli:
     type: codex_cli
-    command: ["codex", "chat"]
+    command: ["codex", "exec"]  # Usar modo no-interactivo con exec
     cwd: "."
-    env:
-      CODEX_LOG_LEVEL: info
     timeout: 300
-    input_format: stdin  # stdin o flags (--system, --user)
+    input_format: flags  # --model <model> <prompt> directo
     output_clean: true   # limpiar ANSI codes y espacios
+    extra_args: []  # Sin argumentos extra por ahora
 roles:
   ba:
     provider: ollama
@@ -21,7 +20,7 @@ roles:
     max_tokens: 8192
     top_p: 0.95
   architect:
-    provider: codex_cli
+    provider: codex_cli  # default to Codex CLI for architecture role
     model: gpt-5-codex
     temperature: 0.2
     max_tokens: 4096
