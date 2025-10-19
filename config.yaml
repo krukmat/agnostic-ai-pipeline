@@ -4,6 +4,15 @@ providers:
     base_url: http://localhost:11434
   openai:
     type: openai
+  codex_cli:
+    type: codex_cli
+    command: ["codex", "chat"]
+    cwd: "."
+    env:
+      CODEX_LOG_LEVEL: info
+    timeout: 300
+    input_format: stdin  # stdin o flags (--system, --user)
+    output_clean: true   # limpiar ANSI codes y espacios
 roles:
   ba:
     provider: ollama

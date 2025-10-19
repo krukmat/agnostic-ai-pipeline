@@ -217,6 +217,27 @@ roles:
     temperature: 0.2
 ```
 
+### Local Codex CLI Provider (Alternative)
+```yaml
+# For using local CLI instead of Ollama/OpenAI
+providers:
+  codex_cli:
+    type: codex_cli
+    command: ["codex", "chat"]
+    cwd: "."
+    env:
+      CODEX_LOG_LEVEL: info
+    timeout: 300
+    input_format: stdin  # stdin or flags
+    output_clean: true
+
+roles:
+  dev:
+    provider: codex_cli         # Switch individual roles
+    model: codex-local          # Model name for CLI
+    temperature: 0.2
+```
+
 ### Demonstrated Enterprise Application
 ```bash
 Result: 15 stories → complete e-commerce → >200 passing tests
