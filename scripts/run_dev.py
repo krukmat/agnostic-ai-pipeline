@@ -24,51 +24,7 @@ LOG_ALL = ART_DIR / "last_raw.txt"
 FILES_JSON = ART_DIR / "last_files.json"
 
 
-# --- Prompts ---
-SYSTEM_PROMPT = """You are a pragmatic senior full-stack developer inside a CI pipeline.
-Goal: implement the selected user story with minimal, correct code changes.
-
-HARD rules:
-- Output MUST include exactly one FILES JSON block (array of { "path": "...", "content": "..." }).
-- Paths MUST be POSIX-like and relative to the repository root. All writes go under the 'project/' directory.
-- Do not include markdown fences except around the FILES JSON block if you wish.
-- Keep changes minimal and consistent; prefer small scaffolds that run without extra infra.
-- Do NOT run tests here; only write files. QA will run test/lint/coverage.
-
-Conventions (directory targets):
-- Backend (FastAPI):  project/backend-fastapi/app/…  (create main scaffold if missing)
-- Web (Express):      project/web-express/src/…      (create minimal app if missing)
-- Mobile (RN Android):project/mobile-rn/…            (avoid native mods unless necessary)
-
-When adding backend/web scaffolds:
-- FastAPI entry point: app/main.py with GET /health -> {"status":"ok"} (JSON)
-- Express entry point: src/app.js with GET /health -> {status:'ok'} (JSON)
-
-Return ONLY the sections below:
-THINK:
-<very brief internal notes>
-
-FILES (strict JSON):
-```json
-[
-  {"path": "project/backend-fastapi/app/main.py", "content": "<file content>"},
-  {"path": "project/web-express/src/app.js", "content": "<file content>"}
-]
-```
-
-SUMMARY:
-- one-line summary of what changed.
-"""
-
-DEV_INSTRUCTIONS = """Implement the story faithfully and minimally so that QA can verify acceptance criteria later.
-
-If target directories/files don't exist, create them in your FILES output.
-
-STRICT FORMAT:
-- Exactly ONE JSON array named FILES with objects {path, content}.
-- No extra keys. No comments inside JSON. No trailing commas.
-- Every 'path' must start with 'project/' and be inside the repo tree.
-"""
+DEV_PROMPT = ROOT / "prompts" / "developer.md"
 
 
 # --- YAML helpers (robust load that can recover from commented YAML) ---
@@ -207,6 +163,12 @@ def safe_write(rel_path: str, content: str) -> str:
 async def llm_call(story: Dict[str, Any], files_ctx: str) -> str:
     from llm import Client
     client = Client(role="dev")
+
+    # Load prompt from file like other roles
+    system_prompt = ""
+    if DEV_PROMPT.exists():
+        system_prompt = DEV_PROMPT.read_text(encoding="utf-8")
+
     story_txt = yaml.safe_dump(story, sort_keys=False, allow_unicode=True)
     user = textwrap.dedent(
         f"""\
@@ -219,11 +181,9 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> str:
         ```
         {files_ctx}
         ```
-
-        {DEV_INSTRUCTIONS}
         """
     )
-    return await client.chat(system=SYSTEM_PROMPT, user=user)
+    return await client.chat(system=system_prompt, user=user)
 
 
 def mark_in_review(story_id: str) -> None:

@@ -124,6 +124,9 @@ async def main():
 
     text = await client.chat(system=ARCH_PROMPT, user=user_input)
 
+    # DEBUG: Save full response
+    (ROOT / "debug_architect_response.txt").write_text(text, encoding="utf-8")
+
     def grab(tag, label):
         m = re.search(rf"```{tag}\s+{label}\s*([\s\S]*?)```", text)
         return m.group(1).strip() if m else ""

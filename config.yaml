@@ -14,9 +14,9 @@ roles:
     max_tokens: 4096
   architect:
     provider: ollama
-    model: mistral:7b-instruct
-    temperature: 0.3
-    max_tokens: 3072
+    model: qwen2.5-coder:32b-instruct-q8_0  # Más capacidad técnica (32B) con precisión (Q8)
+    temperature: 0.1  # Bajísimo para especificaciones técnicas precisas y reproducibles
+    max_tokens: 8192  # Más tokens para especificaciones ultra-detalladas
   dev:
     provider: ollama
     model: qwen2.5-coder:7b
