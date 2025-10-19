@@ -92,6 +92,11 @@ make iteration CONCEPT="Login MVP" LOOPS=2
 - Al finalizar, genera un snapshot en `artifacts/iterations/<nombre>` con planning, proyecto y `summary.json` para trazabilidad.
 - Usa `ITERATION_NAME="beta-2025Q1"` para etiquetar explícitamente la entrega.
 
+### Project Defaults
+- El repositorio incluye `project-defaults/`, que contiene la estructura mínima para backend y frontend.
+- Cada vez que un flujo llama a `common.ensure_dirs()`, cualquier archivo ausente en `project/` se replica desde este esqueleto sin sobrescribir cambios existentes.
+- Útil tras limpiar `project/` o al iniciar un nuevo concepto: garantiza que existan paquetes (`app/__init__.py`), carpetas de tests y placeholders básicos.
+
 ## 🏗️ Supported Architectures
 
 ### Full-Stack Web Application

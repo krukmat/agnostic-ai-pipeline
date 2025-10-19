@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-The pipeline lives in `scripts/` (orchestrators, role runners, QA tools) and persists generated assets in `artifacts/` and `planning/`. Delivery code sits under `project/`: `backend-fastapi/` (FastAPI services in `app/` and pytest suites in `tests/`) and `web-express/` (Express handlers in `src/` and Jest specs in `tests/`). Keep new modules grouped by feature, mirroring the existing filenames (`feature_catalog.py`, `feature_catalog.js`) so backend and web features stay aligned.
+The pipeline lives in `scripts/` (orchestrators, role runners, QA tools) and persists generated assets in `artifacts/` and `planning/`. Delivery code sits under `project/`: `backend-fastapi/` (FastAPI services in `app/` and pytest suites in `tests/`) and `web-express/` (Express handlers in `src/` and Jest specs in `tests/`). A reusable skeleton lives in `project-defaults/`; anything missing in `project/` is copied from there on startup, so `app/__init__.py` and other core files always exist. Keep new modules grouped by feature, mirroring the existing filenames (`feature_catalog.py`, `feature_catalog.js`) so backend and web features stay aligned.
 
 ## Build, Test, and Development Commands
 Use `make setup` once to create `.venv` and install requirements. `make ba`, `make plan`, `make dev STORY=S#`, and `make qa QA_RUN_TESTS=1` drive the BA→Architect→Dev→QA loop; `make loop` automates the sequence with optional overrides (`MAX_LOOPS`, `ALLOW_NO_TESTS`). Run backend tests directly with `./.venv/bin/pytest -q project/backend-fastapi` and web tests with `npm test -- --passWithNoTests` inside `project/web-express` when a `package.json` is present.

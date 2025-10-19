@@ -1,11 +1,12 @@
 from __future__ import annotations
-import os, yaml, time, pathlib
+import os, yaml, time, pathlib, shutil
 from typing import Dict, Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ART = ROOT / "artifacts"
 PLANNING = ROOT / "planning"
 PROJECT = ROOT / "project"
+DEFAULTS = ROOT / "project-defaults"
 
 def load_config() -> Dict[str, Any]:
     return yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
@@ -14,6 +15,22 @@ def ensure_dirs():
     ART.mkdir(exist_ok=True, parents=True)
     PLANNING.mkdir(exist_ok=True, parents=True)
     PROJECT.mkdir(exist_ok=True, parents=True)
+    _ensure_project_defaults()
+
+def _ensure_project_defaults():
+    if not DEFAULTS.exists():
+        return
+    for root, dirs, files in os.walk(DEFAULTS):
+        rel_root = pathlib.Path(root).relative_to(DEFAULTS)
+        dest_root = PROJECT / rel_root
+        dest_root.mkdir(parents=True, exist_ok=True)
+        for fn in files:
+            if fn.endswith((".pyc", ".pyo")) or fn == ".DS_Store":
+                continue
+            src_file = pathlib.Path(root, fn)
+            dest_file = dest_root / fn
+            if not dest_file.exists():
+                shutil.copy2(src_file, dest_file)
 
 def save_text(path: pathlib.Path, content: str):
     path.parent.mkdir(parents=True, exist_ok=True)

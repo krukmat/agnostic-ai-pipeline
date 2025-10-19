@@ -3,3 +3,5 @@ PyYAML>=6.0
 typer>=0.12
 rich>=13.7
 pytest>=8.0
+fastapi
+fastapi>=0.112
