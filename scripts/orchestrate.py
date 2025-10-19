@@ -246,74 +246,136 @@ def next_todo(stories):
             return s
     return None
 
-def create_test_story_for(story):
-    return {
-        "id": f"{story['id']}-TESTS",
-        "epic": story.get("epic","E1"),
-        "description": f"Write automated tests for {story['id']}: {story.get('description','')}",
-        "acceptance": "Execute runners (pytest/jest) and obtain exit code 0.",
-        "priority": story.get("priority","P2"),
-        "status": "todo",
-    }
+# REMOVED: No longer creating separate test stories - tests are part of each user story per TDD
 
 def find_in_review_stories(stories):
     """Find stories in review that need architect intervention"""
     return [s for s in stories if s.get("status","").lower() == "in_review"]
 
-def analyze_qa_failure_severity(qa_failure_details):
-    """Analyze the severity of QA failures and determine the type of problem"""
-    failure_details = qa_failure_details or {}
+def check_and_activate_waiting_stories(stories, completed_story_id):
+    """Check if ANY quality_gate_waiting stories can be activated after ANY test story completes"""
+    activated = []
 
-    # Error type counters
-    backend_critical = 0
-    backend_non_critical = 0
-    web_critical = 0
-    web_non_critical = 0
+    # When ANY story that involves tests completes, it potentially frees up ALL quality_gate_waiting stories
+    # This is more intelligent - if a story adds or improves tests, ALL waiting stories can now try QA
+
+    story_id_upper = completed_story_id.upper()
+    is_test_related_story = (
+        "TEST" in story_id_upper or
+        "QA" in story_id_upper or
+        # Any story that adds substantial testing/code coverage potential
+        True  # For now: any successful completion could enable waiting stories
+    )
+
+    if is_test_related_story:
+        # Activate ALL stories currently in quality_gate_waiting
+        for story in stories:
+            if story.get("status", "").lower() == "quality_gate_waiting":
+                # Activate this waiting story back to todo for QA retry
+                story["status"] = "todo"
+                activated.append(story["id"])
+                print(f"[DEPENDENCY] Activated waiting story {story['id']} after testing capacity improvement by {completed_story_id}")
+
+    return activated
+
+def analyze_qa_failure_severity(qa_failure_details):
+    """Analyze the severity of QA failures and determine the type of problem
+
+    Distinguishes between force-acceptable errors (coverage, timing) vs critical errors (syntax, imports).
+    """
+    failure_details = qa_failure_details or {}
 
     backend_errors = failure_details.get("backend", {}).get("errors", [])
     web_errors = failure_details.get("web", {}).get("errors", [])
 
+    # Classify errors by severity
+    critical_errors = []      # Syntax, import, config issues - NEVER force-approve
+    force_applicable = []    # Missing tests, coverage, timeouts - CAN force-approve for P1/P0
+    other_errors = []         # Standard test failures
+
     # Analyze backend errors
     for error in backend_errors:
-        if error.get("type") in ["pytest_failure", "pytest_error"]:
-            # If it's import or critical configuration error
-            if "import" in error.get("error", "").lower() or "module not found" in error.get("error", "").lower():
-                backend_critical += 1
-            else:
-                backend_non_critical += 1
+        error_msg = error.get("error", "").lower()
+        error_type = error.get("type", "")
 
-    # Analyze web errors
+        # Critical errors that block completely
+        if "command not found" in error_msg or "environment_fail" in error_type:
+            critical_errors.append(error)
+        elif "syntaxerror" in error_msg or "invalid syntax" in error_msg:
+            critical_errors.append(error)
+        elif error_type in ["pytest_error"] and ("import" in error_msg or "module not found" in error_msg):
+            critical_errors.append(error)
+
+        # Force-applicable errors (coverage, missing tests, etc.)
+        elif "pytest_execution" in error.get("test", "") and "requires testing framework" in error_msg:
+            force_applicable.append(error)  # Missing test framework - install and retry
+        elif error_type in ["pytest_failure"] and "coverage" in error_msg:
+            force_applicable.append(error)  # Coverage issues
+        elif error_type == "environment_fail":
+            force_applicable.append(error)  # Environment setup (frequently resolvable)
+
+        # Other standard errors
+        else:
+            other_errors.append(error)
+
+    # Analyze web errors with same logic
     for error in web_errors:
-        if error.get("type") == "jest_failure":
-            web_non_critical += 1  # For now all web tests are considered non-critical
+        error_msg = error.get("error", "").lower()
+        error_type = error.get("type", "")
+
+        if "command not found" in error_msg or "environment_fail" in error_type:
+            critical_errors.append(error)
+
+        elif "syntax error" in error_msg or "referenceerror" in error_msg or "typeerror" in error_msg:
+            critical_errors.append(error)
+
+        elif "no tests" in error_msg or "timeout" in error_msg:
+            force_applicable.append(error)
+
+        else:
+            other_errors.append(error)
 
     # Severity determination
-    total_errors = backend_critical + backend_non_critical + web_critical + web_non_critical
+    total_critical = len(critical_errors)
+    total_force_applicable = len(force_applicable)
+    total_other = len(other_errors)
 
-    if total_errors == 0:
-        return {"severity": "none", "details": "No errors detected"}
-
-    if backend_critical > 0:
+    # CRITICAL: Never force-approve - block permanently
+    if total_critical > 0:
         return {
-            "severity": "critical",
-            "details": f"Critical configuration/import errors: {backend_critical} errors"
+            "severity": "critically_blocked",
+            "details": f"CRITICAL ERRORS ({total_critical}): Syntax/import/environment issues detected. Cannot force-approve.",
+            "errors": critical_errors
         }
 
-    if backend_non_critical > 0 and web_non_critical == 0:
+    # FORCE-APPLICABLE: Can force-approve for high priority high iteration stories
+    if total_force_applicable > 0:
+        return {
+            "severity": "force_applicable",
+            "details": f"FORCE-APPLICABLE ERRORS ({total_force_applicable}): Missing tests/coverage/environment setup issues. Can force-approve for P1/P0 after multiple iterations.",
+            "errors": force_applicable
+        }
+
+    # TEST ONLY: Pure test logic failures (no code issues)
+    if total_other > 0 and total_critical == 0 and total_force_applicable == 0:
         return {
             "severity": "test_only",
-            "details": f"Only backend tests failing: {backend_non_critical} logic or assertion errors"
+            "details": f"TEST LOGIC ERRORS ({total_other}): Only test assertion/logic failures. Code structure OK.",
+            "errors": other_errors
         }
 
-    if story_iteration_count.get(os.environ.get("STORY", ""), 0) >= 2:
+    # PERSISTENT: Multiple iterations even with other error types
+    iteration_count = story_iteration_count.get(os.environ.get("STORY", ""), 0)
+    if iteration_count >= 2:
         return {
             "severity": "persistent",
-            "details": f"Persistent failure ({story_iteration_count.get(os.environ.get('STORY', ''), 0)} iterations)"
+            "details": f"PERSISTENT FAILURE ({iteration_count} iterations). Consider quality assessment."
         }
 
+    # FALLBACK: Standard handling
     return {
         "severity": "standard",
-        "details": f"Standard errors: backend={backend_non_critical}, web={web_non_critical}"
+        "details": f"STANDARD ERRORS: Total={total_critical + total_force_applicable + total_other}, Critical={total_critical}, Force-applicable={total_force_applicable}"
     }
 
 def main():
@@ -330,7 +392,7 @@ def main():
         print(f"[loop] Iteración {it}/{max_loops}")
         stories = load_stories()
 
-        # 1) Check for stories in review that need architect intervention
+                # 1) Check for stories in review that need architect intervention
         in_review_stories = find_in_review_stories(stories)
         if in_review_stories and enable_architect_intervention:
             print(f"[loop] {len(in_review_stories)} stories in review need architect intervention")
@@ -344,13 +406,26 @@ def main():
                 print(f"[loop] Architect adjusting criteria for {story_id}")
                 rc_arch = run_architect_for_review(story_id, story_iteration_count[story_id])
                 if rc_arch == 0:
-                    # Architect successfully adjusted criteria
-                    story['status'] = 'todo'  # Return to todo so dev can rework it
-                    append_note(f"- Architect adjusted criteria for {story_id} (attempt {story_iteration_count[story_id]}) → Dev must rework")
-                    print(f"[loop] Architect adjusted criteria for {story_id} → Dev must rework")
+                    # Check if this was force approval (iteration >= 3)
+                    was_force_approved = story_iteration_count[story_id] >= 3 and story.get("priority") in ["P1", "P0"]
+
+                    if was_force_approved:
+                        # Force approval - mark as done, don't rework
+                        story['status'] = 'done_force_architect'
+                        append_note(f"- Architect FORCE APPROVED {story_id} (attempt {story_iteration_count[story_id]}, P{story.get('priority')} priority)")
+                        print(f"[loop] Architect FORCE APPROVED {story_id} (iteration {story_iteration_count[story_id]})")
+                    else:
+                        # Normal adjustment - return to todo so dev can rework it
+                        story['status'] = 'todo'  # Return to todo so dev can rework it
+                        append_note(f"- Architect adjusted criteria for {story_id} (attempt {story_iteration_count[story_id]}) → Dev must rework")
+                        print(f"[loop] Architect adjusted criteria for {story_id} → Dev must rework")
                 else:
                     append_note(f"- Architect could not adjust criteria for {story_id} (rc={rc_arch})")
                     print(f"[loop] Architect could not adjust criteria for {story_id}")
+
+            # RECARGAR historias después de architect interventions
+            stories = load_stories()
+            save_stories(stories)
 
         story = next_todo(stories)
         if not story:
@@ -395,71 +470,127 @@ def main():
             story["status"] = "done"
             if sid in story_iteration_count:
                 story_iteration_count[sid] = 0
+
+            # Check if any waiting stories can now be activated (dependency resolution)
+            activated_waiters = check_and_activate_waiting_stories(stories, sid)
+
             save_stories(stories)
             append_note(f"- {sid} aprobado por QA.")
             print(f"[loop] {sid} -> done (QA pass)")
 
+            if activated_waiters:
+                print(f"[loop] ✅ DEPENDENCY RESOLUTION: Activated {len(activated_waiters)} waiting stories: {activated_waiters}")
+
         elif qa_status == "no_tests":
-            # 🧪 NO TESTS: Estados intermedios dependiendo configuración
-            if allow_no_tests:
-                # Estado intermedio: Calidad básica verificada, tests pendientes
-                story["status"] = "qa_pass_no_tests"  # Estado intermedio: QA aprobado sin tests
-                if create_child:
-                    test_story = create_test_story_for(story)
-                    test_story["status"] = "pending"  # Tests marcados como pendientes
-                    stories.append(test_story)
-                save_stories(stories)
-                append_note(f"- {sid} QA aprobado sin tests. Tests marcados como pendientes.")
-                print(f"[loop] {sid} -> qa_pass_no_tests (QA aprobado sin tests)")
+            # NUEVA LÓGICA TDD: Verificar QUE backend (principal) tenga tests
+            if QA_REPORT.exists():
+                rep = json.loads(QA_REPORT.read_text(encoding="utf-8"))
+                backend_has_tests = rep.get("areas", {}).get("backend", {}).get("has_tests", False)
+                backend_rc = rep.get("areas", {}).get("backend", {}).get("rc", 1)
+
+                if backend_has_tests and backend_rc == 0:
+                    # ✅ Backend tiene tests que pasan - TDD cumplo
+                    story["status"] = "done"
+                    append_note(f"- {sid} ✅ TDD APPROVED: Backend tests executed and passed.")
+                    print(f"[loop] {sid} -> done (✅ TDD: backend tests passed)")
+                else:
+                    # ❌ Backend no tiene tests validables - bloqueado
+                    story["status"] = "blocked_no_tests"
+                    append_note(f"- {sid} ❌ TDD FAILURE: Backend requires tests as integral part.")
+                    print(f"[loop] {sid} -> blocked_no_tests (❌ TDD: backend needs tests)")
             else:
-                # Estado intermedio: Quality-gated por tests requeridos
-                story["status"] = "quality_gate_waiting"  # Esperando tests
-                if create_child:
-                    stories.append(create_test_story_for(story))
-                save_stories(stories)
-                append_note(f"- {sid} esperando QA de tests. Se creó historia de tests hija.")
-                print(f"[loop] {sid} -> quality_gate_waiting (esperando QA de tests)")
+                # Fallback si no hay reporte
+                story["status"] = "blocked_no_tests"
+                append_note(f"- {sid} ❌ TDD FAILURE: QA report missing - tests required.")
+                print(f"[loop] {sid} -> blocked_no_tests (QA report missing)")
 
         else:
             # ❌ QA FAIL: Análisis de fallos con estados específicos
             # Analyze QA failure details for smarter decisions
             failure_analysis = analyze_qa_failure_severity(qa_failure_details)
 
-            if failure_analysis["severity"] == "critical":
-                # Errores críticos: Verificar si podemos recuperar
-                story["status"] = "in_review_critical"  # Problema crítico - revisión urgente
-                append_note(f"- {sid} ERROR CRÍTICO en QA: {failure_analysis['details'][:100]}...")
-                print(f"[loop] {sid} -> in_review_critical (ERROR CRÍTICO en QA)")
-            elif failure_analysis["severity"] == "test_only":
-                # Solo fallan tests - funcionalidad básica OK
-                story["status"] = "code_done_tests_pending"  # Código OK, tests pendientes
-                test_story = create_test_story_for(story)
-                test_story["status"] = "todo"
-                stories.append(test_story)
-                append_note(f"- {sid} código funcional OK. Tests requeridos separados.")
-                print(f"[loop] {sid} -> code_done_tests_pending (código OK, tests separados)")
-            elif failure_analysis["severity"] == "persistent":
-                # Múltiples fallos: evaluación de aprobación forzada
+            # LÓGICA SOBRE FORCE-APPROVAL INTELIGENTE
+            if failure_analysis["severity"] == "critically_blocked":
+                # 🚫 NUNCA force-approve: Errores críticos (syntax, imports, environment)
+                story["status"] = "blocked_fatal"  # Bloqueado permanentemente
+                append_note(f"- {sid} FATAL BLOCK: {failure_analysis['details'][:100]}. Cannot force-approve!")
+                print(f"[loop] {sid} -> blocked_fatal (CRÍTICO - no force-approve)")
+
+            elif failure_analysis["severity"] == "force_applicable":
+                # ✅ FORCE-APPROVE SOLO P1/P0 mayor a 3 iteraciones: Errores force-applicable
                 iteration_count = story_iteration_count.get(sid, 0)
-                if iteration_count >= 3:
-                    story_priority = story.get("priority", "P2")
-                    if story_priority in ["P1", "P0"]:
-                        story["status"] = "done_force_architect"  # Aprobado por arquitecto (alta prioridad)
-                        append_note(f"- {sid} APROBADO FORZADAMENTE por arquitecto (prioridad {story_priority}, {iteration_count} iteraciones)")
-                        print(f"[loop] {sid} -> done_force_architect (APROBADAMENTE por arquitecto)")
-                    else:
-                        story["status"] = "blocked_quality_issues"  # Bloqueado por calidad insuficiente
-                        append_note(f"- {sid} BLOQUEADO (baja prioridad + múltiples fallos de calidad)")
-                        print(f"[loop] {sid} -> blocked_quality_issues (múltiples fallos calidad)")
+                story_priority = story.get("priority", "P2")
+
+                if iteration_count >= 3 and story_priority in ["P1", "P0"]:
+                    story["status"] = "done_force_architect"
+                    append_note(f"- {sid} FORCE-APPROVED: {failure_analysis['details'][:80]} (Safe to approve P{story_priority} after {iteration_count} retries)")
+                    print(f"[loop] {sid} -> done_force_architect (SAFE FORCE-APPROVAL)")
                 else:
-                    story["status"] = "in_review_retry"  # Revisión y retry
-                    append_note(f"- {sid} falló QA - requiere revisión (intento {iteration_count + 1})")
-                    print(f"[loop] {sid} -> in_review_retry (necesita revisión)")
+                    story["status"] = "in_review"
+                    append_note(f"- {sid} Aguardando force-approval: {failure_analysis['details'][:80]} (Needs P1/P0 + ≥3 iterations)")
+                    print(f"[loop] {sid} -> in_review (waiting force-approval criteria)")
+
+            elif failure_analysis["severity"] == "test_only":
+                # Solo fallan tests - funcionalidad básica OK, pero tests no pasan
+                story["status"] = "blocked_test_only"
+                append_note(f"- {sid} TESTS FALLANDO: Código funcional OK pero tests no pasan: {failure_analysis['details'][:80]} (TDD: tests son parte integral)")
+                print(f"[loop] {sid} -> blocked_test_only (TDD: fix implementation to make tests pass)")
+
+            elif failure_analysis["severity"] == "persistent":
+                # Múltiples fallos: considerar calidad
+                iteration_count = story_iteration_count.get(sid, 0)
+                story_priority = story.get("priority", "P2")
+
+                if iteration_count >= 5:  # Solo forzar después de MUCHAS iteraciones
+                    story["status"] = "blocked_quality_issues"
+                    append_note(f"- {sid} BLOCKED: Múltiples fallos de calidad ({iteration_count} iteraciones). Revisión manual requerida.")
+                    print(f"[loop] {sid} -> blocked_quality_issues (múltiples fallos calidad)")
+                else:
+                    story["status"] = "in_review_retry"
+                    append_note(f"- {sid} Persistent failure ({iteration_count} iterations). Escalating complexity.")
+                    print(f"[loop] {sid} -> in_review_retry (persistent failure)")
+
             else:
                 # Problema estándar - necesita revisión del arquitecto
-                story["status"] = "in_review"  # Necesita intervención del arquitecto
-                append_note(f"- {sid} falló QA (rc={rc_qa}). Requiere intervención de arquitecto.")
-                print(f"[loop] {sid} -> in_review (QA fail, needs architect)")
+                story["status"] = "in_review"
+                append_note(f"- {sid} QA Fail estándar (rc={rc_qa}): {failure_analysis['details'][:80]}. Requiere intervención de arquitecto.")
+                print(f"[loop] {sid} -> in_review (QA fail - architect review needed)")
+
+        # NUEVO: IMMEDIATELY PROCESS architect interventions after QA fail
+        # This makes the loop truly fluent - architect intervenes immediately in same iteration
+        save_stories(stories)
+
+        # After saving story state, immediately check for architect interventions
+        stories = load_stories()  # Reload to get any changes
+        in_review_stories = find_in_review_stories(stories)
+        if in_review_stories:
+            print(f"[loop] 🔄 IMMEDIATE ARCHITECT INTERVENTION FOR: {[s['id'] for s in in_review_stories]}")
+            for story in in_review_stories[:2]:  # Process up to 2 immediately
+                story_id = story['id']
+                # Update iteration counter for this story
+                if story_id not in story_iteration_count:
+                    story_iteration_count[story_id] = 0
+                story_iteration_count[story_id] += 1
+
+                print(f"[loop] Architect IMMEDIATELY adjusting criteria for {story_id}")
+                rc_arch = run_architect_for_review(story_id, story_iteration_count[story_id])
+                if rc_arch == 0:
+                    # Check if this was force approval (iteration >= 3)
+                    was_force_approved = story_iteration_count[story_id] >= 3 and story.get("priority") in ["P1", "P0"]
+
+                    if was_force_approved:
+                        # Force approval - mark as done, don't rework
+                        story['status'] = 'done_force_architect'
+                        append_note(f"- Architect FORCE APPROVED {story_id} (immediate, attempt {story_iteration_count[story_id]}, P{story.get('priority')} priority)")
+                        print(f"[loop] Architect IMMEDIATELY FORCE APPROVED {story_id}")
+                    else:
+                        # Normal adjustment - return to todo so dev can rework it
+                        story['status'] = 'todo'
+                        append_note(f"- Architect IMMEDIATELY adjusted criteria for {story_id} (attempt {story_iteration_count[story_id]}) → Dev must rework")
+                        print(f"[loop] Architect IMMEDIATELY adjusted criteria for {story_id} → Ready for dev rework")
+                else:
+                    append_note(f"- Architect could not adjust criteria for {story_id} (immediate, rc={rc_arch})")
+                    print(f"[loop] Architect could not IMMEDIATELY adjust criteria for {story_id}")
 
         save_stories(stories)
 

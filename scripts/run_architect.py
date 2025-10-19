@@ -3,7 +3,38 @@ import os, re, asyncio, pathlib
 from common import load_config, ensure_dirs, PLANNING, ROOT
 from llm import LLMClient
 
-ARCH_PROMPT = (ROOT/"prompts"/"architect.md").read_text(encoding="utf-8")
+ARCH_PROMPT = ""
+
+# Select appropriate prompt based on mode
+architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
+if architect_mode == "review_adjustment":
+    # Special prompt for review adjustment mode
+    ARCH_PROMPT = """You are a Technical Requirements Analyst that adjusts a SINGLE user story when it fails QA.
+
+IMPORTANT: DO NOT CREATE NEW EPICS OR STORIES. ONLY ADJUST THE EXISTING STORY.
+
+Take the CURRENT_STORIES section and find the specific story ID mentioned.
+MODIFY ONLY THAT STORY'S acceptance criteria to be more technical and specific.
+
+OUTPUT FORMAT: Return ONLY the adjusted story with the same ID, adding more technical details to acceptance criteria.
+
+Example output:
+```yaml STORIES
+- id: S2
+  epic: E1
+  description: Existing description here
+  acceptance:
+    - More technical criterion 1
+    - More technical criterion 2
+    - Include specific validations, formats, error codes
+  priority: P1
+  status: todo
+```
+
+Include specific technical requirements, test cases, missing imports, missing dependencies not installed, validation rules, error codes, and edge cases in the acceptance criteria."""
+else:
+    # Normal architect prompt
+    ARCH_PROMPT = (ROOT/"prompts"/"architect.md").read_text(encoding="utf-8")
 
 async def main():
     ensure_dirs()
@@ -67,6 +98,7 @@ def get_story_priority(stories_content: str, story_id: str) -> str:
         print(f"Error parsing stories for priority: {e}")
         return "P2"
 
+
 async def main():
     ensure_dirs()
     cfg = load_config()
@@ -100,22 +132,108 @@ async def main():
                 stories_content = stories_file.read_text(encoding="utf-8")
 
                 # Adjust detail level based on iteration
-                if detail_level == "high":
-                    instruction = f"REVISIÓN TÉCNICA CRÍTICA: Ajusta los criterios de aceptación para la historia {story_id} que está en review. Los criterios actuales son ambiguos y el desarrollador no pudo implementarlos correctamente.\n\nREQUERIMIENTOS ESPECÍFICOS:\n- Especifica EXACTAMENTE qué debe hacer cada función\n- Define formatos de request/response PRECISOS\n- Incluye validaciones ESPECÍFICAS con ejemplos\n- Especifica códigos de error EXACTOS\n- Define estructuras de datos COMPLETAS\n- Incluye casos edge ESPECÍFICOS\n\nEl desarrollador necesita instrucciones TÉCNICAMENTE PRECISAS para implementar correctamente."
-                elif detail_level == "maximum":
-                    qa_context_info = extract_qa_failure_context(story_id)
-                    instruction = f"REVISIÓN TÉCNICA MÁXIMA: La historia {story_id} ha sido rechazada {iteration_count} veces. Los criterios deben ser EXTREMADAMENTE DETALLADOS.\n\nDETALLES DE FALLOS QA:\n{qa_context_info}\n\nREQUERIMIENTOS CRÍTICOS:\n- ESPECIFICA CADA VALIDACIÓN con regex exactos\n- DEFINE CADA ENDPOINT con ejemplos de request/response COMPLETOS\n- INCLUYE MANEJO DE ERRORES para CADA caso posible\n- ESPECIFICA FORMATOS de datos con tipos y longitudes\n- DEFINE COMPORTAMIENTOS exactos para casos edge\n- INCLUYE EJEMPLOS de código para cada función\n\nEl desarrollador necesita un ESPECIFICACIÓN TÉCNICA COMPLETA."
-                elif detail_level == "force_approve":
-                    instruction = f"APROBACIÓN POR URGENCIA: La historia {story_id} ha sido rechazada {iteration_count} veces. Dado que es prioridad {get_story_priority(stories_content, story_id)}, el arquitecto puede aprobarla.\n\nINSTRUCCIÓN: Si la funcionalidad básica está implementada y solo faltan detalles menores de testing, puedes generar una versión simplificada de la historia que permita al desarrollador completarla exitosamente.\n\nConsidera: ¿La funcionalidad core está presente? ¿Solo faltan tests o detalles menores? ¿El bloqueo impide progreso del proyecto?"
-                else:
-                    instruction = f"Ajusta los criterios de aceptación para la historia {story_id} que está en review. Haz los criterios más claros y específicos para que el desarrollador pueda implementarlos correctamente."
+                # DIRECT TEMPLATE-BASED ADJUSTMENTS - More reliable than LLM
+                print(f"[ARCHITECT] Aplicando ajustes programáticos para {story_id} - nivel {detail_level}")
 
-                user_input = f"REQUIREMENTS:\n{requirements_content}\n\nCURRENT_STORIES:\n{stories_content}\n\n{detail_level.upper()}: {instruction}"
+                # Parse current stories
+                import yaml
+                try:
+                    stories = yaml.safe_load(stories_content)
+                    if isinstance(stories, dict) and "stories" in stories:
+                        stories = stories["stories"]
+                    elif isinstance(stories, list):
+                        pass
+                    else:
+                        raise ValueError("Invalid stories format")
+
+                    # Find the story to adjust
+                    story_found = None
+                    for story in stories:
+                        if isinstance(story, dict) and story.get("id") == story_id:
+                            story_found = story
+                            break
+
+                    if story_found:
+                        acceptance = story_found.get("acceptance", [])
+                        if not isinstance(acceptance, list):
+                            acceptance = [acceptance] if acceptance else []
+
+                        # Apply template-based improvements based on detail level
+                        if detail_level == "high":
+                            # Add technical requirements template
+                            technical_reqs = [
+                                "Implementar validaciones específicas con formatos y límites claros",
+                                "Definir códigos HTTP apropiados para diferentes escenarios de error",
+                                "Incluir manejo de casos edge como datos nulos o inválidos"
+                            ]
+                            acceptance.extend(technical_reqs)
+                            print(f"[ARCHITECT] Added HIGH technical requirements to criteria")
+
+                        elif detail_level == "maximum":
+                            qa_context = extract_qa_failure_context(story_id)
+                            # Add specific improvements based on QA errors
+                            if "pytest_execution" in qa_context:
+                                acceptance.append("Configurar entorno pytest correctamente en backend/.venv/bin/pytest")
+                                acceptance.append("Asegurar que dependencias de testing estén instaladas")
+                                print("[ARCHITECT] Added pytest-specific requirements to criteria")
+                            else:
+                                technical_reqs = [
+                                    "Validar todos los inputs con regex patterns específicos",
+                                    "Implementar logging detallado para debugging",
+                                    "Verificar manejo de conexiones de red y timeouts"
+                                ]
+                                acceptance.extend(technical_reqs)
+                                print(f"[ARCHITECT] Added MAXIMUM technical requirements to criteria")
+
+                        # Update the story
+                        story_found["acceptance"] = acceptance
+                        story_found["status"] = "todo"  # Ready for dev rework
+
+                        # Save back to file
+                        with open(PLANNING / "stories.yaml", 'w', encoding='utf-8') as f:
+                            yaml.safe_dump(stories, f, sort_keys=False, allow_unicode=True, default_flow_style=False)
+
+                        print(f"✓ Arquitecto ajustó criterios de {story_id} (programáticamente)")
+                        return  # Exit successfully after programatic adjustment
+
+                except Exception as e:
+                    print(f"[ARCHITECT] Error en ajustes programáticos: {e}")
+                    # Fall back to minimal fallback - just mark story as todo
+                    print(f"[ARCHITECT] Fallback: marking {story_id} as todo for reattempt")
+
+                    try:
+                        import yaml
+                        stories = yaml.safe_load(stories_content)
+                        if isinstance(stories, dict) and "stories" in stories:
+                            stories = stories["stories"]
+                        elif isinstance(stories, list):
+                            pass
+
+                        for story in stories:
+                            if isinstance(story, dict) and story.get("id") == story_id:
+                                story["status"] = "todo"
+                                break
+
+                        with open(PLANNING / "stories.yaml", 'w', encoding='utf-8') as f:
+                            yaml.safe_dump(stories, f, sort_keys=False, allow_unicode=True, default_flow_style=False)
+
+                        print(f"✓ Arquitecto marcó {story_id} como todo (fallback)")
+                        return
+
+                    except Exception as e2:
+                        print(f"[ARCHITECT] Critical fallback error: {e2}")
+                        return
         else:
             user_input = f"REQUIREMENTS:\n{requirements_content}\n\nINSTRUCTION: Revisa y ajusta las historias que están en review para mejorar su claridad técnica y criterios de aceptación."
     else:
         # Normal planning mode - BREAKDOWN INCREMENTAL para proyectos enterprise
         user_input = f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\nFollow the exact output format."
+
+    # Log the input for debugging
+    print(f"[DEBUG] Architect input length: {len(user_input)}")
+    print(f"[DEBUG] Architect mode: {architect_mode}")
+    if architect_mode == "review_adjustment":
+        print(f"[DEBUG] Reviewing story: {story_id}, level: {detail_level}, iteration: {iteration_count}")
 
     print(f"Using CONCEPT: {os.environ.get('CONCEPT', 'No concept defined')}")
     print(f"Architect mode: {architect_mode}")

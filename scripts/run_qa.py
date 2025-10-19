@@ -25,7 +25,7 @@ def has_any_web_test(web_dir: pathlib.Path) -> bool:
         return True
     return False
 
-def analyze_test_failures(areas):
+def analyze_test_failures(areas, be_rc, web_rc):
     """Analyze test logs to extract specific failure details"""
     failure_details = {
         "backend": {"errors": [], "warnings": [], "missing_coverage": []},
@@ -38,6 +38,22 @@ def analyze_test_failures(areas):
         pytest_output = pytest_log.read_text(encoding="utf-8")
         failure_details["backend"]["errors"].extend(extract_pytest_errors(pytest_output))
         failure_details["backend"]["warnings"].extend(extract_pytest_warnings(pytest_output))
+
+        # Add error for command failures
+        if be_rc == 127:
+            failure_details["backend"]["errors"].append({
+                "test": "pytest_execution",
+                "error": "pytest command not found. Make sure pytest is installed in project .venv/bin/pytest",
+                "type": "environment_fail"
+            })
+
+        # Add error for web command failures
+        if web_rc == 127:
+            failure_details["web"]["errors"].append({
+                "test": "npm_execution",
+                "error": "npm command not found. Make sure npm is available for web tests",
+                "type": "environment_fail"
+            })
 
     # Analyze web logs (npm test - jest)
     npm_log = ART / "npm_output.txt"
@@ -115,6 +131,20 @@ def run_cmd(cmd, cwd=None) -> int:
 
         # Also maintain general logs file
         (ART / "logs.txt").write_text(res.stdout, encoding="utf-8")
+
+        # Add specific error reporting for common return codes
+        error_details = ""
+        if res.returncode == 127:
+            # Command not found
+            pytest_path = str(be_root / ".venv" / "bin" / "pytest") if cwd == str(be_root) else "npm"
+            error_details = f"Command not found: {pytest_path}. Verify virtual environment is activated and dependencies are installed."
+            print(f"[QA] ERROR: {error_details}")
+
+        # Save command-specific error for final report
+        if res.returncode != 0:
+            error_file = ART / f"{cmd[0] if cmd else 'unknown'}_error.txt"
+            error_file.write_text(error_details or "Unknown command error", encoding="utf-8")
+
         print(res.stdout)
         return res.returncode
     except FileNotFoundError as e:
@@ -132,11 +162,12 @@ def main():
     be_has = has_any_test(be_tests)
     be_rc = None
     if be_has:
-        pytest_bin = be_root / ".venv" / "bin" / "pytest"
+        # Use project-level virtual environment pytest
+        pytest_bin = ROOT / ".venv" / "bin" / "pytest"
         if pytest_bin.exists():
             be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], cwd=str(be_root))
         else:
-            be_rc = 127  # venv/pytest not available
+            be_rc = 127  # venv/pytest not available in project .venv
     else:
         be_rc = 10  # no tests
 
@@ -182,7 +213,7 @@ def main():
             code = 0
 
     # Detailed failure analysis
-    failure_details = analyze_test_failures(areas)
+    failure_details = analyze_test_failures(areas, be_rc, web_rc)
 
     report = {
         "status": status,
@@ -216,6 +247,46 @@ def main():
                     with open(stories_file, 'w', encoding='utf-8') as f:
                         yaml.safe_dump(stories, f, sort_keys=False, allow_unicode=True, default_flow_style=False)
                     print("[QA] Stories updated in planning/stories.yaml")
+
+                # Check if this completes all backlogs - trigger new iteration (always check when QA passes)
+                all_done = all(story.get('status') == 'done' for story in stories if isinstance(story, dict))
+                if all_done:
+                    print("[QA] 🎉 ALL STORIES COMPLETED! Starting new iteration...")
+                    print("[QA] 📢 Informing Architect and BA about completion")
+
+                    # Generate new context for next iteration based on completed work
+                    completed_work = [s.get('description', '') for s in stories if isinstance(s, dict)]
+                    new_context = f"COMPLETED WORK SUMMARY:\n" + "\n".join(f"- {desc}" for desc in completed_work[:5])
+                    new_context += f"\n\nEVALUATION: {len(completed_work)} stories delivered. Consider expanding scope or refining existing features based on successful implementation."
+
+                    # Trigger new BA evaluation for potential scope expansion
+                    print("[QA] 🔄 Triggering Business Analyst re-evaluation...")
+                    import subprocess
+                    import pathlib
+
+                    # Set CONCEPT with completion context for next iteration
+                    env_concept = new_context[:500]  # Limit size
+                    architect_cmd = [".venv/bin/python", str(ROOT / "scripts" / "run_ba.py")]
+                    env_vars = os.environ.copy()
+                    env_vars["CONCEPT"] = env_concept
+
+                    try:
+                        result = subprocess.run(
+                            architect_cmd,
+                            env=env_vars,
+                            cwd=str(ROOT),
+                            capture_output=True,
+                            text=True,
+                            timeout=60
+                        )
+                        if result.returncode == 0:
+                            print("[QA] ✅ BA triggered new requirements evaluation")
+                        else:
+                            print(f"[QA] ⚠️ BA trigger failed: {result.stderr}")
+                    except subprocess.TimeoutExpired:
+                        print("[QA] ⏱️ BA trigger timed out")
+                    except Exception as e:
+                        print(f"[QA] ❌ BA trigger error: {e}")
 
             except Exception as e:
                 print(f"[QA] Error updating stories: {e}")

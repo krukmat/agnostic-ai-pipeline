@@ -119,8 +119,66 @@ def extract_files_block(text: str) -> List[Dict[str, str]] | None:
     LOG_ALL.write_text(text, encoding="utf-8")
     candidates: List[str] = []
 
+    # Try fenced blocks first
     fences = re.findall(r"```json\s*([\s\S]*?)```", text, flags=re.IGNORECASE)
     candidates.extend(fences)
+
+    # If no fenced blocks, try to find pure JSON
+    if not candidates:
+        # Look for JSON-like structure (starts with { and ends with })
+        json_match = re.search(r'(\{[\s\S]*?\})', text.strip())
+        if json_match:
+            candidates.append(json_match.group(1))
+
+        # Also look for array starting with [
+        array_match = re.search(r'(\[[\s\S]*?\])', text.strip())
+        if array_match:
+            candidates.append(array_match.group(1))
+
+    # Extract and clean files array
+    parsed_array = None
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate.strip())
+            if isinstance(parsed, dict) and "files" in parsed:
+                parsed_array = parsed["files"]
+                break
+            elif isinstance(parsed, list):
+                parsed_array = parsed
+                break
+        except Exception:
+            continue
+
+    if not parsed_array or not isinstance(parsed_array, list):
+        return None
+
+    # Clean and convert from new format (code field) to old format (content field)
+    for file_entry in parsed_array:
+        if isinstance(file_entry, dict):
+            # Handle new format: code field
+            if "code" in file_entry:
+                code = file_entry["code"]
+                # Aggressively clean markdown blocks
+                code = re.sub(r'```\w*\s*\n?', '', code.strip())
+                code = re.sub(r'```', '', code)
+                code = code.strip()
+
+                # Convert to content field
+                file_entry["content"] = code
+
+                # Remove the code field
+                del file_entry["code"]
+
+            # Handle old format: content field (for backward compatibility)
+            elif "content" in file_entry:
+                content = file_entry["content"]
+                # Clean markdown blocks from content
+                content = re.sub(r'```\w*\s*\n?', '', content.strip())
+                content = re.sub(r'```', '', content)
+                content = content.strip()
+                file_entry["content"] = content
+
+    return parsed_array
 
     m = re.search(r"FILES\s*:\s*(\[\s*[\s\S]*?\])", text, flags=re.IGNORECASE)
     if m:

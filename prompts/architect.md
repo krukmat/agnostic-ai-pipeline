@@ -8,6 +8,8 @@ FORMAT REQUIREMENTS:
 - Stories MUST be implementable in 1-2 days maximum
 - Each story needs: id, epic, description, acceptance criteria, priority, status: todo
 - Acceptance criteria as simple bullet points
+- **CRITICAL: All stories MUST include automated tests as part of implementation**
+- **Tests are NOT separate stories - they are INTEGRAL to each user story**
 - Keep to 5-15 stories total for this project scope
 
 OUTPUT STRICTLY IN THIS FORMAT:
