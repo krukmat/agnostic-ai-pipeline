@@ -8,19 +8,16 @@ ARCH_PROMPT = (ROOT/"prompts"/"architect.md").read_text(encoding="utf-8")
 async def main():
     ensure_dirs()
     cfg = load_config()
-    concept = os.environ.get("CONCEPT","").strip()
-    if not concept:
-        raise SystemExit('Set CONCEPT="..."')
 
     # Check if this is a review adjustment call
     architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
 
 def extract_qa_failure_context(story_id: str) -> str:
-    """Extrae el detalle de fallos QA del último reporte para contexto del arquitecto"""
+    """Extracts QA failure details from the last report for architect context"""
     try:
         qa_report_path = ROOT / "artifacts" / "qa" / "last_report.json"
         if not qa_report_path.exists():
-            return "No hay reporte QA disponible"
+            return "No QA report available"
 
         with open(qa_report_path, 'r', encoding='utf-8') as f:
             qa_data = json.load(f)
@@ -29,16 +26,16 @@ def extract_qa_failure_context(story_id: str) -> str:
         story_context = qa_data.get("story_context", "")
 
         if story_context != story_id:
-            return f"Los fallos QA no corresponden a esta historia ({story_context} vs {story_id})"
+            return f"QA failures do not correspond to this story ({story_context} vs {story_id})"
 
-        # Formatear detalles de los fallos
+        # Format failure details
         failure_info = []
         for module, details in failure_details.items():
             if details:
                 errors = details.get("errors", [])
                 warnings = details.get("warnings", [])
                 if errors:
-                    failure_info.append(f"Módulo {module.upper()}:")
+                    failure_info.append(f"Module {module.upper()}:")
                     for error in errors:
                         failure_info.append(f"  - Test {error['test']}: {error['error'][:200]}...")
                 if warnings:
@@ -49,10 +46,10 @@ def extract_qa_failure_context(story_id: str) -> str:
         if failure_info:
             return "\n".join(failure_info)
         else:
-            return "No se pudieron analizar los detalles específicos de los fallos QA"
+            return "Could not analyze specific failure details from QA"
 
     except Exception as e:
-        return f"Error al extraer contexto QA: {e}"
+        return f"Error extracting QA context: {e}"
 
 def get_story_priority(stories_content: str, story_id: str) -> str:
     """Extrae la prioridad de una historia específica del contenido YAML"""
@@ -73,9 +70,6 @@ def get_story_priority(stories_content: str, story_id: str) -> str:
 async def main():
     ensure_dirs()
     cfg = load_config()
-    concept = os.environ.get("CONCEPT","").strip()
-    if not concept:
-        raise SystemExit('Set CONCEPT="..."')
 
     # Check if this is a review adjustment call
     architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
@@ -115,12 +109,19 @@ async def main():
                 else:
                     instruction = f"Ajusta los criterios de aceptación para la historia {story_id} que está en review. Haz los criterios más claros y específicos para que el desarrollador pueda implementarlos correctamente."
 
-                user_input = f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\nCURRENT_STORIES:\n{stories_content}\n\n{detail_level.upper()}: {instruction}"
+                user_input = f"REQUIREMENTS:\n{requirements_content}\n\nCURRENT_STORIES:\n{stories_content}\n\n{detail_level.upper()}: {instruction}"
         else:
-            user_input = f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\nINSTRUCTION: Revisa y ajusta las historias que están en review para mejorar su claridad técnica y criterios de aceptación."
+            user_input = f"REQUIREMENTS:\n{requirements_content}\n\nINSTRUCTION: Revisa y ajusta las historias que están en review para mejorar su claridad técnica y criterios de aceptación."
     else:
-        # Normal planning mode
-        user_input = f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\nFollow the exact output format."
+        # Normal planning mode - BREAKDOWN INCREMENTAL para proyectos enterprise
+        user_input = f"REQUIREMENTS:\n{requirements_content}\n\nFollow the exact output format."
+
+    print(f"Using CONCEPT: {os.environ.get('CONCEPT', 'No concept defined')}")
+    print(f"Architect mode: {architect_mode}")
+    print(f"Model: {role['model']}, Temp: {role.get('temperature', 0.2)}, Max tokens: {role.get('max_tokens', 2048)}")
+    print(f"System prompt length: {len(ARCH_PROMPT)} characters")
+    print(f"User input length: {len(user_input)} characters")
+    print(f"User input preview: {user_input[:200]}...")
 
     text = await client.chat(system=ARCH_PROMPT, user=user_input)
 
@@ -131,11 +132,20 @@ async def main():
         m = re.search(rf"```{tag}\s+{label}\s*([\s\S]*?)```", text)
         return m.group(1).strip() if m else ""
 
-    (PLANNING/"prd.yaml").write_text(grab("yaml","PRD"), encoding="utf-8")
-    (PLANNING/"architecture.yaml").write_text(grab("yaml","ARCH"), encoding="utf-8")
-    (PLANNING/"epics.yaml").write_text(grab("yaml","EPICS"), encoding="utf-8")
-    (PLANNING/"stories.yaml").write_text(grab("yaml","STORIES"), encoding="utf-8")
-    (PLANNING/"tasks.csv").write_text(grab("csv","TASKS"), encoding="utf-8")
+    # Extract sections
+    prd_content = grab("yaml","PRD")
+    arch_content = grab("yaml","ARCH")
+    epics_content = grab("yaml","EPICS")
+    stories_content = grab("yaml","STORIES")
+    tasks_content = grab("csv","TASKS")
+
+    # Write sections to files
+    (PLANNING/"prd.yaml").write_text(prd_content, encoding="utf-8")
+    (PLANNING/"architecture.yaml").write_text(arch_content, encoding="utf-8")
+    (PLANNING/"epics.yaml").write_text(epics_content, encoding="utf-8")
+    (PLANNING/"stories.yaml").write_text(stories_content, encoding="utf-8")
+    (PLANNING/"tasks.csv").write_text(tasks_content, encoding="utf-8")
+
     print("✓ planning written under planning/")
 
 if __name__ == "__main__":

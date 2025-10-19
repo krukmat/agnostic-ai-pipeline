@@ -143,7 +143,7 @@ class Client:
             "options": {"temperature": self.temperature, "num_predict": self.max_tokens},
             "stream": False,
         }
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=300) as client:
             r = await client.post(url, json=payload)
             if r.status_code == 404:
                 raise RuntimeError("OLLAMA_CHAT_404")
@@ -167,7 +167,7 @@ class Client:
             "options": {"temperature": self.temperature, "num_predict": self.max_tokens},
             "stream": False,
         }
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=300) as client:
             r = await client.post(url, json=payload)
             r.raise_for_status()
             data = r.json()
@@ -188,7 +188,7 @@ class Client:
             "stream": False,
         }
         headers = {"Authorization": f"Bearer {self.oai_key}", "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=300) as client:
             r = await client.post(url, headers=headers, json=payload)
             r.raise_for_status()
             data = r.json()

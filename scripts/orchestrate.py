@@ -2,7 +2,7 @@
 from __future__ import annotations
 import os, sys, yaml, pathlib, subprocess, json, datetime
 
-# Tracking del número de iteraciones por historia para ajuste de detalle
+# Tracking the number of iterations per story for detail adjustment
 story_iteration_count = {}
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -12,29 +12,29 @@ NOTES_P = PLAN / "notes.md"
 QA_REPORT = ROOT / "artifacts" / "qa" / "last_report.json"
 
 def load_stories():
-    """Carga historias con recuperación automática de errores YAML"""
+    """Load stories with automatic YAML error recovery"""
     if not STORIES_P.exists(): return []
 
     text = STORIES_P.read_text(encoding="utf-8")
 
-    # Intento primario de carga
+    # Primary loading attempt
     try:
         data = yaml.safe_load(text)
         if isinstance(data, dict) and "stories" in data:
             data = data["stories"]
         return data if isinstance(data, list) else []
     except Exception as e:
-        append_note(f"Error YAML primario: {e}")
-        print(f"[loop] Error YAML primario: {e}")
+        append_note(f"Primary YAML error: {e}")
+        print(f"[loop] Primary YAML error: {e}")
 
-        # Intentar recuperación automática
+        # Try automatic recovery
         try:
             return recover_yaml_automatic(text)
         except Exception as e2:
-            append_note(f"Recuperación automática fallida: {e2}")
-            print(f"[loop] Recuperación automática fallida: {e2}")
+            append_note(f"Automatic recovery failed: {e2}")
+            print(f"[loop] Automatic recovery failed: {e2}")
 
-            # Fallback: intentar ejecutar fix_stories automáticamente
+            # Fallback: try to run fix_stories automatically
             if fix_stories_automatic():
                 try:
                     data = yaml.safe_load(STORIES_P.read_text(encoding="utf-8"))
@@ -42,25 +42,25 @@ def load_stories():
                         data = data["stories"]
                     return data if isinstance(data, list) else []
                 except Exception as e3:
-                    append_note(f"Fix automático fallido: {e3}")
-                    print(f"[loop] Fix automático fallido: {e3}")
+                    append_note(f"Automatic fix failed: {e3}")
+                    print(f"[loop] Automatic fix failed: {e3}")
 
-            # Último fallback: devolver lista vacía
-            append_note("FALLBACK: Devolviendo lista vacía de historias")
-            print("[loop] FATAL: Devolviendo lista vacía de historias")
+            # Last fallback: return empty list
+            append_note("FALLBACK: Returning empty story list")
+            print("[loop] FATAL: Returning empty story list")
             return []
 
 def save_stories(stories):
     STORIES_P.write_text(yaml.safe_dump(stories, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 def recover_yaml_automatic(text: str) -> list:
-    """Intenta recuperar YAML automáticamente con estrategias de reparación"""
+    """Try to recover YAML automatically with repair strategies"""
     import re
 
-    # Estrategia 1: Remover caracteres problemáticos comunes al inicio
+    # Strategy 1: Remove problematic characters at the beginning
     text = text.lstrip()
 
-    # Estrategia 2: Si todo está comentado, descomentar automáticamente
+    # Strategy 2: If everything is commented, automatically uncomment
     if all(line.lstrip().startswith('#') for line in text.splitlines() if line.strip()):
         lines = []
         for line in text.splitlines():
@@ -70,17 +70,17 @@ def recover_yaml_automatic(text: str) -> list:
                 lines.append(line)
         text = '\n'.join(lines)
 
-    # Estrategia 3: Reparar formatos de acceptance comunes
+    # Strategy 3: Repair common acceptance formats
     lines = text.splitlines()
     fixed_lines = []
     for line in lines:
-        # Reparar acceptance inline: acceptance: - item
+        # Repair inline acceptance: acceptance: - item
         if 'acceptance:' in line and ('- ' in line or '; ' in line):
             indent = line.find('acceptance:')
             match = re.match(r'^(\s*)acceptance:\s*(.+)', line)
             if match:
                 ind, val = match.groups()
-                # Convertir a multiline
+                # Convert to multiline
                 items = [item.strip('- ;') for item in re.split(r'[,;]-| -', val) if item.strip()]
                 if len(items) > 1:
                     fixed_lines.append(f"{ind}acceptance:")
@@ -90,21 +90,21 @@ def recover_yaml_automatic(text: str) -> list:
         fixed_lines.append(line)
     text = '\n'.join(fixed_lines)
 
-    # Intentar parsear de nuevo
+    # Try to parse again
     try:
         data = yaml.safe_load(text)
         if isinstance(data, dict) and "stories" in data:
             data = data["stories"]
         return data if isinstance(data, list) else []
     except Exception as e:
-        # Crear backup y intentar una reparación mínima
+        # Create backup and try minimal repair
         backup_path = STORIES_P.with_suffix('.backup.broken')
         STORIES_P.replace(backup_path)
-        append_note(f"YAML irreparable - backup creado: {backup_path}")
+        append_note(f"Unrepairable YAML - backup created: {backup_path}")
         raise e
 
 def fix_stories_automatic() -> bool:
-    """Ejecuta fix_stories automáticamente para reparar YAML"""
+    """Automatically run fix_stories to repair YAML"""
     try:
         import subprocess
         result = subprocess.run([
@@ -113,19 +113,19 @@ def fix_stories_automatic() -> bool:
         ], capture_output=True, text=True, cwd=str(ROOT))
         success = result.returncode == 0
         if success:
-            append_note("fix_stories ejecutado automáticamente")
-            print("[loop] fix_stories ejecutado automáticamente")
+            append_note("fix_stories automatically executed")
+            print("[loop] fix_stories automatically executed")
         else:
-            append_note(f"fix_stories falló: {result.stderr}")
-            print(f"[loop] fix_stories falló: {result.stderr}")
+            append_note(f"fix_stories failed: {result.stderr}")
+            print(f"[loop] fix_stories failed: {result.stderr}")
         return success
     except Exception as e:
-        append_note(f"Error ejecutando fix_stories: {e}")
-        print(f"[loop] Error ejecutando fix_stories: {e}")
+        append_note(f"Error running fix_stories: {e}")
+        print(f"[loop] Error running fix_stories: {e}")
         return False
 
 def cleanup_artifacts():
-    """Limpieza automática de artifacts antiguos para prevenir acumulación"""
+    """Automatic cleanup of old artifacts to prevent accumulation"""
     try:
         max_age_days = int(os.environ.get("ARTIFACT_RETENTION_DAYS", "7"))
         max_age_seconds = max_age_days * 24 * 60 * 60
@@ -135,11 +135,11 @@ def cleanup_artifacts():
         if not artifacts_dir.exists():
             return
 
-        # Contadores de limpieza
+        # Cleanup counters
         total_files_cleaned = 0
         total_space_cleaned = 0
 
-        # Limpiar artifacts/dev/* (logs de desarrollo)
+        # Clean artifacts/dev/* (dev logs)
         dev_dir = artifacts_dir / "dev"
         if dev_dir.exists():
             for file_path in dev_dir.glob("*"):
@@ -151,7 +151,7 @@ def cleanup_artifacts():
                         total_files_cleaned += 1
                         total_space_cleaned += size
 
-        # Limpiar artifacts/qa/* excepto last_report.json
+        # Clean artifacts/qa/* except last_report.json
         qa_dir = artifacts_dir / "qa"
         if qa_dir.exists():
             for file_path in qa_dir.glob("*"):
@@ -163,10 +163,10 @@ def cleanup_artifacts():
                         total_files_cleaned += 1
                         total_space_cleaned += size
 
-        # Limpiar *.pyc y __pycache__ si existen
+        # Clean *.pyc and __pycache__ if they exist
         for pyc_file in ROOT.rglob("*.pyc"):
             age = now - pyc_file.stat().st_mtime
-            if age > (1 * 60 * 60):  # Más de 1 hora
+            if age > (1 * 60 * 60):  # More than 1 hour
                 size = pyc_file.stat().st_size
                 pyc_file.unlink()
                 total_files_cleaned += 1
@@ -177,17 +177,17 @@ def cleanup_artifacts():
             if cache_dir.is_dir():
                 try:
                     shutil.rmtree(cache_dir)
-                    total_files_cleaned += 1  # Contar directorio como eliminación
+                    total_files_cleaned += 1  # Count directory as deletion
                 except:
-                    pass  # Ignorar errores de permisos
+                    pass  # Ignore permission errors
 
         if total_files_cleaned > 0 or total_space_cleaned > 0:
-            append_note(f"Limpieza automática: {total_files_cleaned} archivos eliminados, {total_space_cleaned/1024:.1f}KB liberados")
-            print(f"[cleanup] {total_files_cleaned} archivos antiguos eliminados, {total_space_cleaned/1024:.1f}KB liberados")
+            append_note(f"Automatic cleanup: {total_files_cleaned} files deleted, {total_space_cleaned/1024:.1f}KB freed")
+            print(f"[cleanup] {total_files_cleaned} old files deleted, {total_space_cleaned/1024:.1f}KB freed")
 
     except Exception as e:
-        append_note(f"Error en limpieza automática: {e}")
-        print(f"[cleanup] Error durante limpieza: {e}")
+        append_note(f"Error in automatic cleanup: {e}")
+        print(f"[cleanup] Error during cleanup: {e}")
 
 def append_note(text: str):
     NOTES_P.parent.mkdir(parents=True, exist_ok=True)
@@ -201,35 +201,35 @@ def run_cmd(cmd, env=None) -> int:
     return res.returncode
 
 def run_architect_for_review(story_id: str, iteration_count: int = 1) -> int:
-    """Ejecuta arquitecto para ajustar criterios cuando historia está en review"""
-    print(f"[loop] Arquitecto interviniendo para ajustar criterios de {story_id} (intento {iteration_count})")
+    """Run architect to adjust criteria when story is in review"""
+    print(f"[loop] Architect intervening to adjust {story_id} criteria (attempt {iteration_count})")
 
-    # Lee el concepto desde múltiples fuentes
+    # Read concept from multiple sources
     concept = os.environ.get("CONCEPT", "")
     if not concept:
-        # Intenta leer de requirements.yaml como respaldo
+        # Try reading requirements.yaml as backup
         req_file = ROOT / "planning" / "requirements.yaml"
         if req_file.exists():
             with open(req_file, 'r', encoding='utf-8') as f:
                 content = f.read()
-                # Extrae la primera línea significativa como concepto
+                # Extract first meaningful line as concept
                 lines = [line.strip() for line in content.split('\n') if line.strip() and not line.startswith('#')]
-                concept = lines[0] if lines else "Sistema de gestión de tareas colaborativo"
+                concept = lines[0] if lines else "Collaborative task management system"
 
     if not concept:
-        print("[loop] No se encontró concepto para arquitecto")
+        print("[loop] Concept not found for architect")
         return 1
 
-    # Ajusta el nivel de detalle basado en la iteración
+    # Adjust detail level based on iteration
     detail_level = "medium"
     if iteration_count == 1:
-        detail_level = "high"  # Primera intervención: máximo detalle
+        detail_level = "high"  # First intervention: maximum detail
     elif iteration_count == 2:
-        detail_level = "maximum"  # Segunda intervención: detalle extremo
+        detail_level = "maximum"  # Second intervention: extreme detail
     elif iteration_count >= 3:
-        detail_level = "force_approve"  # Tercera+ intervención: considerar aprobación forzada
+        detail_level = "force_approve"  # Third+ intervention: consider forced approval
 
-    # Ejecuta arquitecto con instrucciones específicas para ajustar criterios
+    # Run architect with specific instructions to adjust criteria
     arch_env = {
         **os.environ,
         "CONCEPT": concept,
@@ -250,21 +250,21 @@ def create_test_story_for(story):
     return {
         "id": f"{story['id']}-TESTS",
         "epic": story.get("epic","E1"),
-        "description": f"Escribir tests automatizados para {story['id']}: {story.get('description','')}",
-        "acceptance": "Ejecutar runners (pytest/jest) y obtener exit code 0.",
+        "description": f"Write automated tests for {story['id']}: {story.get('description','')}",
+        "acceptance": "Execute runners (pytest/jest) and obtain exit code 0.",
         "priority": story.get("priority","P2"),
         "status": "todo",
     }
 
 def find_in_review_stories(stories):
-    """Encuentra historias en review que necesitan intervención del arquitecto"""
+    """Find stories in review that need architect intervention"""
     return [s for s in stories if s.get("status","").lower() == "in_review"]
 
 def analyze_qa_failure_severity(qa_failure_details):
-    """Analiza la severidad de los fallos de QA y determina el tipo de problema"""
+    """Analyze the severity of QA failures and determine the type of problem"""
     failure_details = qa_failure_details or {}
 
-    # Contadores de diferentes tipos de errores
+    # Error type counters
     backend_critical = 0
     backend_non_critical = 0
     web_critical = 0
@@ -273,47 +273,47 @@ def analyze_qa_failure_severity(qa_failure_details):
     backend_errors = failure_details.get("backend", {}).get("errors", [])
     web_errors = failure_details.get("web", {}).get("errors", [])
 
-    # Analizar errores de backend
+    # Analyze backend errors
     for error in backend_errors:
         if error.get("type") in ["pytest_failure", "pytest_error"]:
-            # Si es error de import o configuración crítica
+            # If it's import or critical configuration error
             if "import" in error.get("error", "").lower() or "module not found" in error.get("error", "").lower():
                 backend_critical += 1
             else:
                 backend_non_critical += 1
 
-    # Analizar errores de web
+    # Analyze web errors
     for error in web_errors:
         if error.get("type") == "jest_failure":
-            web_non_critical += 1  # Por ahora todos los tests web se consideran no críticos
+            web_non_critical += 1  # For now all web tests are considered non-critical
 
-    # Determinación de severidad
+    # Severity determination
     total_errors = backend_critical + backend_non_critical + web_critical + web_non_critical
 
     if total_errors == 0:
-        return {"severity": "none", "details": "Sin errores detectados"}
+        return {"severity": "none", "details": "No errors detected"}
 
     if backend_critical > 0:
         return {
             "severity": "critical",
-            "details": f"Errores críticos de configuración/import: {backend_critical} errores"
+            "details": f"Critical configuration/import errors: {backend_critical} errors"
         }
 
     if backend_non_critical > 0 and web_non_critical == 0:
         return {
             "severity": "test_only",
-            "details": f"Fallan solo tests backend: {backend_non_critical} errores de lógica o assertions"
+            "details": f"Only backend tests failing: {backend_non_critical} logic or assertion errors"
         }
 
     if story_iteration_count.get(os.environ.get("STORY", ""), 0) >= 2:
         return {
             "severity": "persistent",
-            "details": f"Fallo persistente ({story_iteration_count.get(os.environ.get('STORY', ''), 0)} iteraciones)"
+            "details": f"Persistent failure ({story_iteration_count.get(os.environ.get('STORY', ''), 0)} iterations)"
         }
 
     return {
         "severity": "standard",
-        "details": f"Errores estándar: backend={backend_non_critical}, web={web_non_critical}"
+        "details": f"Standard errors: backend={backend_non_critical}, web={web_non_critical}"
     }
 
 def main():
@@ -333,24 +333,24 @@ def main():
         # 1) Check for stories in review that need architect intervention
         in_review_stories = find_in_review_stories(stories)
         if in_review_stories and enable_architect_intervention:
-            print(f"[loop] {len(in_review_stories)} historias en review necesitan intervención del arquitecto")
+            print(f"[loop] {len(in_review_stories)} stories in review need architect intervention")
             for story in in_review_stories[:2]:  # Limit to 2 per iteration to avoid infinite loops
                 story_id = story['id']
-                # Actualizar contador de iteraciones para esta historia
+                # Update iteration counter for this story
                 if story_id not in story_iteration_count:
                     story_iteration_count[story_id] = 0
                 story_iteration_count[story_id] += 1
 
-                print(f"[loop] Arquitecto ajustando criterios para {story_id}")
+                print(f"[loop] Architect adjusting criteria for {story_id}")
                 rc_arch = run_architect_for_review(story_id, story_iteration_count[story_id])
                 if rc_arch == 0:
-                    # Arquitecto ajustó criterios exitosamente
-                    story['status'] = 'todo'  # Vuelve a todo para que dev lo retrabaje
-                    append_note(f"- Arquitecto ajustó criterios para {story_id} (intento {story_iteration_count[story_id]}) → Dev debe retrabajar")
-                    print(f"[loop] Arquitecto ajustó criterios para {story_id} → Dev debe retrabajar")
+                    # Architect successfully adjusted criteria
+                    story['status'] = 'todo'  # Return to todo so dev can rework it
+                    append_note(f"- Architect adjusted criteria for {story_id} (attempt {story_iteration_count[story_id]}) → Dev must rework")
+                    print(f"[loop] Architect adjusted criteria for {story_id} → Dev must rework")
                 else:
-                    append_note(f"- Arquitecto no pudo ajustar criterios para {story_id} (rc={rc_arch})")
-                    print(f"[loop] Arquitecto no pudo ajustar criterios para {story_id}")
+                    append_note(f"- Architect could not adjust criteria for {story_id} (rc={rc_arch})")
+                    print(f"[loop] Architect could not adjust criteria for {story_id}")
 
         story = next_todo(stories)
         if not story:

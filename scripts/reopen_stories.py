@@ -7,15 +7,15 @@ def load_yaml(path: pathlib.Path):
     try:
         data = yaml.safe_load(txt)
     except Exception as e:
-        print("❌ No pude parsear planning/stories.yaml como YAML válido.")
+        print("❌ Could not parse planning/stories.yaml as valid YAML.")
         print("   Error:", e)
-        print("   Sugerencia: ejecuta primero `./.venv/bin/python scripts/fix_stories.py` si tu pipeline lo tiene.")
+        print("   Suggestion: run `./.venv/bin/python scripts/fix_stories.py` first if your pipeline has it.")
         sys.exit(2)
     if isinstance(data, dict) and "stories" in data and isinstance(data["stories"], list):
         return data["stories"], "dict_wrapper"
     if isinstance(data, list):
         return data, "list"
-    print("❌ El YAML no es una lista top-level ni un dict con clave 'stories'.")
+    print("❌ YAML is not a top-level list nor a dict with 'stories' key.")
     sys.exit(2)
 
 def save_yaml(path: pathlib.Path, stories, mode: str):
@@ -29,23 +29,23 @@ def save_yaml(path: pathlib.Path, stories, mode: str):
     else:
         data = stories
     path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    print(f"✓ Guardado {path} (backup en {backup.name})")
+    print(f"✓ Saved {path} (backup at {backup.name})")
 
 def main():
-    ap = argparse.ArgumentParser(description="Reabrir stories (status=todo) en planning/stories.yaml")
-    ap.add_argument("--file", default="planning/stories.yaml", help="Ruta del stories.yaml (por defecto: planning/stories.yaml)")
+    ap = argparse.ArgumentParser(description="Reopen stories (status=todo) in planning/stories.yaml")
+    ap.add_argument("--file", default="planning/stories.yaml", help="Path to stories.yaml (default: planning/stories.yaml)")
     ap.add_argument("--only", nargs="*", default=None,
-                    help="Reabrir solo estados específicos (ej: --only blocked fail failed). Si no se indica, reabre TODAS.")
+                    help="Reopen only specific states (eg: --only blocked fail failed). If not specified, reopens ALL.")
     args = ap.parse_args()
 
     p = pathlib.Path(args.file)
     if not p.exists():
-        print(f"❌ No existe {p}")
+        print(f"❌ Does not exist {p}")
         sys.exit(1)
 
     stories, mode = load_yaml(p)
     if not isinstance(stories, list):
-        print("❌ Formato inesperado en stories.")
+        print("❌ Unexpected format in stories.")
         sys.exit(2)
 
     before = {s.get("id","?"): s.get("status") for s in stories if isinstance(s, dict)}
@@ -61,19 +61,18 @@ def main():
                 s["status"] = "todo"
                 changed += 1
         else:
-            # reabrir todas
+            # reopen all
             s["status"] = "todo"
             changed += 1
 
     save_yaml(p, stories, mode)
 
     after = {s.get("id","?"): s.get("status") for s in stories if isinstance(s, dict)}
-    print(f"Reabiertas: {changed} historias.")
-    # pequeño resumen
+    print(f"Reopened: {changed} stories.")
+    # small summary
     from collections import Counter
-    print("Estado previo:", Counter(before.values()))
-    print("Estado actual:", Counter(after.values()))
+    print("Previous status:", Counter(before.values()))
+    print("Current status:", Counter(after.values()))
 
 if __name__ == "__main__":
     main()
-

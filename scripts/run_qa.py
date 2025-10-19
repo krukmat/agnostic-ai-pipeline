@@ -26,20 +26,20 @@ def has_any_web_test(web_dir: pathlib.Path) -> bool:
     return False
 
 def analyze_test_failures(areas):
-    """Analiza los logs de test para extraer detalles específicos de fallos"""
+    """Analyze test logs to extract specific failure details"""
     failure_details = {
         "backend": {"errors": [], "warnings": [], "missing_coverage": []},
         "web": {"errors": [], "warnings": [], "missing_coverage": []}
     }
 
-    # Analizar logs de backend (pytest)
+    # Analyze backend logs (pytest)
     pytest_log = ART / "pytest_output.txt"
     if pytest_log.exists():
         pytest_output = pytest_log.read_text(encoding="utf-8")
         failure_details["backend"]["errors"].extend(extract_pytest_errors(pytest_output))
         failure_details["backend"]["warnings"].extend(extract_pytest_warnings(pytest_output))
 
-    # Analizar logs de web (npm test - jest)
+    # Analyze web logs (npm test - jest)
     npm_log = ART / "npm_output.txt"
     if npm_log.exists():
         npm_output = npm_log.read_text(encoding="utf-8")
@@ -48,14 +48,14 @@ def analyze_test_failures(areas):
     return failure_details
 
 def extract_pytest_errors(output: str):
-    """Extrae errores específicos de pytest"""
+    """Extract specific pytest errors"""
     errors = []
     lines = output.split('\n')
     for i, line in enumerate(lines):
-        # Buscar patrones de error de pytest
+        # Look for pytest error patterns
         if 'FAILED' in line and '::' in line:
             test_name = line.strip().split('::')[-1].split()[0]
-            # Obtener líneas de error siguientes
+            # Get following error lines
             error_detail = []
             for j in range(i+1, min(i+10, len(lines))):
                 if lines[j].strip() and not lines[j].startswith('='):
@@ -64,35 +64,35 @@ def extract_pytest_errors(output: str):
                         break
             errors.append({
                 "test": test_name,
-                "error": '\n'.join(error_detail[:3]),  # Primeros 3 líneas de error
+                "error": '\n'.join(error_detail[:3]),  # First 3 error lines
                 "type": "pytest_failure"
             })
         elif 'ERROR' in line and '::' in line:
             test_name = line.strip().split('::')[-1].split()[0]
             errors.append({
                 "test": test_name,
-                "error": "Error de configuración o import",
+                "error": "Configuration or import error",
                 "type": "pytest_error"
             })
     return errors
 
 def extract_pytest_warnings(output: str):
-    """Extrae warnings de pytest"""
+    """Extract pytest warnings"""
     warnings = []
     if 'no tests ran' in output.lower():
-        warnings.append("No se encontraron tests para ejecutar")
+        warnings.append("No tests found to execute")
     if 'warning' in output.lower():
-        warnings.append("Hay warnings en la ejecución de tests")
+        warnings.append("There are warnings in test execution")
     return warnings
 
 def extract_npm_errors(output: str):
-    """Extrae errores específicos de npm/jest"""
+    """Extract specific npm/jest errors"""
     errors = []
     lines = output.split('\n')
     for i, line in enumerate(lines):
-        # Buscar failed tests en Jest
+        # Look for failed tests in Jest
         if '✗' in line or '✕' in line:
-            # Extraer nombre del test
+            # Extract test name
             test_info = []
             for j in range(max(0, i-3), min(i+5, len(lines))):
                 test_info.append(lines[j])
@@ -109,11 +109,11 @@ def run_cmd(cmd, cwd=None) -> int:
         print(f"[QA] run: {' '.join(cmd)} (cwd={cwd or os.getcwd()})")
         res = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-        # Guardar logs separados por tipo de test
+        # Save logs separated by test type
         log_file = ART / f"{cmd[0] if cmd else 'unknown'}_output.txt"
         log_file.write_text(res.stdout, encoding="utf-8")
 
-        # También mantener el archivo general de logs
+        # Also maintain general logs file
         (ART / "logs.txt").write_text(res.stdout, encoding="utf-8")
         print(res.stdout)
         return res.returncode
@@ -136,7 +136,7 @@ def main():
         if pytest_bin.exists():
             be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], cwd=str(be_root))
         else:
-            be_rc = 127  # venv/pytest no disponible
+            be_rc = 127  # venv/pytest not available
     else:
         be_rc = 10  # no tests
 
@@ -145,12 +145,12 @@ def main():
     web_tests = has_any_web_test(web_root)
     web_rc = None
     if web_tests and (web_root / "package.json").exists():
-        # Usamos npm por compatibilidad
+        # Use npm for compatibility
         web_rc = run_cmd(["npm", "test", "--silent", "--", "--passWithNoTests"], cwd=str(web_root))
     else:
         web_rc = 10  # no tests
 
-    # Agregables: mobile etc. (por ahora omitimos)
+    # Future extensions: mobile etc. (omitted for now)
     areas = {
         "backend": {"has_tests": be_has, "rc": be_rc},
         "web":     {"has_tests": web_tests, "rc": web_rc},
@@ -169,7 +169,7 @@ def main():
         status = "pass"
         code = 0
 
-    # Análisis detallado de fallos
+    # Detailed failure analysis
     failure_details = analyze_test_failures(areas)
 
     report = {
@@ -177,10 +177,10 @@ def main():
         "allow_no_tests": allow_no_tests,
         "areas": areas,
         "failure_details": failure_details,
-        "story_context": os.environ.get("STORY", ""),  # Contexto de la historia actual
+        "story_context": os.environ.get("STORY", ""),  # Current story context
     }
     REPORT.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(f"[QA] status={status} (detalle en {REPORT})")
+    print(f"[QA] status={status} (detail in {REPORT})")
     sys.exit(code)
 
 if __name__ == "__main__":
