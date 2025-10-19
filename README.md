@@ -83,7 +83,16 @@ artifacts/iterations/<iteration-name>/
 
 ## 4. Supporting Infrastructure
 
-### 4.1 Project Defaults Skeleton
+### 4.1 Core Pipeline Strengths (Quick View)
+
+| Feature | Summary |
+| ------- | ------- |
+| **Integral TDD** | Tests are mandatory per story; QA blocks missing suites when `ALLOW_NO_TESTS=0`. |
+| **Intelligent QA** | Severity-aware classification, automated architect interventions, and selective force approval. |
+| **Auto-Retry + Dependencies** | Stories in `waiting` state unlock when prerequisites finish; Dev→QA loops run via `make loop`. |
+| **Cross-Stack Support** | Backend (FastAPI), web (Express.js), and new modules (React Native, services) supported through skeletons. |
+
+### 4.2 Project Defaults Skeleton
 
 `project-defaults/` provides a minimal scaffold copied into `project/` whenever missing:
 - `backend-fastapi/app/__init__.py` ensures imports like `from app.foo import ...` always work.
@@ -92,7 +101,7 @@ artifacts/iterations/<iteration-name>/
 
 `common.ensure_dirs()` clones these defaults without overwriting existing files, meaning release loops always start from a consistent baseline after cleanup.
 
-### 4.2 Multi-Stack Extensibility & Providers
+### 4.3 Multi-Stack Extensibility & Providers
 
 - Roles are configured in `config.yaml`; each loop release can target Ollama, OpenAI, or Codex CLI per agent.
 - Extending to new stacks (e.g., mobile apps, additional services) is as simple as adding a skeleton under `project-defaults/`—release loops will copy the structure automatically.
