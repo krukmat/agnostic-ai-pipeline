@@ -14,7 +14,7 @@ La solución se divide en fases claramente secuenciales. No avances a la siguien
   git checkout -b feature/codex-cli-provider
   ```
 - `scripts/llm.py:1` centraliza la llamada a cualquier LLM para los cuatro roles.
-- Cada script (`run_ba.py`, `run_architect.py`, `run_dev.py`, `run_qa.py`) únicamente lee configuración y delega en `LLMClient`.
+- Cada script (`run_ba.py`, `run_architect.py`, `run_dev.py`, `run_qa.py`) delega sus llamadas en `Client(role=...)`, que resuelve provider y modelo desde `config.yaml`.
 - El orquestador (`scripts/orchestrate.py:1`) supervisa reintentos, logging y estados.
 - La configuración se define en `config.yaml:1`; allí mapearás el nuevo “provider” hacia el comando CLI que lanza tu modelo local.
 
@@ -25,7 +25,7 @@ La solución se divide en fases claramente secuenciales. No avances a la siguien
 ```yaml
 providers:
   codex_cli:
-    type: codex_cli          # habilita la ruta CLI en LLMClient
+    type: codex_cli          # habilita la ruta CLI en Client
     command: ["codex", "chat"]
     cwd: "."                 # opcional: dónde ejecutar el comando
     env:
@@ -47,7 +47,7 @@ roles:
 
 ---
 
-## 2. Preparar `LLMClient` para soportar proveedores CLI
+## 2. Preparar `Client` para soportar proveedores CLI
 2.1. En `Client.__init__` (`scripts/llm.py:1`):
 - Lee los campos nuevos `command`, `cwd`, `env` cuando `provider_cfg["type"] == "codex_cli"`.
 - Persiste en atributos como `self.cli_command`, `self.cli_cwd`, `self.cli_env`.
@@ -57,7 +57,7 @@ roles:
 - Soporta dos formatos de entrada configurables en `config.yaml`:
   - `stdin` (por defecto): Envía JSON por stdin con system/user/model/temperature/max_tokens
   - `flags`: Usa `--system` y `--user` flags (asumiendo CLI lo soporta)
-- Incluye timing y logging completo a `artifacts/dev/last_raw.txt`
+- Incluye timing y logging completo a `artifacts/<rol>/last_raw.txt`
 
 2.3. En `chat()`, antes de entrar en las ramas Ollama/OpenAI, chequea:
 ```python
@@ -83,7 +83,7 @@ Utilizar `asyncio.to_thread` evita bloquear el loop principal cuando se invoca u
 - Opcional: para los roles con formato rígido (Dev JSON, BA/Architect YAML, QA markdown), corre validaciones básicas antes de devolver el texto a los scripts consumidores para reducir fallas down-stream.
 
 3.3. Logging:
-- Guarda la respuesta cruda en `artifacts/dev/last_raw.txt` o su equivalente por rol (puedes reutilizar la lógica existente en `run_dev.py:67` que ya escribe `last_raw.txt`). Si decides centralizarlo, crea un helper en `scripts/common.py`.
+- Guarda la respuesta cruda en `artifacts/<rol>/last_raw.txt` (por ejemplo `artifacts/dev/last_raw.txt`). Si decides centralizarlo, crea un helper en `scripts/common.py`.
 
 ---
 
