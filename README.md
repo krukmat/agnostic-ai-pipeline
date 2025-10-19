@@ -9,6 +9,21 @@
 - Wraps the entire multi-agent pipeline into a single iteration artifact.
 - Guarantees every release includes stories, code, tests, QA evidence, and reproducible state.
 - Enables strict or exploratory runs (QA strict vs relaxed) while preserving audit trails.
+- Simple to operate (`make iteration ...`), powerful enough for enterprise backlogs, and extensible to any professional or hobby setup.
+
+---
+
+## Example Release Scenarios
+
+| Scenario | Goal | Command |
+| -------- | ---- | ------- |
+| **CoffeeClub Inventory & Ordering** | Strict inventory/ordering flow with real-time dashboards | `make iteration CONCEPT="CoffeeClub Inventory & Ordering" LOOPS=2 ALLOW_NO_TESTS=0` |
+| **E-commerce MVP** | Quick prototype with relaxed QA to explore UI variants | `make iteration CONCEPT="Retail MVP" LOOPS=1 ALLOW_NO_TESTS=1 ITERATION_NAME="explore-retail"` |
+| **Mobile Companion App** | Leverage a React Native skeleton added to `project-defaults/` | `make iteration CONCEPT="Courier Mobile Companion" LOOPS=2 SKIP_BA=0` |
+| **API Hardening Sprint** | Re-run architect/dev/qa using existing requirements | `make iteration CONCEPT="API Hardening" LOOPS=3 SKIP_BA=1` |
+| **Localized Content Update** | Switch Dev role to Codex CLI for domain-specific models | `make set-role role=dev provider=codex_cli model="codex-local"`<br>`make iteration CONCEPT="Localized Content Refresh" LOOPS=2` |
+
+These examples illustrate how loop releases stay **simple (single make command)**, **powerful (full BA→QA automation)**, and **extensible (drop in new skeletons or providers)** across professional or amateur environments.
 
 ---
 
@@ -81,7 +96,8 @@ artifacts/iterations/<iteration-name>/
 
 - Roles are configured in `config.yaml`; each loop release can target Ollama, OpenAI, or Codex CLI per agent.
 - Extending to new stacks (e.g., mobile apps, additional services) is as simple as adding a skeleton under `project-defaults/`—release loops will copy the structure automatically.
-- `scripts/llm.py` handles provider selection, including CLI logging per role under `artifacts/<role>/last_raw.txt`.
+- `scripts/llm.py` handles provider selection per role, logging raw interactions under `artifacts/<role>/last_raw.txt`.
+- Mix and match local (Ollama) or paid APIs (OpenAI, Claude Code, Codex CLI, etc.) within the same release; each role can target a different provider without code changes.
 
 ---
 
@@ -158,4 +174,4 @@ Loop releases have already generated:
 
 ## 9. Conclusion
 
-Treat each loop release as a self-contained product increment: enter a concept, run `make iteration`, and receive code, tests, and documentation. The AGNOSTIC AI PIPELINE turns this workflow into a repeatable process that scales from MVPs to enterprise backlogs while maintaining audit-ready artifacts. 🚀
+Treat each loop release as a self-contained product increment: enter a concept, run `make iteration`, and receive code, tests, and documentation. The workflow is **simple to drive**, **powerful in coverage**, and **extensible to any stack or environment**—from hobby experiments to enterprise delivery. The AGNOSTIC AI PIPELINE turns this release cadence into a repeatable process that scales while maintaining audit-ready artifacts. 🚀
