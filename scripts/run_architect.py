@@ -85,6 +85,7 @@ async def main():
         requirements_content = requirements_file.read_text(encoding="utf-8")
 
     client = LLMClient(prov, role["model"], role.get("temperature",0.2), role.get("max_tokens",2048), base)
+    concept = os.environ.get("CONCEPT","")
 
     if architect_mode == "review_adjustment":
         # Mode for adjusting stories in review
@@ -114,14 +115,13 @@ async def main():
             user_input = f"REQUIREMENTS:\n{requirements_content}\n\nINSTRUCTION: Revisa y ajusta las historias que están en review para mejorar su claridad técnica y criterios de aceptación."
     else:
         # Normal planning mode - BREAKDOWN INCREMENTAL para proyectos enterprise
-        user_input = f"REQUIREMENTS:\n{requirements_content}\n\nFollow the exact output format."
+        user_input = f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\nFollow the exact output format."
 
     print(f"Using CONCEPT: {os.environ.get('CONCEPT', 'No concept defined')}")
     print(f"Architect mode: {architect_mode}")
     print(f"Model: {role['model']}, Temp: {role.get('temperature', 0.2)}, Max tokens: {role.get('max_tokens', 2048)}")
-    print(f"System prompt length: {len(ARCH_PROMPT)} characters")
-    print(f"User input length: {len(user_input)} characters")
-    print(f"User input preview: {user_input[:200]}...")
+    print(f"System prompt length: {ARCH_PROMPT}")
+    print(f"User input: {user_input}...")
 
     text = await client.chat(system=ARCH_PROMPT, user=user_input)
 
