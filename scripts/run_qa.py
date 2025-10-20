@@ -1,11 +1,13 @@
 # scripts/run_qa.py
 from __future__ import annotations
-import os, sys, json, subprocess, pathlib, shutil
+import os, sys, json, subprocess, pathlib, shutil, re, datetime
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ART = ROOT / "artifacts" / "qa"
 ART.mkdir(parents=True, exist_ok=True)
 REPORT = ART / "last_report.json"
+STORY_LOG_DIR = ART / "story_logs"
+STORY_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 def has_any_test(py_dir: pathlib.Path) -> bool:
     if not py_dir.exists(): return False
@@ -24,6 +26,41 @@ def has_any_web_test(web_dir: pathlib.Path) -> bool:
     for p in tests.rglob("*.test.ts"):
         return True
     return False
+
+def log_contains_import_error() -> list[str]:
+    """Inspect QA logs for ModuleNotFoundError entries and return missing modules."""
+    log_file = ART / "logs.txt"
+    if not log_file.exists():
+        return []
+    text = log_file.read_text(encoding="utf-8")
+    return re.findall(r"ModuleNotFoundError: No module named '([^']+)'", text)
+
+def fix_backend_test_imports(test_dir: pathlib.Path) -> bool:
+    """Normalize backend test imports so they reference local app package."""
+    if not test_dir.exists():
+        return False
+
+    replacements = [
+        ("project.backend-fastapi.app", "app"),
+        ("backend_fastapi.app", "app"),
+    ]
+    changed = False
+
+    for py_test in test_dir.rglob("test_*.py"):
+        try:
+            text = py_test.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        new_text = text
+        for old, new in replacements:
+            new_text = new_text.replace(old, new)
+
+        if new_text != text:
+            py_test.write_text(new_text, encoding="utf-8")
+            changed = True
+
+    return changed
 
 def analyze_test_failures(areas, be_rc, web_rc):
     """Analyze test logs to extract specific failure details"""
@@ -132,6 +169,16 @@ def run_cmd(cmd, cwd=None) -> int:
         # Also maintain general logs file
         (ART / "logs.txt").write_text(res.stdout, encoding="utf-8")
 
+        # Persist log per story for traceability
+        story_id = os.environ.get("STORY", "").strip()
+        if story_id:
+            timestamp = datetime.datetime.utcnow().isoformat()
+            story_log = STORY_LOG_DIR / f"{story_id}.log"
+            with story_log.open("a", encoding="utf-8") as handle:
+                handle.write(f"\n=== {timestamp} UTC | command: {' '.join(cmd)} ===\n")
+                handle.write(res.stdout)
+                handle.write("\n")
+
         # Add specific error reporting for common return codes
         error_details = ""
         if res.returncode == 127:
@@ -150,6 +197,13 @@ def run_cmd(cmd, cwd=None) -> int:
     except FileNotFoundError as e:
         error_msg = f"Command not found: {cmd[0] if cmd else 'unknown'} - {e}"
         (ART / "logs.txt").write_text(error_msg, encoding="utf-8")
+        story_id = os.environ.get("STORY", "").strip()
+        if story_id:
+            timestamp = datetime.datetime.utcnow().isoformat()
+            story_log = STORY_LOG_DIR / f"{story_id}.log"
+            with story_log.open("a", encoding="utf-8") as handle:
+                handle.write(f"\n=== {timestamp} UTC | command: {' '.join(cmd)} ===\n")
+                handle.write(error_msg + "\n")
         print(error_msg)
         return 127
 
@@ -166,6 +220,12 @@ def main():
         pytest_bin = ROOT / ".venv" / "bin" / "pytest"
         if pytest_bin.exists():
             be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], cwd=str(be_root))
+            if be_rc not in (0, 10):
+                missing = log_contains_import_error()
+                if any(m.startswith("backend_fastapi") or "backend-fastapi" in m for m in missing):
+                    if fix_backend_test_imports(be_tests):
+                        print("[QA] Auto-corrected backend test imports referencing missing packages. Re-running pytest.")
+                        be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], cwd=str(be_root))
         else:
             be_rc = 127  # venv/pytest not available in project .venv
     else:

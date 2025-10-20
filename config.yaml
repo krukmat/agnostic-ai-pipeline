@@ -37,3 +37,5 @@ roles:
     temperature: 0.2
     max_tokens: 2048
     top_p: 0.95
+pipeline:
+  force_approval_attempts: 3

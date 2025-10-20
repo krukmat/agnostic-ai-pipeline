@@ -1,9 +1,20 @@
 # scripts/orchestrate.py
 from __future__ import annotations
-import os, sys, yaml, pathlib, subprocess, json, datetime
+import os, sys, yaml, pathlib, subprocess, json, datetime, shutil
+from common import load_config, ensure_dirs
 
-# Tracking the number of iterations per story for detail adjustment
-story_iteration_count = {}
+# Tracking the number of iterations per story
+story_arch_attempts: dict[str, int] = {}
+story_dev_attempts: dict[str, int] = {}
+
+_config = load_config()
+FORCE_APPROVAL_THRESHOLD = max(
+    1,
+    int(
+        (_config.get("pipeline") or {}).get("force_approval_attempts", 3)
+        or 3
+    ),
+)
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLAN = ROOT / "planning"
@@ -124,66 +135,63 @@ def fix_stories_automatic() -> bool:
         print(f"[loop] Error running fix_stories: {e}")
         return False
 
+def _wipe_directory_contents(path: pathlib.Path) -> tuple[int, int]:
+    """Delete all children inside the given directory (but keep the directory)."""
+    if not path.exists():
+        return (0, 0)
+
+    total_files = 0
+    total_bytes = 0
+    for child in list(path.iterdir()):
+        try:
+            if child.is_dir():
+                size = sum(f.stat().st_size for f in child.rglob('*') if f.is_file())
+                shutil.rmtree(child)
+                total_bytes += size
+            else:
+                total_bytes += child.stat().st_size
+                child.unlink()
+            total_files += 1
+        except Exception as exc:
+            append_note(f"Cleanup warning: could not remove {child}: {exc}")
+            print(f"[cleanup] Warning: could not remove {child}: {exc}")
+    return (total_files, total_bytes)
+
+
 def cleanup_artifacts():
-    """Automatic cleanup of old artifacts to prevent accumulation"""
+    """Automatic cleanup of artifacts, with optional flush of planning/project."""
     try:
-        max_age_days = int(os.environ.get("ARTIFACT_RETENTION_DAYS", "7"))
-        max_age_seconds = max_age_days * 24 * 60 * 60
-        now = datetime.datetime.now().timestamp()
-
         artifacts_dir = ROOT / "artifacts"
-        if not artifacts_dir.exists():
-            return
-
-        # Cleanup counters
         total_files_cleaned = 0
         total_space_cleaned = 0
 
-        # Clean artifacts/dev/* (dev logs)
-        dev_dir = artifacts_dir / "dev"
-        if dev_dir.exists():
-            for file_path in dev_dir.glob("*"):
-                if file_path.is_file():
-                    file_age = now - file_path.stat().st_mtime
-                    if file_age > max_age_seconds:
-                        size = file_path.stat().st_size
-                        file_path.unlink()
-                        total_files_cleaned += 1
-                        total_space_cleaned += size
+        if artifacts_dir.exists():
+            files, size = _wipe_directory_contents(artifacts_dir)
+            total_files_cleaned += files
+            total_space_cleaned += size
 
-        # Clean artifacts/qa/* except last_report.json
-        qa_dir = artifacts_dir / "qa"
-        if qa_dir.exists():
-            for file_path in qa_dir.glob("*"):
-                if file_path.is_file() and file_path.name != "last_report.json":
-                    file_age = now - file_path.stat().st_mtime
-                    if file_age > max_age_seconds:
-                        size = file_path.stat().st_size
-                        file_path.unlink()
-                        total_files_cleaned += 1
-                        total_space_cleaned += size
+        # Always recreate qa/dev directories expected by other steps
+        ensure_dirs()
 
-        # Clean *.pyc and __pycache__ if they exist
-        for pyc_file in ROOT.rglob("*.pyc"):
-            age = now - pyc_file.stat().st_mtime
-            if age > (1 * 60 * 60):  # More than 1 hour
-                size = pyc_file.stat().st_size
-                pyc_file.unlink()
-                total_files_cleaned += 1
-                total_space_cleaned += size
+        flush_requested = os.environ.get("CLEAN_FLUSH", "0") == "1"
+        if flush_requested:
+            files, size = _wipe_directory_contents(PLANNING)
+            total_files_cleaned += files
+            total_space_cleaned += size
 
-        import shutil
-        for cache_dir in ROOT.rglob("__pycache__"):
-            if cache_dir.is_dir():
-                try:
-                    shutil.rmtree(cache_dir)
-                    total_files_cleaned += 1  # Count directory as deletion
-                except:
-                    pass  # Ignore permission errors
+            files, size = _wipe_directory_contents(PROJECT)
+            total_files_cleaned += files
+            total_space_cleaned += size
 
-        if total_files_cleaned > 0 or total_space_cleaned > 0:
-            append_note(f"Automatic cleanup: {total_files_cleaned} files deleted, {total_space_cleaned/1024:.1f}KB freed")
-            print(f"[cleanup] {total_files_cleaned} old files deleted, {total_space_cleaned/1024:.1f}KB freed")
+            ensure_dirs()  # restore structure after flush
+
+        if total_files_cleaned > 0:
+            append_note(
+                f"Automatic cleanup: {total_files_cleaned} items removed, {total_space_cleaned/1024:.1f}KB freed"
+            )
+            print(
+                f"[cleanup] Removed {total_files_cleaned} items | reclaimed {total_space_cleaned/1024:.1f}KB"
+            )
 
     except Exception as e:
         append_note(f"Error in automatic cleanup: {e}")
@@ -226,8 +234,10 @@ def run_architect_for_review(story_id: str, iteration_count: int = 1) -> int:
         detail_level = "high"  # First intervention: maximum detail
     elif iteration_count == 2:
         detail_level = "maximum"  # Second intervention: extreme detail
-    elif iteration_count >= 3:
-        detail_level = "force_approve"  # Third+ intervention: consider forced approval
+    elif iteration_count >= FORCE_APPROVAL_THRESHOLD:
+        detail_level = "force_approve"  # Consider forced approval once threshold reached
+    else:
+        detail_level = "maximum"
 
     # Run architect with specific instructions to adjust criteria
     arch_env = {
@@ -365,7 +375,7 @@ def analyze_qa_failure_severity(qa_failure_details):
         }
 
     # PERSISTENT: Multiple iterations even with other error types
-    iteration_count = story_iteration_count.get(os.environ.get("STORY", ""), 0)
+    iteration_count = story_dev_attempts.get(os.environ.get("STORY", ""), 0)
     if iteration_count >= 2:
         return {
             "severity": "persistent",
@@ -398,27 +408,30 @@ def main():
             print(f"[loop] {len(in_review_stories)} stories in review need architect intervention")
             for story in in_review_stories[:2]:  # Limit to 2 per iteration to avoid infinite loops
                 story_id = story['id']
-                # Update iteration counter for this story
-                if story_id not in story_iteration_count:
-                    story_iteration_count[story_id] = 0
-                story_iteration_count[story_id] += 1
+                # Update architect iteration counter for this story
+                story_arch_attempts[story_id] = story_arch_attempts.get(story_id, 0) + 1
 
                 print(f"[loop] Architect adjusting criteria for {story_id}")
-                rc_arch = run_architect_for_review(story_id, story_iteration_count[story_id])
+                rc_arch = run_architect_for_review(story_id, story_arch_attempts[story_id])
                 if rc_arch == 0:
-                    # Check if this was force approval (iteration >= 3)
-                    was_force_approved = story_iteration_count[story_id] >= 3 and story.get("priority") in ["P1", "P0"]
+                    # Check if this was force approval (iteration >= threshold)
+                    attempt_count = story_arch_attempts[story_id]
+                    was_force_approved = attempt_count >= FORCE_APPROVAL_THRESHOLD and story.get("priority") in ["P1", "P0"]
 
                     if was_force_approved:
                         # Force approval - mark as done, don't rework
                         story['status'] = 'done_force_architect'
-                        append_note(f"- Architect FORCE APPROVED {story_id} (attempt {story_iteration_count[story_id]}, P{story.get('priority')} priority)")
-                        print(f"[loop] Architect FORCE APPROVED {story_id} (iteration {story_iteration_count[story_id]})")
+                        append_note(f"- Architect FORCE APPROVED {story_id} (attempt {attempt_count}, P{story.get('priority')} priority)")
+                        print(f"[loop] Architect FORCE APPROVED {story_id} (iteration {attempt_count})")
+                        story_dev_attempts.pop(story_id, None)
+                        story_arch_attempts.pop(story_id, None)
                     else:
                         # Normal adjustment - return to todo so dev can rework it
+                        attempt = attempt_count
                         story['status'] = 'todo'  # Return to todo so dev can rework it
-                        append_note(f"- Architect adjusted criteria for {story_id} (attempt {story_iteration_count[story_id]}) → Dev must rework")
-                        print(f"[loop] Architect adjusted criteria for {story_id} → Dev must rework")
+                        story_arch_attempts[story_id] = 0
+                        append_note(f"- Architect adjusted criteria for {story_id} (attempt {attempt}) → Dev must rework")
+                        print(f"[loop] Architect adjusted criteria for {story_id} → Dev must rework (counter reset)")
                 else:
                     append_note(f"- Architect could not adjust criteria for {story_id} (rc={rc_arch})")
                     print(f"[loop] Architect could not adjust criteria for {story_id}")
@@ -435,11 +448,9 @@ def main():
         sid = story["id"]
 
         # 2) Track iterations for this story
-        if sid not in story_iteration_count:
-            story_iteration_count[sid] = 0
-        story_iteration_count[sid] += 1
+        story_dev_attempts[sid] = story_dev_attempts.get(sid, 0) + 1
 
-        append_note(f"- Dev implementando {sid} (iteración {story_iteration_count[sid]})")
+        append_note(f"- Dev implementando {sid} (iteración {story_dev_attempts[sid]})")
 
         # 3) DEV - with CLI error handling
         dev_env = {**os.environ, "STORY": sid, "DEV_RETRIES": os.environ.get("DEV_RETRIES","3")}
@@ -481,7 +492,7 @@ def main():
                 raise
 
         # 4) QA
-        qa_env = {**os.environ, "ALLOW_NO_TESTS": "1" if allow_no_tests else "0"}
+        qa_env = {**os.environ, "ALLOW_NO_TESTS": "1" if allow_no_tests else "0", "STORY": sid}
         rc_qa = run_cmd([str(ROOT/".venv/bin/python"), str(ROOT/"scripts"/"run_qa.py")], env=qa_env)
 
         qa_status = "unknown"
@@ -498,8 +509,8 @@ def main():
         if qa_status == "pass":
             # ✅ QA PASS: Historia aprobada
             story["status"] = "done"
-            if sid in story_iteration_count:
-                story_iteration_count[sid] = 0
+            story_dev_attempts.pop(sid, None)
+            story_arch_attempts.pop(sid, None)
 
             # Check if any waiting stories can now be activated (dependency resolution)
             activated_waiters = check_and_activate_waiting_stories(stories, sid)
@@ -547,17 +558,22 @@ def main():
                 print(f"[loop] {sid} -> blocked_fatal (CRÍTICO - no force-approve)")
 
             elif failure_analysis["severity"] == "force_applicable":
-                # ✅ FORCE-APPROVE SOLO P1/P0 mayor a 3 iteraciones: Errores force-applicable
-                iteration_count = story_iteration_count.get(sid, 0)
+                # ✅ FORCE-APPROVE SOLO P1/P0 tras superar el umbral configurado: Errores force-applicable
+                iteration_count = story_dev_attempts.get(sid, 0)
                 story_priority = story.get("priority", "P2")
 
-                if iteration_count >= 3 and story_priority in ["P1", "P0"]:
+                if iteration_count >= FORCE_APPROVAL_THRESHOLD and story_priority in ["P1", "P0"]:
                     story["status"] = "done_force_architect"
                     append_note(f"- {sid} FORCE-APPROVED: {failure_analysis['details'][:80]} (Safe to approve P{story_priority} after {iteration_count} retries)")
                     print(f"[loop] {sid} -> done_force_architect (SAFE FORCE-APPROVAL)")
+                    story_dev_attempts.pop(sid, None)
+                    story_arch_attempts.pop(sid, None)
                 else:
                     story["status"] = "in_review"
-                    append_note(f"- {sid} Aguardando force-approval: {failure_analysis['details'][:80]} (Needs P1/P0 + ≥3 iterations)")
+                    append_note(
+                        f"- {sid} Aguardando force-approval: {failure_analysis['details'][:80]} "
+                        f"(Needs P1/P0 + ≥{FORCE_APPROVAL_THRESHOLD} iterations)"
+                    )
                     print(f"[loop] {sid} -> in_review (waiting force-approval criteria)")
 
             elif failure_analysis["severity"] == "test_only":
@@ -568,7 +584,7 @@ def main():
 
             elif failure_analysis["severity"] == "persistent":
                 # Múltiples fallos: considerar calidad
-                iteration_count = story_iteration_count.get(sid, 0)
+                iteration_count = story_dev_attempts.get(sid, 0)
                 story_priority = story.get("priority", "P2")
 
                 if iteration_count >= 5:  # Solo forzar después de MUCHAS iteraciones
@@ -598,26 +614,29 @@ def main():
             for story in in_review_stories[:2]:  # Process up to 2 immediately
                 story_id = story['id']
                 # Update iteration counter for this story
-                if story_id not in story_iteration_count:
-                    story_iteration_count[story_id] = 0
-                story_iteration_count[story_id] += 1
+                story_arch_attempts[story_id] = story_arch_attempts.get(story_id, 0) + 1
 
                 print(f"[loop] Architect IMMEDIATELY adjusting criteria for {story_id}")
-                rc_arch = run_architect_for_review(story_id, story_iteration_count[story_id])
+                rc_arch = run_architect_for_review(story_id, story_arch_attempts[story_id])
                 if rc_arch == 0:
-                    # Check if this was force approval (iteration >= 3)
-                    was_force_approved = story_iteration_count[story_id] >= 3 and story.get("priority") in ["P1", "P0"]
+                    # Check if this was force approval (iteration >= threshold)
+                    attempt_count = story_arch_attempts[story_id]
+                    was_force_approved = attempt_count >= FORCE_APPROVAL_THRESHOLD and story.get("priority") in ["P1", "P0"]
 
                     if was_force_approved:
                         # Force approval - mark as done, don't rework
                         story['status'] = 'done_force_architect'
-                        append_note(f"- Architect FORCE APPROVED {story_id} (immediate, attempt {story_iteration_count[story_id]}, P{story.get('priority')} priority)")
+                        append_note(f"- Architect FORCE APPROVED {story_id} (immediate, attempt {attempt_count}, P{story.get('priority')} priority)")
                         print(f"[loop] Architect IMMEDIATELY FORCE APPROVED {story_id}")
+                        story_dev_attempts.pop(story_id, None)
+                        story_arch_attempts.pop(story_id, None)
                     else:
                         # Normal adjustment - return to todo so dev can rework it
+                        attempt = attempt_count
                         story['status'] = 'todo'
-                        append_note(f"- Architect IMMEDIATELY adjusted criteria for {story_id} (attempt {story_iteration_count[story_id]}) → Dev must rework")
-                        print(f"[loop] Architect IMMEDIATELY adjusted criteria for {story_id} → Ready for dev rework")
+                        story_arch_attempts[story_id] = 0
+                        append_note(f"- Architect IMMEDIATELY adjusted criteria for {story_id} (attempt {attempt}) → Dev must rework")
+                        print(f"[loop] Architect IMMEDIATELY adjusted criteria for {story_id} → Ready for dev rework (counter reset)")
                 else:
                     append_note(f"- Architect could not adjust criteria for {story_id} (immediate, rc={rc_arch})")
                     print(f"[loop] Architect could not IMMEDIATELY adjust criteria for {story_id}")

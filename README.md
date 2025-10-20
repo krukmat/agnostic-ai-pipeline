@@ -108,6 +108,16 @@ artifacts/iterations/<iteration-name>/
 - `scripts/llm.py` handles provider selection per role, logging raw interactions under `artifacts/<role>/last_raw.txt`.
 - Mix and match local (Ollama) or paid APIs (OpenAI, Claude Code, Codex CLI, etc.) within the same release; each role can target a different provider without code changes.
 
+### 4.4 Architect Complexity Tiers
+
+- The Architect agent inspects `planning/requirements.yaml` and chooses between three prompt tiers:
+  - **Simple** – 3‑6 broad stories, high developer autonomy; triggered by lightweight/MVP requirements.
+  - **Medium** – Default backlog size (approx. 5‑12 stories) with balanced detail.
+  - **Corporate** – 10‑18 highly specified stories covering integrations, compliance, and non-functional requirements.
+- Selection is primarily driven by an LLM classifier fed with the requirements text; a lightweight word-count fallback keeps the system resilient when the classifier is unavailable.
+- Override manually when needed with `FORCE_ARCHITECT_TIER=<simple|medium|corporate> make plan`.
+- The chosen tier is exposed in console logs (`Complexity tier selected: ...`) and passed to the LLM so outputs scale in detail automatically.
+
 ---
 
 ## 5. Getting Started (Strict Release)
@@ -159,6 +169,7 @@ make ba                          # BA → requirements
 make plan                        # Architect → PRD, epics, stories, tasks
 make dev STORY=S1                # Dev implements a specific story
 make qa QA_RUN_TESTS=1           # Run QA with tests
+make clean                       # Purge artifacts/ (FLUSH=1 also wipes planning/ and project/)
 
 # Orchestration
 make loop MAX_LOOPS=10           # Dev↔QA loop (includes Architect adjustments)

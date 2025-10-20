@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os, re, asyncio, pathlib
+import yaml
 from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
 
@@ -29,7 +30,18 @@ async def main():
         print(f"DEBUG: Grabbed '{tag}:{label}' with {len(content)} characters")
         return content
 
-    (PLANNING/"requirements.yaml").write_text(grab("yaml","REQUIREMENTS"), encoding="utf-8")
+    requirements_text = grab("yaml","REQUIREMENTS")
+    if concept:
+        try:
+            meta_block = yaml.safe_dump(
+                {"meta": {"original_request": concept}},
+                sort_keys=False,
+            ).strip()
+            if meta_block:
+                requirements_text = f"{meta_block}\n\n{requirements_text}".rstrip() + "\n"
+        except Exception as exc:
+            print(f"WARNING: Failed to embed original concept: {exc}")
+    (PLANNING/"requirements.yaml").write_text(requirements_text, encoding="utf-8")
     print("✓ requirements.yaml written under planning/")
 
 if __name__ == "__main__":

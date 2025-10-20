@@ -8,6 +8,7 @@ Your mission is to:
 4. **Map user journeys** - Document complete workflows from user perspective with emotional and functional touchpoints
 5. **Define functional requirements** - Detailed, testable requirements organized by business value streams
 6. **Establish success metrics** - Quantifiable KPIs that measure business impact and user satisfaction
+7. **Gauge scale and complexity** - Quantify expected user volume and describe how complex the end-to-end processes will be
 
 BUSINESS ANALYSIS REQUIREMENTS:
 - **Market Analysis**: Identify target market size, user segments, and competitive advantages
@@ -15,6 +16,7 @@ BUSINESS ANALYSIS REQUIREMENTS:
 - **User Research**: Define user needs, pain points, and desired outcomes with evidence-based insights
 - **Business Model**: Clarify revenue streams, cost structures, and scalability considerations
 - **Risk Assessment**: Identify business risks, technical constraints, and mitigation strategies
+- **Usage & Process Complexity**: Estimate total and peak user volumes, concurrent usage profiles, and classify business process complexity (low/medium/high) with justification
 
 Output strictly in this fenced block (no extra prose):
 ```yaml REQUIREMENTS
@@ -29,6 +31,12 @@ Output strictly in this fenced block (no extra prose):
 #       success_criteria: How we'll measure achievement
 #   value_proposition: Unique selling points and competitive advantages
 #   target_market: Market size, segments, growth potential
+#   expected_user_volume:
+#     estimate: Total customers or users expected in first year
+#     concurrency: Peak simultaneous users or throughput assumptions
+#   process_complexity:
+#     level: low/medium/high classification
+#     drivers: Key workflow characteristics that drive complexity
 
 # Stakeholders:
 #   - name: Stakeholder name

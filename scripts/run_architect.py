@@ -12,35 +12,89 @@ from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
 
 
-DEFAULT_ARCHITECT_PROMPT = (ROOT / "prompts" / "architect.md").read_text(encoding="utf-8")
+ARCHITECT_PROMPTS = {
+    "simple": (ROOT / "prompts" / "architect_simple.md").read_text(encoding="utf-8"),
+    "medium": (ROOT / "prompts" / "architect.md").read_text(encoding="utf-8"),
+    "corporate": (ROOT / "prompts" / "architect_corporate.md").read_text(encoding="utf-8"),
+}
 
-REVIEW_ADJUSTMENT_PROMPT = """You are a Technical Requirements Analyst that adjusts a SINGLE user story when it fails QA.
-
-IMPORTANT: DO NOT CREATE NEW EPICS OR STORIES. ONLY ADJUST THE EXISTING STORY.
-
-Take the CURRENT_STORIES section and find the specific story ID mentioned.
-MODIFY ONLY THAT STORY'S acceptance criteria to be more technical and specific.
-
-OUTPUT FORMAT: Return ONLY the adjusted story with the same ID, adding more technical details to acceptance criteria.
-
-Example output:
-```yaml STORIES
-- id: S2
-  epic: E1
-  description: Existing description here
-  acceptance:
-    - More technical criterion 1
-    - More technical criterion 2
-    - Include specific validations, formats, error codes
-  priority: P1
-  status: todo
-```
-
-Include specific technical requirements, test cases, missing imports, missing dependencies not installed, validation rules, error codes, and edge cases in the acceptance criteria."""
+REVIEW_ADJUSTMENT_PROMPT = (ROOT / "prompts" / "architect_review_adjustment.md").read_text(
+    encoding="utf-8"
+)
+COMPLEXITY_CLASSIFIER_PROMPT = (
+    ROOT / "prompts" / "architect_complexity_classifier.md"
+).read_text(encoding="utf-8")
 
 
-def get_architect_prompt(mode: str) -> str:
-    return REVIEW_ADJUSTMENT_PROMPT if mode == "review_adjustment" else DEFAULT_ARCHITECT_PROMPT
+def get_architect_prompt(mode: str, tier: str) -> str:
+    if mode == "review_adjustment":
+        return REVIEW_ADJUSTMENT_PROMPT
+    return ARCHITECT_PROMPTS.get(tier, ARCHITECT_PROMPTS["medium"])
+
+
+async def classify_complexity_with_llm(requirements_text: str) -> str:
+    """Ask the architect model to classify requirements as simple/medium/corporate."""
+    cleaned = (requirements_text or "").strip()
+    if not cleaned:
+        return "simple"
+
+    try:
+        client = Client(role="architect")
+        user = (
+            "REQUIREMENTS:\n"
+            f"{cleaned}\n\n"
+            "Respond with exactly one word: simple, medium, or corporate."
+        )
+        response = await client.chat(system=COMPLEXITY_CLASSIFIER_PROMPT, user=user)
+        tier = parse_complexity_response(response)
+        if tier:
+            return tier
+        print(f"[ARCHITECT] Unexpected classifier response: {response[:120]!r}")
+    except Exception as exc:
+        print(f"[ARCHITECT] Complexity classifier failed via LLM: {exc}")
+
+    return fallback_complexity(cleaned)
+
+
+def parse_complexity_response(text: str) -> str | None:
+    if not text:
+        return None
+    lowered = text.strip().split()
+    if not lowered:
+        return None
+    candidate = lowered[0].lower().strip(",.:;")
+    if candidate in {"simple", "medium", "corporate"}:
+        return candidate
+    return None
+
+
+def fallback_complexity(requirements_text: str) -> str:
+    """Fallback heuristic when the classifier cannot determine a tier."""
+    words = len(requirements_text.split())
+    if words <= 350:
+        return "simple"
+    if words >= 900:
+        return "corporate"
+    return "medium"
+
+
+def extract_original_concept(requirements_text: str) -> str:
+    """Pull the stored concept from requirements metadata if available."""
+    if not requirements_text.strip():
+        return ""
+    try:
+        data = yaml.safe_load(requirements_text)
+    except Exception as exc:
+        print(f"[ARCHITECT] Failed to parse requirements metadata: {exc}")
+        return ""
+
+    if isinstance(data, dict):
+        meta = data.get("meta")
+        if isinstance(meta, dict):
+            original = meta.get("original_request")
+            if isinstance(original, str):
+                return original.strip()
+    return ""
 
 
 def load_stories() -> Tuple[str, List[dict]]:
@@ -187,7 +241,7 @@ async def main() -> None:
     ensure_dirs()
 
     architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
-    concept = os.environ.get("CONCEPT", "").strip()
+    concept_env = os.environ.get("CONCEPT", "").strip()
     story_id = os.environ.get("STORY", "").strip()
     detail_level = os.environ.get("DETAIL_LEVEL", "medium")
     try:
@@ -197,6 +251,8 @@ async def main() -> None:
 
     requirements_path = PLANNING / "requirements.yaml"
     requirements_content = requirements_path.read_text(encoding="utf-8") if requirements_path.exists() else ""
+    concept_meta = extract_original_concept(requirements_content)
+    concept = concept_meta or concept_env
     stories_content, _stories_snapshot = load_stories()
 
     if architect_mode == "review_adjustment" and story_id:
@@ -209,7 +265,16 @@ async def main() -> None:
             return
         print(f"[ARCHITECT] Programmatic adjustment failed; falling back to LLM for {story_id}")
 
-    arch_prompt = get_architect_prompt(architect_mode)
+    force_tier = os.environ.get("FORCE_ARCHITECT_TIER", "").strip().lower()
+    if force_tier in {"simple", "medium", "corporate"}:
+        complexity_tier = force_tier
+        print(f"[ARCHITECT] Forced complexity tier via env: {complexity_tier}")
+    elif architect_mode == "review_adjustment":
+        complexity_tier = "medium"
+    else:
+        complexity_tier = await classify_complexity_with_llm(requirements_content)
+
+    arch_prompt = get_architect_prompt(architect_mode, complexity_tier)
 
     if architect_mode == "review_adjustment":
         user_input = (
@@ -223,12 +288,21 @@ async def main() -> None:
     else:
         user_input = (
             f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\n"
+            f"COMPLEXITY_TIER: {complexity_tier.upper()}\n\n"
             "Follow the exact output format."
         )
 
     client = Client(role="architect")
+    if concept_meta and not concept_env:
+        print("[ARCHITECT] Using concept from requirements metadata.")
+    elif concept_env and not concept_meta:
+        print("[ARCHITECT] Concept provided via environment (no metadata found).")
+    elif concept_env and concept_meta and concept_env != concept_meta:
+        print("[ARCHITECT] Concept differs between env and metadata; using metadata.")
     print(f"Using CONCEPT: {concept or 'No concept defined'}")
     print(f"Architect mode: {architect_mode}")
+    if architect_mode != "review_adjustment":
+        print(f"Complexity tier selected: {complexity_tier}")
     print(
         f"Provider: {client.provider_type} | Model: {client.model} | "
         f"Temp: {client.temperature} | Max tokens: {client.max_tokens}"
