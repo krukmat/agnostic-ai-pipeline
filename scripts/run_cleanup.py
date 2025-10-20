@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from scripts.orchestrate import cleanup_artifacts  # type: ignore
+from orchestrate import cleanup_artifacts  # type: ignore
 
 
 def main() -> None:
