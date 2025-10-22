@@ -4,9 +4,11 @@ import asyncio
 import json
 import os
 import re
-from typing import List, Tuple
+import sys
+from typing import List, Tuple, Optional
 
 import yaml
+import typer
 
 from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
@@ -237,37 +239,45 @@ def mark_story_todo(story_id: str) -> bool:
     return True
 
 
-async def main() -> None:
+async def run_architect_job(
+    *,
+    concept: str | None = None,
+    architect_mode: str = "normal",
+    story_id: str = "",
+    detail_level: str = "medium",
+    iteration_count: int = 1,
+    force_tier: str | None = None,
+) -> dict:
     ensure_dirs()
-
-    architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
-    concept_env = os.environ.get("CONCEPT", "").strip()
-    story_id = os.environ.get("STORY", "").strip()
-    detail_level = os.environ.get("DETAIL_LEVEL", "medium")
-    try:
-        iteration_count = int(os.environ.get("ITERATION_COUNT", "1"))
-    except ValueError:
-        iteration_count = 1
 
     requirements_path = PLANNING / "requirements.yaml"
     requirements_content = requirements_path.read_text(encoding="utf-8") if requirements_path.exists() else ""
     concept_meta = extract_original_concept(requirements_content)
-    concept = concept_meta or concept_env
+    concept_value = (concept or "").strip() or concept_meta
+
     stories_content, _stories_snapshot = load_stories()
 
     if architect_mode == "review_adjustment" and story_id:
         print(f"[ARCHITECT] Programmatic review adjustment for {story_id} (level={detail_level}, iteration={iteration_count})")
         if try_programmatic_adjustment(story_id, detail_level):
             print(f"✓ Arquitecto ajustó criterios de {story_id} (programático)")
-            return
+            return {
+                "mode": "review_adjustment",
+                "story_id": story_id,
+                "action": "programmatic_adjustment",
+            }
         if mark_story_todo(story_id):
             print(f"✓ Arquitecto marcó {story_id} como todo (fallback)")
-            return
+            return {
+                "mode": "review_adjustment",
+                "story_id": story_id,
+                "action": "marked_todo",
+            }
         print(f"[ARCHITECT] Programmatic adjustment failed; falling back to LLM for {story_id}")
 
-    force_tier = os.environ.get("FORCE_ARCHITECT_TIER", "").strip().lower()
-    if force_tier in {"simple", "medium", "corporate"}:
-        complexity_tier = force_tier
+    forced = (force_tier or "").strip().lower()
+    if forced in {"simple", "medium", "corporate"}:
+        complexity_tier = forced
         print(f"[ARCHITECT] Forced complexity tier via env: {complexity_tier}")
     elif architect_mode == "review_adjustment":
         complexity_tier = "medium"
@@ -286,20 +296,22 @@ async def main() -> None:
         if story_id:
             user_input += f"\nTARGET_STORY: {story_id}"
     else:
+        if not concept_value:
+            raise ValueError("Concept is required to run architect in normal mode.")
         user_input = (
-            f"CONCEPT:\n{concept}\n\nREQUIREMENTS:\n{requirements_content}\n\n"
+            f"CONCEPT:\n{concept_value}\n\nREQUIREMENTS:\n{requirements_content}\n\n"
             f"COMPLEXITY_TIER: {complexity_tier.upper()}\n\n"
             "Follow the exact output format."
         )
 
     client = Client(role="architect")
-    if concept_meta and not concept_env:
+    if concept_meta and not (concept or "").strip():
         print("[ARCHITECT] Using concept from requirements metadata.")
-    elif concept_env and not concept_meta:
+    elif (concept or "").strip() and not concept_meta:
         print("[ARCHITECT] Concept provided via environment (no metadata found).")
-    elif concept_env and concept_meta and concept_env != concept_meta:
+    elif (concept or "").strip() and concept_meta and (concept or "").strip() != concept_meta:
         print("[ARCHITECT] Concept differs between env and metadata; using metadata.")
-    print(f"Using CONCEPT: {concept or 'No concept defined'}")
+    print(f"Using CONCEPT: {concept_value or 'No concept defined'}")
     print(f"Architect mode: {architect_mode}")
     if architect_mode != "review_adjustment":
         print(f"Complexity tier selected: {complexity_tier}")
@@ -312,7 +324,8 @@ async def main() -> None:
 
     text = await client.chat(system=arch_prompt, user=user_input)
 
-    (ROOT / "debug_architect_response.txt").write_text(text, encoding="utf-8")
+    raw_response_path = ROOT / "debug_architect_response.txt"
+    raw_response_path.write_text(text, encoding="utf-8")
 
     def grab(tag: str, label: str) -> str:
         match = re.search(rf"```{tag}\s+{label}\s*([\s\S]*?)```", text)
@@ -326,6 +339,79 @@ async def main() -> None:
 
     print("✓ planning written under planning/")
 
+    return {
+        "mode": architect_mode,
+        "concept": concept_value,
+        "complexity_tier": complexity_tier,
+        "outputs": {
+            "prd": str(PLANNING / "prd.yaml"),
+            "architecture": str(PLANNING / "architecture.yaml"),
+            "epics": str(PLANNING / "epics.yaml"),
+            "stories": str(PLANNING / "stories.yaml"),
+            "tasks": str(PLANNING / "tasks.csv"),
+            "raw_response": str(raw_response_path),
+        },
+    }
+
+
+async def main() -> None:
+    architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
+    concept_env = os.environ.get("CONCEPT", "").strip()
+    story_id = os.environ.get("STORY", "").strip()
+    detail_level = os.environ.get("DETAIL_LEVEL", "medium")
+    try:
+        iteration_count = int(os.environ.get("ITERATION_COUNT", "1"))
+    except ValueError:
+        iteration_count = 1
+    force_tier = os.environ.get("FORCE_ARCHITECT_TIER", "").strip().lower()
+
+    result = await run_architect_job(
+        concept=concept_env,
+        architect_mode=architect_mode,
+        story_id=story_id,
+        detail_level=detail_level,
+        iteration_count=iteration_count,
+        force_tier=force_tier or None,
+    )
+    print(json.dumps(result, indent=2))
+
+
+app = typer.Typer(help="Architect agent CLI")
+
+
+@app.command()
+def run(
+    concept: Optional[str] = typer.Option(None, help="Concept to evaluate"),
+    mode: str = typer.Option("normal", help="Architect mode"),
+    story_id: Optional[str] = typer.Option(None, help="Story identifier for review mode"),
+    detail_level: str = typer.Option("medium", help="Detail level for review adjustments"),
+    iteration_count: int = typer.Option(1, help="Iteration count for review adjustments"),
+    force_tier: Optional[str] = typer.Option(None, help="Force complexity tier"),
+) -> None:
+    result = asyncio.run(
+        run_architect_job(
+            concept=concept,
+            architect_mode=mode,
+            story_id=story_id or "",
+            detail_level=detail_level,
+            iteration_count=iteration_count,
+            force_tier=force_tier,
+        )
+    )
+    typer.echo(json.dumps(result, indent=2))
+
+
+@app.command()
+def serve(reload: bool = typer.Option(False, help="Auto-reload server on code changes")) -> None:
+    from a2a.cards import architect_card
+    from a2a.runtime import run_agent
+
+    card, handlers = architect_card()
+    run_agent("architect", card, handlers, reload=reload)
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if len(sys.argv) == 1 and os.environ.get("CONCEPT"):
+        asyncio.run(main())
+    else:
+        app()

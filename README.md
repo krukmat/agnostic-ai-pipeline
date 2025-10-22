@@ -118,6 +118,17 @@ artifacts/iterations/<iteration-name>/
 - Override manually when needed with `FORCE_ARCHITECT_TIER=<simple|medium|corporate> make plan`.
 - The chosen tier is exposed in console logs (`Complexity tier selected: ...`) and passed to the LLM so outputs scale in detail automatically.
 
+### 4.5 Token Tracking Policy
+
+- Log the token cost (or mark as `N/A` when unavailable) for every significant command or AI interaction.
+- Append entries to `TOKEN_USAGE.md`, including UTC timestamp, action description, and estimated tokens.
+
+### 4.6 A2A Agent Configuration
+
+- Agent endpoints and capabilities are declared in `config/a2a_agents.yaml`.
+- Role launchers (`scripts/run_*_agent.py`) expose A2A-compliant FastAPI services using the helpers under `a2a/`.
+- Business Analyst, Product Owner, Architect, Developer, and QA handlers delegate to the existing role workflows; the Orchestrator skill calls them sequentially via `A2AClient`.
+
 ---
 
 ## 5. Getting Started (Strict Release)
@@ -166,10 +177,17 @@ Use these flags in `make iteration` or directly in `make loop` for lower-level c
 ```bash
 # One-off actions
 make ba                          # BA → requirements
+make po                          # Product Owner → vision + alignment review
 make plan                        # Architect → PRD, epics, stories, tasks
 make dev STORY=S1                # Dev implements a specific story
 make qa QA_RUN_TESTS=1           # Run QA with tests
 make clean                       # Purge artifacts/ (FLUSH=1 also wipes planning/ and project/)
+python scripts/run_ba.py serve             # Start Business Analyst agent service
+python scripts/run_product_owner.py serve  # Start Product Owner agent service
+python scripts/run_architect.py serve      # Start Architect agent service
+python scripts/run_dev.py serve            # Start Developer agent service
+python scripts/run_qa.py serve             # Start QA agent service
+python scripts/run_orchestrator.py serve   # Start Orchestrator agent service
 
 # Orchestration
 make loop MAX_LOOPS=10           # Dev↔QA loop (includes Architect adjustments)

@@ -1,0 +1,38 @@
+# A2A agent endpoint and capability definitions.
+# Each role in the pipeline will expose an Agent Card and serve A2A requests
+# at the configured endpoint.
+
+agents:
+  business_analyst:
+    url: http://localhost:8001/
+    capabilities:
+      streaming: false
+    skills: []
+  product_owner:
+    url: http://localhost:8002/
+    capabilities:
+      streaming: false
+    skills: []
+  architect:
+    url: http://localhost:8003/
+    capabilities:
+      streaming: false
+    skills: []
+  developer:
+    url: http://localhost:8004/
+    capabilities:
+      streaming: false
+    skills: []
+  qa:
+    url: http://localhost:8005/
+    capabilities:
+      streaming: false
+    skills: []
+  orchestrator:
+    url: http://localhost:8010/
+    capabilities:
+      streaming: false
+    skills: []
+
+authentication:
+  mode: none
