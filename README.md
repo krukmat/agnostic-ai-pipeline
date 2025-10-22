@@ -43,7 +43,42 @@ Each call orchestrates BA → Architect → Dev → QA, snapshots the full state
 
 ---
 
-## 2. Release Loop Lifecycle
+## 2. Operating the A2A Agents
+
+Every pipeline role can run as an A2A service that exposes:
+
+- `/.well-known/agent-card.json` – discovery metadata (skills, auth, capabilities).
+- `/jsonrpc` – JSON-RPC 2.0 endpoint implementing the `message/send` method.
+- `/health` – readiness probe.
+
+### Starting the agent mesh
+
+```bash
+# Start each agent in its own terminal (blocking commands)
+python scripts/run_ba.py serve
+python scripts/run_product_owner.py serve
+python scripts/run_architect.py serve
+python scripts/run_dev.py serve
+python scripts/run_qa.py serve
+python scripts/run_orchestrator.py serve
+
+# Trigger a full run via JSON-RPC (from another shell)
+python scripts/run_orchestrator.py execute --concept "Mid-market social tagging assistant"
+
+# Or call individual skills programmatically
+python - <<'PY'
+from a2a.client import A2AClient
+client = A2AClient()
+print(client.fetch_card("business_analyst"))
+print(client.send_task("business_analyst", "extract_requirements", {"concept": "Demo app"}))
+PY
+```
+
+Agent endpoints, ports, and flags live in `config/a2a_agents.yaml`. Adjust them before launching services. Each CLI also supports direct invocation (e.g., `python scripts/run_architect.py run --concept ...`) to keep the legacy workflow available.
+
+---
+
+## 3. Release Loop Lifecycle
 
 1. **Concept intake** – BA converts the concept into requirements (`planning/requirements.yaml`).
 2. **Architecture & stories** – Architect creates PRD, architecture, epics, stories, and tasks.
@@ -57,7 +92,7 @@ Each call orchestrates BA → Architect → Dev → QA, snapshots the full state
 
 ---
 
-## 3. Anatomy of a Snapshot
+## 4. Anatomy of a Snapshot
 
 ```
 artifacts/iterations/<iteration-name>/
@@ -81,9 +116,9 @@ artifacts/iterations/<iteration-name>/
 
 ---
 
-## 4. Supporting Infrastructure
+## 5. Supporting Infrastructure
 
-### 4.1 Core Pipeline Strengths (Quick View)
+### 5.1 Core Pipeline Strengths (Quick View)
 
 | Feature | Summary |
 | ------- | ------- |
@@ -92,7 +127,7 @@ artifacts/iterations/<iteration-name>/
 | **Auto-Retry + Dependencies** | Stories in `waiting` state unlock when prerequisites finish; Dev→QA loops run via `make loop`. |
 | **Cross-Stack Support** | Backend (FastAPI), web (Express.js), and new modules (React Native, services) supported through skeletons. |
 
-### 4.2 Project Defaults Skeleton
+### 5.2 Project Defaults Skeleton
 
 `project-defaults/` provides a minimal scaffold copied into `project/` whenever missing:
 - `backend-fastapi/app/__init__.py` ensures imports like `from app.foo import ...` always work.
@@ -101,14 +136,14 @@ artifacts/iterations/<iteration-name>/
 
 `common.ensure_dirs()` clones these defaults without overwriting existing files, meaning release loops always start from a consistent baseline after cleanup.
 
-### 4.3 Multi-Stack Extensibility & Providers
+### 5.3 Multi-Stack Extensibility & Providers
 
 - Roles are configured in `config.yaml`; each loop release can target Ollama, OpenAI, or Codex CLI per agent.
 - Extending to new stacks (e.g., mobile apps, additional services) is as simple as adding a skeleton under `project-defaults/`—release loops will copy the structure automatically.
 - `scripts/llm.py` handles provider selection per role, logging raw interactions under `artifacts/<role>/last_raw.txt`.
 - Mix and match local (Ollama) or paid APIs (OpenAI, Claude Code, Codex CLI, etc.) within the same release; each role can target a different provider without code changes.
 
-### 4.4 Architect Complexity Tiers
+### 5.4 Architect Complexity Tiers
 
 - The Architect agent inspects `planning/requirements.yaml` and chooses between three prompt tiers:
   - **Simple** – 3‑6 broad stories, high developer autonomy; triggered by lightweight/MVP requirements.
@@ -118,12 +153,12 @@ artifacts/iterations/<iteration-name>/
 - Override manually when needed with `FORCE_ARCHITECT_TIER=<simple|medium|corporate> make plan`.
 - The chosen tier is exposed in console logs (`Complexity tier selected: ...`) and passed to the LLM so outputs scale in detail automatically.
 
-### 4.5 Token Tracking Policy
+### 5.5 Token Tracking Policy
 
 - Log the token cost (or mark as `N/A` when unavailable) for every significant command or AI interaction.
 - Append entries to `TOKEN_USAGE.md`, including UTC timestamp, action description, and estimated tokens.
 
-### 4.6 A2A Agent Configuration
+### 5.6 A2A Agent Configuration
 
 - Agent endpoints and capabilities are declared in `config/a2a_agents.yaml`.
 - Role launchers (`scripts/run_*_agent.py`) expose A2A-compliant FastAPI services using the helpers under `a2a/`.
@@ -131,7 +166,7 @@ artifacts/iterations/<iteration-name>/
 
 ---
 
-## 5. Getting Started (Strict Release)
+## 6. Getting Started (Strict Release)
 
 1. **Install dependencies**
    ```bash
@@ -158,7 +193,7 @@ artifacts/iterations/<iteration-name>/
 
 ---
 
-## 6. Advanced Controls
+## 7. Advanced Controls
 
 | Flag | Purpose |
 | ---- | ------- |
@@ -172,7 +207,7 @@ Use these flags in `make iteration` or directly in `make loop` for lower-level c
 
 ---
 
-## 7. Reference Commands
+## 8. Reference Commands
 
 ```bash
 # One-off actions
@@ -201,7 +236,7 @@ make show-config                             # Inspect resolved provider/model p
 
 ---
 
-## 8. Proven Outcome
+## 9. Proven Outcome
 
 Loop releases have already generated:
 - A full e-commerce platform (auth, catalog, cart, checkout) across 15 stories.
@@ -210,6 +245,6 @@ Loop releases have already generated:
 
 ---
 
-## 9. Conclusion
+## 10. Conclusion
 
 Treat each loop release as a self-contained product increment: enter a concept, run `make iteration`, and receive code, tests, and documentation. The workflow is **simple to drive**, **powerful in coverage**, and **extensible to any stack or environment**—from hobby experiments to enterprise delivery. The AGNOSTIC AI PIPELINE turns this release cadence into a repeatable process that scales while maintaining audit-ready artifacts. 🚀
