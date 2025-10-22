@@ -8,6 +8,17 @@
 - **Roles** – Business Analyst, Architect, Developer, QA, and Orchestrator collaborate sequentially.
 - **Artifacts** – Planning YAML files (`requirements.yaml`, `stories.yaml`, etc.), generated code/tests under `project/`, QA reports in `artifacts/qa/`.
 - **Workflows** – Use `make iteration`/`make loop` for the end-to-end loop, or execute role-specific commands (`make ba`, `make plan`, etc.) for focused debugging.
+- **Model Flexibility** – Each role can target open or proprietary models (local or cloud) via `config.yaml`. For example, you can run Ollama locally for BA/Dev while using Codex CLI or OpenAI for Architect/QA; switching providers only requires `make set-role ...` without code changes.
+
+## Flexible Model Strategy: Real Impact
+
+An automated, model-agnostic pipeline kills integration battles and lets business priorities drive every decision. Roles stay perfectly choreographed even when you hot-swap providers, so a single loop can kick off with open models humming on your laptop and land with enterprise-grade QA in the cloud.
+
+- **Frictionless speed** – Dial the horsepower per role instantly: blitz ideation with lightweight open models, then hand off polishing or high-stakes QA to premium closed models.
+- **Cost & compliance control** – Keep sensitive work on-prem with local models when regulations bite, and burst to cloud providers only when the payoff is clear.
+- **Operational resilience** – If a third-party endpoint stalls, the loop keeps running by switching to an alternate model; automation keeps roles aligned without manual triage or retraining.
+- **Continuous innovation** – Trial fresh LLMs without retooling scripts or prompts; point `make set-role` at the experimental model and compare results in the next loop.
+- **Smarter scaling** – Blend local inference for cost-effective prototypes with cloud surges when your backlog spikes; the automated structure preserves story, code, and QA integrity.
 
 ```mermaid
 flowchart LR
