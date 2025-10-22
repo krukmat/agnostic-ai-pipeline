@@ -2,6 +2,23 @@
 
 **Deliver finished products through repeatable BA → Architect → Dev → QA release loops.**
 
+## Project Overview
+
+- **Purpose** – Automate the product-development loop from concept intake to QA validation, producing code, tests, and planning artifacts ready for release.
+- **Roles** – Business Analyst, Product Owner, Architect, Developer, QA, and Orchestrator collaborate sequentially (classic mode) or via services (A2A mode).
+- **Artifacts** – Planning YAMLs (`requirements.yaml`, `stories.yaml`, etc.), generated code/tests under `project/`, QA reports in `artifacts/qa/`.
+- **Workflows** – Use `make iteration`/`make loop` for one-shot runs, or start individual CLIs to execute or debug each role independently.
+
+```mermaid
+flowchart LR
+    Concept[Business Concept] --> BA[Business Analyst]
+    BA --> PO[Product Owner]
+    PO --> ARCH[Architect]
+    ARCH --> DEV[Developer]
+    DEV --> QA[QA]
+    QA --> Snapshot[Snapshot & Release Artifacts]
+```
+
 ### A2A-Enabled Pipeline at a Glance
 
 This repository adopts the Agent-to-Agent (A2A) protocol so every pipeline role can run as an independent HTTP service. Each role publishes an Agent Card (capabilities, skills, auth) and collaborates through JSON-RPC calls orchestrated by the pipeline. You can:
@@ -10,6 +27,34 @@ This repository adopts the Agent-to-Agent (A2A) protocol so every pipeline role 
 - Launch the A2A mesh (`python scripts/run_<role>.py serve`) and coordinate roles dynamically via the Orchestrator service or the `A2AClient` helpers.
 
 Agent endpoints, ports, and skills live in `config/a2a_agents.yaml`, enabling you to deploy agents separately, swap implementations, or integrate external services without touching the orchestration core.
+
+```mermaid
+flowchart LR
+    subgraph Services
+        BA[BA Agent]
+        PO[PO Agent]
+        ARCH[Architect Agent]
+        DEV[Dev Agent]
+        QA[QA Agent]
+    end
+    Orchestrator[Orchestrator Service] --> BA
+    Orchestrator --> PO
+    Orchestrator --> ARCH
+    Orchestrator --> DEV
+    Orchestrator --> QA
+    BA -.Agent Card/.-> Registry[(config/a2a_agents.yaml)]
+    PO -.-> Registry
+    ARCH -.-> Registry
+    DEV -.-> Registry
+    QA -.-> Registry
+```
+
+#### Classic vs. A2A Modes
+
+- **Classic (“monolithic”) mode** – Run `make iteration`, `make loop`, or the individual role scripts without `serve`. Everything executes sequentially inside one process. Use this mode for quick iterations on a single machine when you don’t need distributed orchestration.
+- **A2A (“service mesh”) mode** – Start each role with `python scripts/run_<role>.py serve`. Agents expose HTTP endpoints and can be orchestrated remotely (`A2AClient`, Orchestrator skill, or external tools). Choose this mode when you want independent scaling, easier substitution of agents, or when multiple teams/services must collaborate over a stable protocol.
+
+Both modes share the same business logic; switching between them only changes how the roles are invoked and coordinated.
 
 ### Theoretical Context
 
