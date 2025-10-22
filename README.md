@@ -136,6 +136,16 @@ artifacts/iterations/<iteration-name>/
 - `scripts/llm.py` handles provider selection per role, logging raw interactions under `artifacts/<role>/last_raw.txt`.
 - Mix and match local (Ollama) or paid APIs (OpenAI, Claude Code, Codex CLI, etc.) within the same release; each role can target a different provider without code changes.
 
+## Model Recommender (RoRF)
+
+- Enable: `export MODEL_RECO_ENABLED=true` (default) so each role routes via the RoRF controller before sending a prompt.
+- How it works: when a role submits a prompt, `recommend_model()` embeds the message with Jina, feeds it to a pretrained RoRF router, and returns either the **weak**/cost-efficient or **strong**/high-quality model id defined in `config/model_recommender.yaml`.
+- Upstream reference: RoRF ships via the open-source controller described on the project page (search for “Routing on Random Forests” by notdiamond) where you can review router calibration notes and the list of pretrained Jina checkpoints bundled with the PyPI package.
+- Config: `config/model_recommender.yaml` defines role routes, strong/weak models, and router IDs.
+- Tuning: Increase `threshold` to shift more prompts toward the strong model; drop it to save cost.
+- Disable: `export MODEL_RECO_ENABLED=false` to fall back to the per-role model in `config.yaml`.
+- Smoke test: `make reco-demo` runs `scripts/reco_demo.py` and prints model picks per role.
+
 ### Architect Complexity Tiers
 
 - The Architect agent inspects `planning/requirements.yaml` and chooses between three prompt tiers:

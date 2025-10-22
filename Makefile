@@ -84,3 +84,14 @@ iteration:
 	SKIP_BA="$${SKIP_BA:-0}" \
 	SKIP_PLAN="$${SKIP_PLAN:-0}" \
 	$(PY) scripts/run_iteration.py
+
+.PHONY: reco-demo reco-on reco-off
+
+reco-demo:
+	$(PY) scripts/reco_demo.py
+
+reco-on:
+	export MODEL_RECO_ENABLED=true
+
+reco-off:
+	export MODEL_RECO_ENABLED=false

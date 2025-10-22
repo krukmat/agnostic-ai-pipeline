@@ -1,0 +1,22 @@
+# RoRF-based per-prompt recommender configuration
+enabled: true
+default_threshold: 0.30  # Higher -> more traffic to strong models
+routes:
+  ba:
+    router_id: notdiamond/rorf-jina-llama31405b-gpt4o
+    strong: ollama/qwen2.5:32b-instruct
+    weak: ollama/qwen2.5:7b-instruct
+    threshold: 0.25
+  plan:
+    router_id: notdiamond/rorf-jina-llama31405b-mistrallarge
+    strong: ollama/llama3.1:70b-instruct
+    weak: ollama/llama3.1:8b-instruct
+  dev:
+    router_id: notdiamond/rorf-jina-llama31405b-llama3170b
+    strong: ollama/qwen2.5-coder:32b
+    weak: ollama/qwen2.5-coder:7b
+    threshold: 0.35
+  qa:
+    router_id: notdiamond/rorf-jina-gpt4o-gpt4omini
+    strong: ollama/llama3.1:70b-instruct
+    weak: ollama/llama3.1:8b-instruct

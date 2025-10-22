@@ -15,6 +15,15 @@ import yaml
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT / "src"
+if SRC_DIR.exists():
+    sys.path.insert(0, str(SRC_DIR))
+
+try:
+    from recommend.model_recommender import is_enabled as _reco_enabled, recommend_model
+except Exception:  # pragma: no cover - recommender optional
+    recommend_model = None  # type: ignore[assignment]
+    _reco_enabled = lambda: False  # type: ignore[assignment]
 CONFIG_P = ROOT / "config.yaml"
 
 
@@ -144,6 +153,15 @@ class Client:
                 self.oai_base = str(overrides["base_url"])
 
     async def chat(self, system: str, user: str) -> str:
+        if recommend_model and _reco_enabled():
+            prompt = f"{system.strip()}\n\n{user.strip()}"
+            try:
+                chosen_model = recommend_model(prompt, role=self.role)
+            except Exception:
+                chosen_model = None
+            if chosen_model:
+                self.model = chosen_model
+
         if self.provider_type == "codex_cli":
             return await asyncio.to_thread(self._codex_cli_chat, system, user)
         elif self.provider_type == "openai":
