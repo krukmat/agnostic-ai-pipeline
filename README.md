@@ -2,6 +2,31 @@
 
 **Deliver finished products through repeatable BA → Product Owner → Architect → Dev → QA release loops.**
 
+## Project Overview
+
+- **Purpose** – Automate the journey from business concept to QA-validated release, producing requirements, architecture, code, tests, and reports.
+- **Roles** – Business Analyst, Product Owner, Architect, Developer, QA, and Orchestrator working in sequence.
+- **Artifacts** – Planning YAML files (`requirements.yaml`, `stories.yaml`, etc.), generated code/tests under `project/`, QA reports in `artifacts/qa/`.
+- **Workflows** – Use `make iteration`/`make loop` for the end-to-end flow, or invoke each role via CLI (`make ba`, `make po`, etc.) to inspect individual steps.
+
+```mermaid
+flowchart LR
+    Concept[Business Concept] --> BA[Business Analyst]
+    BA --> PO[Product Owner]
+    PO --> ARCH[Architect]
+    ARCH --> DEV[Developer]
+    DEV --> QA[QA]
+    QA --> Snapshot[Snapshot & Release Artifacts]
+```
+
+### Product Owner Role
+
+- **Goal** – Maintain the product vision and ensure new requirements stay aligned with business objectives.
+- **Outputs** – `planning/product_vision.yaml` with the current vision snapshot and `planning/product_owner_review.yaml` summarising alignment status, gaps, and recommended actions.
+- **Entry point** – `make po` (or `python scripts/run_product_owner.py evaluate`) generates updated vision/review files after the Business Analyst stage.
+
+The Product Owner sits between the Business Analyst and the Architect, acting as a quality gate for requirements before the technical planning begins.
+
 ---
 
 ## Why Loop Releases Matter
@@ -27,7 +52,7 @@ These examples illustrate how loop releases stay **simple (single make command)*
 
 ---
 
-## 1. End-to-End Process Model
+## Classic Loop Release Flow
 
 The pipeline coordinates five specialised roles. Each emits artifacts that become the inputs for the next role, ensuring traceability from concept to QA evidence.
 
@@ -85,37 +110,7 @@ Use `artifact/qa/story_logs/<story>.log` to investigate repeated QA failures, an
 
 ---
 
-## 2. Loop Release at a Glance
-
-```bash
-make iteration CONCEPT="Login MVP" LOOPS=2 ITERATION_NAME="release-2025Q1"
-```
-
-- **CONCEPT** – Plain-text business goal consumed by BA and Architect.
-- **LOOPS** – Number of Dev→QA passes in the iteration (defaults to 1).
-- **ITERATION_NAME** – Human-readable label for snapshots under `artifacts/iterations/`.
-- **ALLOW_NO_TESTS** – Set to `0` for strict QA, `1` for exploratory prototyping.
-- **SKIP_BA / SKIP_PLAN** – Reuse existing requirements/stories without re-running those roles.
-
-Each call orchestrates BA → Product Owner → Architect → Dev → QA, snapshots the full state, and writes a `summary.json` with story status counts and configuration flags.
-
----
-
-## 2. Release Loop Lifecycle
-
-1. **Concept intake** – BA converts the concept into requirements (`planning/requirements.yaml`).
-2. **Architecture & stories** – Architect creates PRD, architecture, epics, stories, and tasks.
-3. **Development** – Dev agent iterates through stories, updating `project/` code and tests.
-4. **Quality gate** – QA executes pytest/Jest suites and enforces TDD:
-   - Missing tests → `blocked_no_tests`
-   - Test failures → `in_review` + auto Architect adjustment (`ARCHITECT_INTERVENTION=1`)
-   - Severity-based force approval allowed after ≥3 retries on P1/P0 stories
-5. **Snapshot** – `artifacts/iterations/<iteration>/` stores planning, project, and `summary.json`.
-6. **Follow-up** – Use `make loop MAX_LOOPS=1` to retry blocked stories with the refined criteria.
-
----
-
-## 3. Anatomy of a Snapshot
+## Anatomy of a Snapshot
 
 ```
 artifacts/iterations/<iteration-name>/
@@ -139,9 +134,9 @@ artifacts/iterations/<iteration-name>/
 
 ---
 
-## 6. Supporting Infrastructure
+## Supporting Infrastructure
 
-### 6.1 Core Pipeline Strengths (Quick View)
+### Core Pipeline Strengths (Quick View)
 
 | Feature | Summary |
 | ------- | ------- |
@@ -150,7 +145,7 @@ artifacts/iterations/<iteration-name>/
 | **Auto-Retry + Dependencies** | Stories in `waiting` state unlock when prerequisites finish; Dev→QA loops run via `make loop`. |
 | **Cross-Stack Support** | Backend (FastAPI), web (Express.js), and new modules (React Native, services) supported through skeletons. |
 
-### 6.2 Project Defaults Skeleton
+### Project Defaults Skeleton
 
 `project-defaults/` provides a minimal scaffold copied into `project/` whenever missing:
 - `backend-fastapi/app/__init__.py` ensures imports like `from app.foo import ...` always work.
@@ -159,14 +154,14 @@ artifacts/iterations/<iteration-name>/
 
 `common.ensure_dirs()` clones these defaults without overwriting existing files, meaning release loops always start from a consistent baseline after cleanup.
 
-### 6.3 Multi-Stack Extensibility & Providers
+### Multi-Stack Extensibility & Providers
 
 - Roles are configured in `config.yaml`; each loop release can target Ollama, OpenAI, or Codex CLI per agent.
 - Extending to new stacks (e.g., mobile apps, additional services) is as simple as adding a skeleton under `project-defaults/`—release loops will copy the structure automatically.
 - `scripts/llm.py` handles provider selection per role, logging raw interactions under `artifacts/<role>/last_raw.txt`.
 - Mix and match local (Ollama) or paid APIs (OpenAI, Claude Code, Codex CLI, etc.) within the same release; each role can target a different provider without code changes.
 
-### 6.4 Architect Complexity Tiers
+### Architect Complexity Tiers
 
 - The Architect agent inspects `planning/requirements.yaml` and chooses between three prompt tiers:
   - **Simple** – 3‑6 broad stories, high developer autonomy; triggered by lightweight/MVP requirements.
@@ -178,7 +173,7 @@ artifacts/iterations/<iteration-name>/
 
 ---
 
-## 5. Getting Started (Strict Release)
+## Getting Started (Strict Release)
 
 1. **Install dependencies**
    ```bash
@@ -205,7 +200,7 @@ artifacts/iterations/<iteration-name>/
 
 ---
 
-## 6. Advanced Controls
+## Advanced Controls
 
 | Flag | Purpose |
 | ---- | ------- |
@@ -219,7 +214,7 @@ Use these flags in `make iteration` or directly in `make loop` for lower-level c
 
 ---
 
-## 7. Reference Commands
+## Reference Commands
 
 ```bash
 # One-off actions
@@ -242,7 +237,7 @@ make show-config                             # Inspect resolved provider/model p
 
 ---
 
-## 8. Proven Outcome
+## Proven Outcome
 
 Loop releases have already generated:
 - A full e-commerce platform (auth, catalog, cart, checkout) across 15 stories.
@@ -251,6 +246,6 @@ Loop releases have already generated:
 
 ---
 
-## 9. Conclusion
+## Conclusion
 
 Treat each loop release as a self-contained product increment: enter a concept, run `make iteration`, and receive code, tests, and documentation. The workflow is **simple to drive**, **powerful in coverage**, and **extensible to any stack or environment**—from hobby experiments to enterprise delivery. The AGNOSTIC AI PIPELINE turns this release cadence into a repeatable process that scales while maintaining audit-ready artifacts. 🚀
