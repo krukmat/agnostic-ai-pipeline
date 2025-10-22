@@ -18,8 +18,7 @@ flowchart LR
     QA --> Snapshot[Snapshot & Release Artifacts]
 ```
 
-# (Future work: Product Owner alignment stage will sit between BA and Architect once implemented.)
-
+#
 ---
 
 ## Why Loop Releases Matter
