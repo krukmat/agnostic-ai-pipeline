@@ -1,0 +1,40 @@
+name: vertex-smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx google-genai pytest
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Auth service account
+        run: |
+          echo '${{ secrets.GCP_SA_KEY_JSON }}' > /tmp/gcp-key.json
+          gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+          gcloud config set project ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Enable Vertex AI API
+        run: gcloud services enable aiplatform.googleapis.com
+
+      - name: Smoke test (REST)
+        env:
+          GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          VERTEX_LOCATION: us-central1
+          VERTEX_MODEL: gemini-2.5-flash
+        run: |
+          bash scripts/vertex_chat.sh "CI hello"
