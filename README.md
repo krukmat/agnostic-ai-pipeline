@@ -136,6 +136,11 @@ artifacts/iterations/<iteration-name>/
 - `scripts/llm.py` handles provider selection per role, logging raw interactions under `artifacts/<role>/last_raw.txt`.
 - Mix and match local (Ollama) or paid APIs (OpenAI, Claude Code, Codex CLI, etc.) within the same release; each role can target a different provider without code changes.
 
+## Vertex AI (Gemini) Providers
+
+- Google Vertex AI support ships via the `vertex_cli` (REST through `gcloud auth print-access-token`) and optional `vertex_sdk` providers.
+- See `vertex_ai_gemini_provider_via_gcloud_implementation_guide_for_codex.md` for setup, smoke tests, CI wiring, and advanced usage notes.
+
 ### Architect Complexity Tiers
 
 - The Architect agent inspects `planning/requirements.yaml` and chooses between three prompt tiers:
