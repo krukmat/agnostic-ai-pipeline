@@ -119,91 +119,44 @@ def extract_files_block(text: str) -> List[Dict[str, str]] | None:
     LOG_ALL.write_text(text, encoding="utf-8")
     candidates: List[str] = []
 
-    # Try fenced blocks first
-    fences = re.findall(r"```json\s*([\s\S]*?)```", text, flags=re.IGNORECASE)
-    candidates.extend(fences)
+    # Try to find a single JSON object representing a file
+    json_match = re.search(r'(\{[\s\S]*?\})', text.strip())
+    if json_match:
+        candidates.append(json_match.group(1))
 
-    # If no fenced blocks, try to find pure JSON
-    if not candidates:
-        # Look for JSON-like structure (starts with { and ends with })
-        json_match = re.search(r'(\{[\s\S]*?\})', text.strip())
-        if json_match:
-            candidates.append(json_match.group(1))
-
-        # Also look for array starting with [
-        array_match = re.search(r'(\[[\s\S]*?\])', text.strip())
-        if array_match:
-            candidates.append(array_match.group(1))
-
-    # Extract and clean files array
-    parsed_array = None
+    # Extract and clean file object
+    parsed_file_entry = None
     for candidate in candidates:
         try:
             parsed = json.loads(candidate.strip())
-            if isinstance(parsed, dict) and "files" in parsed:
-                parsed_array = parsed["files"]
-                break
-            elif isinstance(parsed, list):
-                parsed_array = parsed
+            if isinstance(parsed, dict) and "path" in parsed and "code" in parsed:
+                parsed_file_entry = parsed
                 break
         except Exception:
             continue
 
-    if not parsed_array or not isinstance(parsed_array, list):
+    if not parsed_file_entry:
         return None
 
     # Clean and convert from new format (code field) to old format (content field)
-    for file_entry in parsed_array:
-        if isinstance(file_entry, dict):
-            # Handle new format: code field
-            if "code" in file_entry:
-                code = file_entry["code"]
-                # Aggressively clean markdown blocks
-                code = re.sub(r'```\w*\s*\n?', '', code.strip())
-                code = re.sub(r'```', '', code)
-                code = code.strip()
+    if "code" in parsed_file_entry:
+        code = parsed_file_entry["code"]
+        # Aggressively clean markdown blocks
+        code = re.sub(r'```\w*\s*\n?', '', code.strip())
+        code = re.sub(r'```', '', code)
+        code = code.strip()
 
-                # Convert to content field
-                file_entry["content"] = code
+        # Convert to content field
+        parsed_file_entry["content"] = code
 
-                # Remove the code field
-                del file_entry["code"]
+        # Remove the code field
+        del parsed_file_entry["code"]
 
-            # Handle old format: content field (for backward compatibility)
-            elif "content" in file_entry:
-                content = file_entry["content"]
-                # Clean markdown blocks from content
-                content = re.sub(r'```\w*\s*\n?', '', content.strip())
-                content = re.sub(r'```', '', content)
-                content = content.strip()
-                file_entry["content"] = content
+    # Ensure path is a string
+    if not isinstance(parsed_file_entry.get("path"), str):
+        return None
 
-    return parsed_array
-
-    m = re.search(r"FILES\s*:\s*(\[\s*[\s\S]*?\])", text, flags=re.IGNORECASE)
-    if m:
-        candidates.append(m.group(1))
-
-    raw_arrays = re.findall(r"(\[\s*\{[\s\S]*?\}\s*\])", text)
-    candidates.extend(raw_arrays)
-
-    for c in candidates:
-        try:
-            arr = json.loads(c)
-            if isinstance(arr, list) and all(isinstance(x, dict) for x in arr):
-                ok = True
-                for x in arr:
-                    if "path" not in x or "content" not in x:
-                        ok = False
-                        break
-                    if not isinstance(x["path"], str) or not isinstance(x["content"], str):
-                        ok = False
-                        break
-                if ok:
-                    return arr
-        except Exception:
-            continue
-    return None
+    return [parsed_file_entry] # Return as a list of one file for compatibility
 
 
 def safe_write(rel_path: str, content: str) -> str:

@@ -321,11 +321,49 @@ async def main() -> None:
         return match.group(1).strip() if match else ""
 
     # Extract and save all planning artifacts
-    (PLANNING / "prd.yaml").write_text(grab("yaml", "PRD"), encoding="utf-8")
-    (PLANNING / "architecture.yaml").write_text(grab("yaml", "ARCHITECTURE"), encoding="utf-8") # Changed label to match prompt
+    prd_content = grab("yaml", "PRD")
+    if not prd_content:
+        print("[ARCHITECT] WARNING: PRD block missing in LLM response. Retrying...")
+        # Simple retry logic for missing blocks
+        text = await client.chat(system=arch_prompt, user=user_input)
+        (ROOT / "debug_architect_response_retry_prd.txt").write_text(text, encoding="utf-8")
+        prd_content = grab("yaml", "PRD")
+        if not prd_content:
+            print("[ARCHITECT] ERROR: PRD block still missing after retry.")
+
+    arch_content = grab("yaml", "ARCHITECTURE")
+    if not arch_content:
+        print("[ARCHITECT] WARNING: ARCHITECTURE block missing in LLM response. Retrying...")
+        # Retry logic for missing blocks
+        for i in range(1, 3): # Try up to 2 more times
+            text = await client.chat(system=arch_prompt, user=user_input)
+            (ROOT / f"debug_architect_response_retry_arch_{i}.txt").write_text(text, encoding="utf-8")
+            arch_content = grab("yaml", "ARCHITECTURE")
+            if arch_content:
+                print(f"[ARCHITECT] ARCHITECTURE block recovered after {i} retries.")
+                break
+        if not arch_content:
+            print("[ARCHITECT] ERROR: ARCHITECTURE block still missing after retry.")
+
+    tasks_content = grab("csv", "TASKS")
+    if not tasks_content:
+        print("[ARCHITECT] WARNING: TASKS block missing in LLM response. Retrying...")
+        # Retry logic for missing blocks
+        for i in range(1, 3): # Try up to 2 more times
+            text = await client.chat(system=arch_prompt, user=user_input)
+            (ROOT / f"debug_architect_response_retry_tasks_{i}.txt").write_text(text, encoding="utf-8")
+            tasks_content = grab("csv", "TASKS")
+            if tasks_content:
+                print(f"[ARCHITECT] TASKS block recovered after {i} retries.")
+                break
+        if not tasks_content:
+            print("[ARCHITECT] ERROR: TASKS block still missing after retry.")
+
+    (PLANNING / "prd.yaml").write_text(prd_content, encoding="utf-8")
+    (PLANNING / "architecture.yaml").write_text(arch_content, encoding="utf-8")
     (PLANNING / "epics.yaml").write_text(grab("yaml", "EPICS"), encoding="utf-8")
     (PLANNING / "stories.yaml").write_text(grab("yaml", "STORIES"), encoding="utf-8")
-    (PLANNING / "tasks.csv").write_text(grab("csv", "TASKS"), encoding="utf-8")
+    (PLANNING / "tasks.csv").write_text(tasks_content, encoding="utf-8")
 
     print("✓ planning written under planning/")
 

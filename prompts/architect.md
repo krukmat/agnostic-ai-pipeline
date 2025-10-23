@@ -78,3 +78,5 @@ S2,T1,Create React login form,todo
 ```
 
 Keep it simple and focused.
+
+CRITICAL: Ensure ALL output blocks (EPICS, STORIES, ARCHITECTURE, PRD, TASKS) are present and correctly formatted in your response. Do not omit any block.

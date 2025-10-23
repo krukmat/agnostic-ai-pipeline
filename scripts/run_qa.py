@@ -127,6 +127,18 @@ def extract_pytest_errors(output: str):
                 "error": "Configuration or import error",
                 "type": "pytest_error"
             })
+        elif line.strip().startswith("ERROR collecting "):
+            collected_target = line.strip()[len("ERROR collecting "):]
+            # capture a few follow-up lines for context
+            detail_lines = []
+            for j in range(i+1, min(i+6, len(lines))):
+                if lines[j].strip() and not lines[j].startswith('='):
+                    detail_lines.append(lines[j])
+            errors.append({
+                "test": collected_target,
+                "error": '\n'.join(detail_lines[:3]),
+                "type": "pytest_collection_error"
+            })
     return errors
 
 def extract_pytest_warnings(output: str):
@@ -156,6 +168,19 @@ def extract_npm_errors(output: str):
                 "type": "jest_failure"
             })
     return errors
+
+
+def has_collection_errors(failure_details: dict) -> bool:
+    """Return True if failure details include pytest collection errors."""
+    for area in failure_details.values():
+        for err in area.get("errors", []):
+            err_type = err.get("type", "")
+            err_text = (err.get("error") or "").lower()
+            if err_type in {"pytest_collection_error", "pytest_error"}:
+                return True
+            if "error collecting" in err_text:
+                return True
+    return False
 
 def run_cmd(cmd, cwd=None) -> int:
     try:
@@ -247,11 +272,18 @@ def main():
         "web":     {"has_tests": web_tests, "rc": web_rc},
     }
 
+    failure_details = analyze_test_failures(areas, be_rc, web_rc)
+    collection_errors_present = has_collection_errors(failure_details)
+
     # When allow_no_tests is True, ignore test execution failures and treat as success
     if allow_no_tests:
         # If allow_no_tests, only check if we have the structure (has_tests)
         any_has_tests = any(v["has_tests"] for v in areas.values())
-        if any_has_tests:
+
+        if collection_errors_present:
+            status = "blocked_fatal"  # Treat collection errors as critical even in allow_no_tests
+            code = 4
+        elif any_has_tests:
             status = "pass"
             code = 0
         else:
@@ -262,7 +294,10 @@ def main():
         any_fail = any(v["rc"] not in (0,10) for v in areas.values())
         any_no_tests = any(v["rc"] == 10 for v in areas.values())
 
-        if any_fail:
+        if collection_errors_present:
+            status = "blocked_fatal"  # Critical error
+            code = 4
+        elif any_fail:
             status = "fail"
             code = 2
         elif any_no_tests:
@@ -273,7 +308,6 @@ def main():
             code = 0
 
     # Detailed failure analysis
-    failure_details = analyze_test_failures(areas, be_rc, web_rc)
 
     report = {
         "status": status,
