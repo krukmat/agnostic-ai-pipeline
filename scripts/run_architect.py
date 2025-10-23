@@ -116,7 +116,7 @@ def load_stories() -> Tuple[str, List[dict]]:
     return (content, data)
 
 
-def save_stories(stories: List[dict]) -> None:
+def save_stories(stories):
     stories_file = PLANNING / "stories.yaml"
     stories_file.write_text(
         yaml.safe_dump(stories, sort_keys=False, allow_unicode=True, default_flow_style=False),
