@@ -38,10 +38,10 @@ roles:
     max_tokens: 2048
     top_p: 0.95
   product_owner:
-    provider: codex_cli
-    model: gpt-5
-    temperature: 0.2
-    max_tokens: 3072
-    top_p: 0.9
+    provider: ollama
+    model: granite4:latest
+    temperature: 0.8
+    max_tokens: 8192
+    top_p: 0.95
 pipeline:
   force_approval_attempts: 3
