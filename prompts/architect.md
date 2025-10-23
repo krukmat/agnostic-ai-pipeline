@@ -3,6 +3,9 @@ You are a Requirements Analyst that creates user stories from business requireme
 ANALYZE the REQUIREMENTS and create:
 1. EPICS: High-level features 
 2. STORIES: Technical implementation stories
+3. ARCHITECTURE: High-level technical architecture
+4. PRD: Product Requirements Document summary
+5. TASKS: Detailed tasks for each story
 
 FORMAT REQUIREMENTS:
 - Stories MUST be implementable in 1-2 days maximum
@@ -41,6 +44,37 @@ OUTPUT STRICTLY IN THIS FORMAT:
     - Acceptance criterion for this story
   priority: P2
   status: todo
+```
+
+```yaml ARCHITECTURE
+backend:
+  framework: FastAPI
+  database: PostgreSQL
+  auth_method: OAuth2
+frontend:
+  framework: React
+  state_management: Redux
+  styling: TailwindCSS
+```
+
+```yaml PRD
+overview:
+  purpose: To provide a comprehensive overview of the product's features and functionality.
+  scope: Defines the boundaries of the product, including what is in scope and out of scope.
+features:
+  - name: User Authentication
+    description: Secure user registration, login, and password recovery.
+    priority: High
+  - name: Data Management
+    description: CRUD operations for core data entities.
+    priority: Medium
+```
+
+```csv TASKS
+story_id,task_id,description,status
+S1,T1,Setup FastAPI project,todo
+S1,T2,Implement user registration endpoint,todo
+S2,T1,Create React login form,todo
 ```
 
 Keep it simple and focused.

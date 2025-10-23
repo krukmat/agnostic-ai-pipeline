@@ -315,11 +315,14 @@ async def main() -> None:
     (ROOT / "debug_architect_response.txt").write_text(text, encoding="utf-8")
 
     def grab(tag: str, label: str) -> str:
-        match = re.search(rf"```{tag}\s+{label}\s*([\s\S]*?)```", text)
+        # Updated regex to be more robust for YAML/CSV block extraction
+        pattern = re.compile(rf"```{tag}\s*{label}\s*\n([\s\S]+?)\n```", re.MULTILINE)
+        match = pattern.search(text)
         return match.group(1).strip() if match else ""
 
+    # Extract and save all planning artifacts
     (PLANNING / "prd.yaml").write_text(grab("yaml", "PRD"), encoding="utf-8")
-    (PLANNING / "architecture.yaml").write_text(grab("yaml", "ARCH"), encoding="utf-8")
+    (PLANNING / "architecture.yaml").write_text(grab("yaml", "ARCHITECTURE"), encoding="utf-8") # Changed label to match prompt
     (PLANNING / "epics.yaml").write_text(grab("yaml", "EPICS"), encoding="utf-8")
     (PLANNING / "stories.yaml").write_text(grab("yaml", "STORIES"), encoding="utf-8")
     (PLANNING / "tasks.csv").write_text(grab("csv", "TASKS"), encoding="utf-8")
