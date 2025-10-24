@@ -80,7 +80,7 @@ class Client:
 
         # Provider defaults
         self.provider_type = "ollama"
-        self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or "http://localhost:11434"
+        self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434"
         self.oai_base = os.environ.get("OPENAI_API_BASE") or "http://localhost:4010/v1"
         self.oai_key = os.environ.get("OPENAI_API_KEY", "dummy")
 
@@ -177,16 +177,21 @@ class Client:
         elif self.provider_type == "openai":
             return await self._openai_chat(system, user)
         else:
+            # Ollama models should not have "ollama/" prefix
+            model_name_for_ollama = self.model
+            if self.provider_type == "ollama" and model_name_for_ollama.startswith("ollama/"):
+                model_name_for_ollama = model_name_for_ollama[len("ollama/"):]
+
             # prefer /api/chat, fallback to /api/generate for older Ollama
             try:
-                return await self._ollama_chat(system, user)
+                return await self._ollama_chat(system, user, model_name_for_ollama)
             except Exception:
-                return await self._ollama_generate(system, user)
+                return await self._ollama_generate(system, user, model_name_for_ollama)
 
-    async def _ollama_chat(self, system: str, user: str) -> str:
+    async def _ollama_chat(self, system: str, user: str, model_name: str) -> str:
         url = f"{self.ollama_base.rstrip('/')}/api/chat"
         payload = {
-            "model": self.model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -197,7 +202,12 @@ class Client:
         async with httpx.AsyncClient(timeout=300) as client:
             r = await client.post(url, json=payload)
             if r.status_code == 404:
-                raise RuntimeError("OLLAMA_CHAT_404")
+                print(f"[OLLAMA_DEBUG] 404 Response Text (chat): {r.text}") # DEBUG
+                # Check if the 404 is due to the model not being found
+                if "model not found" in r.text.lower():
+                    raise RuntimeError(f"OLLAMA_MODEL_NOT_FOUND: {self.model}")
+                else:
+                    raise RuntimeError("OLLAMA_CHAT_404: Endpoint not found or other 404 error.")
             r.raise_for_status()
             data = r.json()
             if isinstance(data, dict):
@@ -209,17 +219,19 @@ class Client:
                     return data["response"]
             return r.text
 
-    async def _ollama_generate(self, system: str, user: str) -> str:
+    async def _ollama_generate(self, system: str, user: str, model_name: str) -> str:
         url = f"{self.ollama_base.rstrip('/')}/api/generate"
         prompt = f"System:\n{system}\n\nUser:\n{user}\n\nAssistant:"
         payload = {
-            "model": self.model,
+            "model": model_name,
             "prompt": prompt,
             "options": {"temperature": self.temperature, "num_predict": self.max_tokens},
             "stream": False,
         }
         async with httpx.AsyncClient(timeout=300) as client:
             r = await client.post(url, json=payload)
+            if r.status_code == 404:
+                print(f"[OLLAMA_DEBUG] 404 Response Text (generate): {r.text}") # DEBUG
             r.raise_for_status()
             data = r.json()
             if isinstance(data, dict) and "response" in data:
