@@ -10,6 +10,7 @@ import yaml
 
 from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
+from logger import logger # Import the logger
 
 
 ARCHITECT_PROMPTS = {

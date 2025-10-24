@@ -7,6 +7,7 @@ import yaml
 
 from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
+from logger import logger # Import the logger
 
 PO_PROMPT = (ROOT / "prompts" / "product_owner.md").read_text(encoding="utf-8")
 VISION_PATH = PLANNING / "product_vision.yaml"
@@ -19,7 +20,8 @@ def extract_original_concept(requirements_text: str) -> str:
         return ""
     try:
         data = yaml.safe_load(requirements_text)
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"[PO] Failed to parse requirements metadata: {exc}")
         return ""
     if isinstance(data, dict):
         meta = data.get("meta")
@@ -34,7 +36,9 @@ def grab_block(text: str, tag: str, label: str) -> str:
     # Updated regex to be more robust for YAML block extraction
     pattern = re.compile(rf"```{tag}\s*{label}\s*\n([\s\S]+?)\n```", re.MULTILINE)
     match = pattern.search(text)
-    return match.group(1).strip() if match else ""
+    content = match.group(1).strip() if match else ""
+    logger.debug(f"[PO] Grabbed '{tag}:{label}' with {len(content)} characters")
+    return content
 
 
 def build_user_payload(concept: str, existing_vision: str, requirements: str) -> str:
@@ -53,8 +57,8 @@ async def main() -> None:
 
     requirements_path = PLANNING / "requirements.yaml"
     if not requirements_path.exists():
-        print("[PO] requirements.yaml not found. Run BA stage first.")
-        return
+        logger.error("[PO] requirements.yaml not found. Run BA stage first.")
+        raise SystemExit(1)
 
     requirements_content = requirements_path.read_text(encoding="utf-8")
     concept_env = os.environ.get("CONCEPT", "").strip()
@@ -66,27 +70,31 @@ async def main() -> None:
         existing_vision = VISION_PATH.read_text(encoding="utf-8")
 
     client = Client(role="product_owner")
-    print(f"Using CONCEPT: {concept or 'No concept provided'}")
-    print("[PO] Maintaining product vision and evaluating BA alignment...")
+    logger.info(f"[PO] Using CONCEPT: {concept or 'No concept provided'}")
+    logger.info("[PO] Maintaining product vision and evaluating BA alignment...")
+    logger.debug(f"[PO] Calling LLM via {client.provider_type} with model {client.model}, temp {client.temperature}, max_tokens {client.max_tokens}")
+
 
     user = build_user_payload(concept, existing_vision, requirements_content)
     response = await client.chat(system=PO_PROMPT, user=user)
     DEBUG_PATH.write_text(response, encoding="utf-8")
+    logger.debug(f"[PO] Full response saved to {DEBUG_PATH}")
+
 
     vision_yaml = grab_block(response, "yaml", "VISION")
     review_yaml = grab_block(response, "yaml", "REVIEW")
 
     if vision_yaml:
         VISION_PATH.write_text(vision_yaml.strip() + "\n", encoding="utf-8")
-        print("✓ product_vision.yaml updated")
+        logger.info("✓ product_vision.yaml updated")
     else:
-        print("[PO] WARNING: VISION block missing in LLM response")
+        logger.warning("[PO] VISION block missing in LLM response")
 
     if review_yaml:
         REVIEW_PATH.write_text(review_yaml.strip() + "\n", encoding="utf-8")
-        print("✓ product_owner_review.yaml updated")
+        logger.info("✓ product_owner_review.yaml updated")
     else:
-        print("[PO] WARNING: REVIEW block missing in LLM response")
+        logger.warning("[PO] REVIEW block missing in LLM response")
 
 
 if __name__ == "__main__":

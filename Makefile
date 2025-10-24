@@ -91,7 +91,16 @@ iteration:
 	SKIP_PLAN="$${SKIP_PLAN:-0}" \
 	$(PY) scripts/run_iteration.py
 
-.PHONY: gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
+.PHONY: reco-demo reco-on reco-off gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
+
+reco-demo:
+	$(PY) scripts/reco_demo.py
+
+reco-on:
+	export MODEL_RECO_ENABLED=true
+
+reco-off:
+	export MODEL_RECO_ENABLED=false
 
 gcloud-init:
 	@gcloud init

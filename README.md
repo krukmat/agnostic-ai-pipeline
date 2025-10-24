@@ -2,7 +2,7 @@
 
 **Deliver finished products through repeatable BA → Product Owner → Architect → Dev → QA release loops.**
 
-## Project Overview
+## Project Overview 
 
 - **Purpose** – Automate the journey from business concept to QA-validated release, producing requirements, architecture, code, tests, and reports.
 - **Roles** – Business Analyst, Product Owner, Architect, Developer, QA, and Orchestrator working in sequence.
@@ -27,14 +27,6 @@ flowchart LR
 
 The Product Owner sits between the Business Analyst and the Architect, acting as a quality gate for requirements before the technical planning begins.
 
-## Project Overview
-
-- **Purpose** – Automate the journey from business concept to QA-validated release, producing requirements, architecture, code, tests, and reports.
-- **Roles** – Business Analyst, Architect, Developer, QA, and Orchestrator collaborate sequentially.
-- **Artifacts** – Planning YAML files (`requirements.yaml`, `stories.yaml`, etc.), generated code/tests under `project/`, QA reports in `artifacts/qa/`.
-- **Workflows** – Use `make iteration`/`make loop` for the end-to-end loop, or execute role-specific commands (`make ba`, `make plan`, etc.) for focused debugging.
-- **Model Flexibility** – Each role can target open or proprietary models (local or cloud) via `config.yaml`. For example, you can run Ollama locally for BA/Dev while using Codex CLI or OpenAI for Architect/QA; switching providers only requires `make set-role ...` without code changes.
-
 ## Flexible Model Strategy: Real Impact
 
 An automated, model-agnostic pipeline kills integration battles and lets business priorities drive every decision. Roles stay perfectly choreographed even when you hot-swap providers, so a single loop can kick off with open models humming on your laptop and land with enterprise-grade QA in the cloud.
@@ -45,16 +37,6 @@ An automated, model-agnostic pipeline kills integration battles and lets busines
 - **Continuous innovation** – Trial fresh LLMs without retooling scripts or prompts; point `make set-role` at the experimental model and compare results in the next loop.
 - **Smarter scaling** – Blend local inference for cost-effective prototypes with cloud surges when your backlog spikes; the automated structure preserves story, code, and QA integrity.
 
-```mermaid
-flowchart LR
-    Concept[Business Concept] --> BA[Business Analyst]
-    BA --> ARCH[Architect]
-    ARCH --> DEV[Developer]
-    DEV --> QA[QA]
-    QA --> Snapshot[Snapshot & Release Artifacts]
-```
-
-#
 ---
 
 ## Why Loop Releases Matter
@@ -194,6 +176,15 @@ artifacts/iterations/<iteration-name>/
 - Extending to new stacks (e.g., mobile apps, additional services) is as simple as adding a skeleton under `project-defaults/`—release loops will copy the structure automatically.
 - `scripts/llm.py` handles provider selection per role, logging raw interactions under `artifacts/<role>/last_raw.txt`.
 - Mix and match local (Ollama) or paid APIs (OpenAI, Claude Code, Codex CLI, etc.) within the same release; each role can target a different provider without code changes.
+
+## Model Recommender (RoRF)
+
+- **Enable/Disable**: Set `enabled: true` or `enabled: false` in `config/model_recommender.yaml`. When disabled, the system falls back to the `weak` model defined for each route.
+- **How it works**: When enabled, `recommend_model()` embeds the prompt with Jina, feeds it to a pretrained RoRF router, and returns either the **weak**/cost-efficient or **strong**/high-quality model ID defined in `config/model_recommender.yaml`.
+- **Upstream reference**: RoRF ships via the open-source controller described on the project page (search for “Routing on Random Forests” by notdiamond) where you can review router calibration notes and the list of pretrained Jina checkpoints bundled with the PyPI package.
+- **Config**: `config/model_recommender.yaml` defines the `enabled` flag, role routes, `strong`/`weak` models, and router IDs.
+- **Tuning**: Increase `threshold` to shift more prompts toward the `strong` model; drop it to save cost.
+- **Smoke test**: `make reco-demo` runs `scripts/reco_demo.py` and prints model picks per role, respecting the `enabled` flag.
 
 ## Vertex AI (Gemini) Providers
 
