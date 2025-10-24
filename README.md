@@ -5,6 +5,31 @@
 ## Project Overview
 
 - **Purpose** – Automate the journey from business concept to QA-validated release, producing requirements, architecture, code, tests, and reports.
+- **Roles** – Business Analyst, Product Owner, Architect, Developer, QA, and Orchestrator working in sequence.
+- **Artifacts** – Planning YAML files (`requirements.yaml`, `stories.yaml`, etc.), generated code/tests under `project/`, QA reports in `artifacts/qa/`.
+- **Workflows** – Use `make iteration`/`make loop` for the end-to-end flow, or invoke each role via CLI (`make ba`, `make po`, etc.) to inspect individual steps.
+
+```mermaid
+flowchart LR
+    Concept[Business Concept] --> BA[Business Analyst]
+    BA --> PO[Product Owner]
+    PO --> ARCH[Architect]
+    ARCH --> DEV[Developer]
+    DEV --> QA[QA]
+    QA --> Snapshot[Snapshot & Release Artifacts]
+```
+
+### Product Owner Role
+
+- **Goal** – Maintain the product vision and ensure new requirements stay aligned with business objectives.
+- **Outputs** – `planning/product_vision.yaml` with the current vision snapshot and `planning/product_owner_review.yaml` summarising alignment status, gaps, and recommended actions.
+- **Entry point** – `make po` (or `python scripts/run_product_owner.py evaluate`) generates updated vision/review files after the Business Analyst stage.
+
+The Product Owner sits between the Business Analyst and the Architect, acting as a quality gate for requirements before the technical planning begins.
+
+## Project Overview
+
+- **Purpose** – Automate the journey from business concept to QA-validated release, producing requirements, architecture, code, tests, and reports.
 - **Roles** – Business Analyst, Architect, Developer, QA, and Orchestrator collaborate sequentially.
 - **Artifacts** – Planning YAML files (`requirements.yaml`, `stories.yaml`, etc.), generated code/tests under `project/`, QA reports in `artifacts/qa/`.
 - **Workflows** – Use `make iteration`/`make loop` for the end-to-end loop, or execute role-specific commands (`make ba`, `make plan`, etc.) for focused debugging.
@@ -57,31 +82,65 @@ These examples illustrate how loop releases stay **simple (single make command)*
 
 ## Classic Loop Release Flow
 
-```bash
-make iteration CONCEPT="Login MVP" LOOPS=2 ITERATION_NAME="release-2025Q1"
+The pipeline coordinates five specialised roles. Each emits artifacts that become the inputs for the next role, ensuring traceability from concept to QA evidence.
+
+```mermaid
+flowchart LR
+    Concept["Business Concept\n(CONCEPT env)"] --> BA["Business Analyst\nscripts/run_ba.py\n→ planning/requirements.yaml"]
+    BA --> PO["Product Owner\nscripts/run_product_owner.py\n→ planning/product_vision.yaml\n→ planning/product_owner_review.yaml"]
+    PO --> ARCH["Architect\nscripts/run_architect.py\n→ PRD, architecture, epics, stories, tasks"]
+    ARCH --> DEV["Developer\nscripts/run_dev.py\n→ project/ code & tests\n→ artifacts/dev/*"]
+    DEV --> QA["QA Analyst\nscripts/run_qa.py\n→ artifacts/qa/*"]
+    QA -->|pass| Snapshot["Snapshot & Summary\nartifacts/iterations/<name>/"]
+    QA -->|fail| ARCH
 ```
 
+### Role Responsibilities
 - **CONCEPT** – Plain-text business goal consumed by the Business Analyst.
 - **LOOPS** – Number of Dev→QA passes in the iteration (defaults to 1).
 - **ITERATION_NAME** – Human-readable label for snapshots under `artifacts/iterations/`.
 - **ALLOW_NO_TESTS** – Set to `0` for strict QA, `1` for exploratory prototyping.
 - **SKIP_BA / SKIP_PLAN** – Reuse existing requirements/stories without re-running those roles.
 
-Each call orchestrates BA → Architect → Dev → QA, snapshots the full state, and writes a `summary.json` with story status counts and configuration flags.
+| Role | Primary Script | Key Inputs | Key Outputs | Decision Points |
+| ---- | -------------- | ---------- | ----------- | --------------- |
+| Business Analyst | `scripts/run_ba.py` | `CONCEPT` (env) | `planning/requirements.yaml` + metadata (`meta.original_request`) | Defines initial scope and measurable requirements |
+| Product Owner | `scripts/run_product_owner.py` | Concept, requirements, previous vision | `planning/product_vision.yaml`, `planning/product_owner_review.yaml` | Validates alignment; flags gaps or conflicts before planning |
+| Architect | `scripts/run_architect.py` | Concept (from requirements) | `planning/prd.yaml`, `architecture.yaml`, `epics.yaml`, `stories.yaml`, `tasks.csv` | Adjusts stories based on QA feedback, honours PO vision |
+| Developer | `scripts/run_dev.py` | `planning/stories.yaml` | Application code & automated tests under `project/`, per-story diffs in `artifacts/dev/` | Retries up to `DEV_RETRIES`; blocked stories documented |
+| QA Analyst | `scripts/run_qa.py` | Codebase + tests | `artifacts/qa/last_report.json`, per-story logs in `artifacts/qa/story_logs/` | Auto-fixes import paths, enforces TDD, classifies severity |
 
----
+### Execution Timeline per Iteration
 
+1. **Concept definition** – Provide a clear business description by exporting `CONCEPT="..."`.
+2. **BA stage** – Run `make ba` (or let `make iteration` call it) to produce the structured requirements.
+3. **PO validation** – Execute `make po` to update the product vision and confirm alignment.
+4. **Architect planning** – `make plan` creates the delivery backlog from the approved requirements.
+5. **Development loop** – `make loop MAX_LOOPS=<N>` cycles through Dev/QA with architect interventions:
+   - QA failures labelled `force_applicable` require `>= pipeline.force_approval_attempts` Dev retries (default 3) on P1/P0 stories before safe force approval.
+   - Non-critical test-only failures hold the story in `blocked_test_only` for manual Dev fixes.
+6. **Snapshot & review** – `make iteration CONCEPT="..." LOOPS=<N>` encapsulates steps 2–5 and stores outputs under `artifacts/iterations/`.
+
+### Recommended Command Sequence
+
+```bash
+# 1. Capture requirements and vision
+CONCEPT="Mid-market social tagging assistant" make ba
+CONCEPT="Mid-market social tagging assistant" make po
+
+# 2. Generate technical plan
+CONCEPT="Mid-market social tagging assistant" make plan
+
+# 3. Execute development/QA loop
+make loop MAX_LOOPS=5
+
+# Optional: clean artifacts or reset workspace
+make clean                 # removes artifacts/*
+FLUSH=1 make clean         # also empties planning/ and project/
+```
 ### Loop Lifecycle
 
-1. **Concept intake** – BA converts the concept into requirements (`planning/requirements.yaml`).
-2. **Architecture & stories** – Architect creates PRD, architecture, epics, stories, and tasks.
-3. **Development** – Dev agent iterates through stories, updating `project/` code and tests.
-4. **Quality gate** – QA executes pytest/Jest suites and enforces TDD:
-   - Missing tests → `blocked_no_tests`
-   - Test failures → `in_review` + auto Architect adjustment (`ARCHITECT_INTERVENTION=1`)
-   - Severity-based force approval allowed after ≥3 retries on P1/P0 stories
-5. **Snapshot** – `artifacts/iterations/<iteration>/` stores planning, project, and `summary.json`.
-6. **Follow-up** – Use `make loop MAX_LOOPS=1` to retry blocked stories with the refined criteria.
+Use `artifact/qa/story_logs/<story>.log` to investigate repeated QA failures, and `planning/product_owner_review.yaml` to reconcile BA requirements with the product vision across iterations.
 
 ---
 
@@ -136,6 +195,11 @@ artifacts/iterations/<iteration-name>/
 - `scripts/llm.py` handles provider selection per role, logging raw interactions under `artifacts/<role>/last_raw.txt`.
 - Mix and match local (Ollama) or paid APIs (OpenAI, Claude Code, Codex CLI, etc.) within the same release; each role can target a different provider without code changes.
 
+## Vertex AI (Gemini) Providers
+
+- Google Vertex AI support ships via the `vertex_cli` (REST through `gcloud auth print-access-token`) and optional `vertex_sdk` providers.
+- See `vertex_ai_gemini_provider_via_gcloud_implementation_guide_for_codex.md` for setup, smoke tests, CI wiring, and advanced usage notes.
+>>>>>>> origin/main
 ## Model Recommender (RoRF)
 
 - Enable: `export MODEL_RECO_ENABLED=true` (default) so each role routes via the RoRF controller before sending a prompt.
@@ -145,6 +209,17 @@ artifacts/iterations/<iteration-name>/
 - Tuning: Increase `threshold` to shift more prompts toward the strong model; drop it to save cost.
 - Disable: `export MODEL_RECO_ENABLED=false` to fall back to the per-role model in `config.yaml`.
 - Smoke test: `make reco-demo` runs `scripts/reco_demo.py` and prints model picks per role.
+
+## Vertex AI (Gemini) Providers
+
+- Google Vertex AI support ships via the `vertex_cli` (REST through `gcloud auth print-access-token`) and optional `vertex_sdk` providers.
+- See `vertex_ai_gemini_provider_via_gcloud_implementation_guide_for_codex.md` for setup, smoke tests, CI wiring, and advanced usage notes.
+=======
+## Vertex AI (Gemini) Providers
+
+- Google Vertex AI support ships via the `vertex_cli` (REST through `gcloud auth print-access-token`) and optional `vertex_sdk` providers.
+- See `vertex_ai_gemini_provider_via_gcloud_implementation_guide_for_codex.md` for setup, smoke tests, CI wiring, and advanced usage notes.
+>>>>>>> origin/main
 
 ### Architect Complexity Tiers
 
@@ -193,7 +268,7 @@ artifacts/iterations/<iteration-name>/
 | `ARCHITECT_INTERVENTION` | Enables auto story refinements when QA fails |
 | `STRICT_TDD` | Forces Architect to embed additional TDD requirements |
 | `LOOP_MODE=dev_only` | Skip QA for exploratory coding loops |
-| `SKIP_BA` / `SKIP_PLAN` | Reuse existing requirements/stories for incremental releases |
+| `SKIP_BA` / `SKIP_PO` / `SKIP_PLAN` | Reuse existing outputs for incremental releases |
 
 Use these flags in `make iteration` or directly in `make loop` for lower-level control.
 
@@ -204,6 +279,7 @@ Use these flags in `make iteration` or directly in `make loop` for lower-level c
 ```bash
 # One-off actions
 make ba                          # BA → requirements
+make po                          # Product Owner → vision + alignment review
 make plan                        # Architect → PRD, epics, stories, tasks
 make dev STORY=S1                # Dev implements a specific story
 make qa QA_RUN_TESTS=1           # Run QA with tests

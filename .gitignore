@@ -213,3 +213,8 @@ planning/tasks.csv
 project/*
 debug_architect_response.txt
 debug_ba_response.txt
+debug_product_owner_response.txt
+debug_architect_response_retry_tasks.txt
+debug_architect_response_retry_arch.txt
+debug_architect_response_retry_prd.txt
+gcloud-creds.md

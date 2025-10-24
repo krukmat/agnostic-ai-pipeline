@@ -7,12 +7,13 @@ help:
 	@echo "Targets:"
 	@echo "  setup        -> venv + deps base"
 	@echo "  ba           -> Business Analyst (genera requirements.yaml)"
+	@echo "  po           -> Product Owner (valida visión vs requirements)"
 	@echo "  plan         -> Arquitecto + normaliza historias"
 	@echo "  dev          -> Developer (toma siguiente 'todo')"
 	@echo "  qa           -> QA textual (+tests si QA_RUN_TESTS=1)"
 	@echo "  loop         -> Orquestador Dev→QA (auto-promueve, LOOP_MODE=dev_only para solo Dev)"
 	@echo "  loop-dev     -> Development loop (solo dev, no QA)"
-	@echo "  iteration    -> BA→Architect→Dev→QA en cadena + snapshot bajo artifacts/iterations/"
+	@echo "  iteration    -> BA→PO→Architect→Dev→QA en cadena + snapshot bajo artifacts/iterations/"
 	@echo "  fix-stories  -> Normaliza planning/stories.yaml"
 	@echo "  show-config  -> Muestra config.yaml"
 	@echo "  set-role     -> role=<ba|architect|dev|qa> provider=<ollama|openai> model=..."
@@ -29,6 +30,11 @@ ba:
 	@if [ -z "$$CONCEPT" ]; then echo 'Set CONCEPT="..."'; exit 1; fi
 	CONCEPT="$$CONCEPT" $(PY) scripts/run_ba.py
 	@echo "==> planning/requirements.yaml generado"
+
+po:
+	CONCEPT="$$CONCEPT" $(PY) scripts/run_product_owner.py
+	@echo "==> planning/product_owner_review.yaml"
+	@sed -n '1,40p' planning/product_owner_review.yaml 2>/dev/null || true
 
 plan:
 	@if [ -z "$$CONCEPT" ]; then \
@@ -85,7 +91,25 @@ iteration:
 	SKIP_PLAN="$${SKIP_PLAN:-0}" \
 	$(PY) scripts/run_iteration.py
 
-.PHONY: reco-demo reco-on reco-off
+.PHONY: gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
+
+gcloud-init:
+	@gcloud init
+
+gcloud-auth-adc:
+	@gcloud auth application-default login
+
+gcloud-enable-apis:
+	@gcloud services enable aiplatform.googleapis.com
+
+vertex-ping:
+	@PROJECT_ID=$${PROJECT_ID:-$${GCP_PROJECT}} LOCATION=$${LOCATION:-$${VERTEX_LOCATION:-us-central1}} MODEL=$${MODEL:-$${VERTEX_MODEL:-gemini-2.5-flash}} \
+	bash scripts/vertex_chat.sh "ping"
+
+provider-vertex-cli:
+	@python3 scripts/providers/vertex_cli.py < prompts/vertex_payload.json
+>>>>>>> origin/main
+.PHONY: reco-demo reco-on reco-off gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
 
 reco-demo:
 	$(PY) scripts/reco_demo.py
@@ -95,3 +119,38 @@ reco-on:
 
 reco-off:
 	export MODEL_RECO_ENABLED=false
+
+gcloud-init:
+	@gcloud init
+
+gcloud-auth-adc:
+	@gcloud auth application-default login
+
+gcloud-enable-apis:
+	@gcloud services enable aiplatform.googleapis.com
+
+vertex-ping:
+	@PROJECT_ID=$${PROJECT_ID:-$${GCP_PROJECT}} LOCATION=$${LOCATION:-$${VERTEX_LOCATION:-us-central1}} MODEL=$${MODEL:-$${VERTEX_MODEL:-gemini-2.5-flash}} \
+	bash scripts/vertex_chat.sh "ping"
+
+provider-vertex-cli:
+	@python3 scripts/providers/vertex_cli.py < prompts/vertex_payload.json
+=======
+.PHONY: gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
+
+gcloud-init:
+	@gcloud init
+
+gcloud-auth-adc:
+	@gcloud auth application-default login
+
+gcloud-enable-apis:
+	@gcloud services enable aiplatform.googleapis.com
+
+vertex-ping:
+	@PROJECT_ID=$${PROJECT_ID:-$${GCP_PROJECT}} LOCATION=$${LOCATION:-$${VERTEX_LOCATION:-us-central1}} MODEL=$${MODEL:-$${VERTEX_MODEL:-gemini-2.5-flash}} \
+	bash scripts/vertex_chat.sh "ping"
+
+provider-vertex-cli:
+	@python3 scripts/providers/vertex_cli.py < prompts/vertex_payload.json
+>>>>>>> origin/main

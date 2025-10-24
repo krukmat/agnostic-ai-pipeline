@@ -15,12 +15,20 @@ FORCE_APPROVAL_THRESHOLD = max(
         or 3
     ),
 )
+DEV_RETRY_THRESHOLD = max(
+    1,
+    int(
+        (_config.get("pipeline") or {}).get("dev_retry_attempts", 3)
+        or 3
+    ),
+)
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLAN = ROOT / "planning"
 STORIES_P = PLAN / "stories.yaml"
 NOTES_P = PLAN / "notes.md"
 QA_REPORT = ROOT / "artifacts" / "qa" / "last_report.json"
+DEV_FAILED_REPORT = ROOT / "artifacts" / "dev" / "failed_stories.md"
 
 def load_stories():
     """Load stories with automatic YAML error recovery"""
@@ -353,7 +361,7 @@ def analyze_qa_failure_severity(qa_failure_details):
     # CRITICAL: Never force-approve - block permanently
     if total_critical > 0:
         return {
-            "severity": "critically_blocked",
+            "severity": "blocked_fatal",
             "details": f"CRITICAL ERRORS ({total_critical}): Syntax/import/environment issues detected. Cannot force-approve.",
             "errors": critical_errors
         }
@@ -421,7 +429,7 @@ def main():
                     if was_force_approved:
                         # Force approval - mark as done, don't rework
                         story['status'] = 'done_force_architect'
-                        append_note(f"- Architect FORCE APPROVED {story_id} (attempt {attempt_count}, P{story.get('priority')} priority)")
+                        append_note(f"- Architect FORCE APPROVED {story_id} (immediate, attempt {attempt_count}, P{story.get('priority')} priority)")
                         print(f"[loop] Architect FORCE APPROVED {story_id} (iteration {attempt_count})")
                         story_dev_attempts.pop(story_id, None)
                         story_arch_attempts.pop(story_id, None)
@@ -433,8 +441,8 @@ def main():
                         append_note(f"- Architect adjusted criteria for {story_id} (attempt {attempt}) → Dev must rework")
                         print(f"[loop] Architect adjusted criteria for {story_id} → Dev must rework (counter reset)")
                 else:
-                    append_note(f"- Architect could not adjust criteria for {story_id} (rc={rc_arch})")
-                    print(f"[loop] Architect could not adjust criteria for {story_id}")
+                    append_note(f"- Architect could not adjust criteria for {story_id} (immediate, rc={rc_arch})")
+                    print(f"[loop] Architect could not IMMEDIATELY adjust criteria for {story_id}")
 
             # RECARGAR historias después de architect interventions
             stories = load_stories()
@@ -457,38 +465,55 @@ def main():
         try:
             rc_dev = run_cmd([str(ROOT/".venv/bin/python"), str(ROOT/"scripts"/"run_dev.py")], env=dev_env)
             if rc_dev != 0:
-                append_note(f"- Dev no pudo implementar {sid} (rc={rc_dev}). Revisa artifacts/auto-dev.")
-                story["status"] = "blocked"
+                dev_attempt_count = story_dev_attempts.get(sid, 0)
+                if dev_attempt_count >= DEV_RETRY_THRESHOLD:
+                    # Developer has failed too many times, block the story
+                    story["status"] = "blocked_dev"
+                    error_details = f"Dev no pudo implementar {sid} (rc={rc_dev}) después de {dev_attempt_count} intentos. Revisa artifacts/dev/failed_stories.md."
+                    append_note(f"- {sid} BLOCKED_DEV: {error_details}")
+                    report_developer_failure(sid, error_details, qa_failure_details={}) # Pass empty qa_failure_details for now
+                    print(f"[loop] {sid} -> blocked_dev (Dev rc {rc_dev}, {dev_attempt_count} intentos)")
+                    story_dev_attempts.pop(sid, None) # Reset attempts for this story
+                else:
+                    # Developer failed, but still has retries left, send to in_review
+                    story["status"] = "in_review"
+                    append_note(f"- Dev no pudo implementar {sid} (rc={rc_dev}). Revisa artifacts/auto-dev. Reintentando (intento {dev_attempt_count}/{DEV_RETRY_THRESHOLD}).")
+                    print(f"[loop] {sid} -> in_review (Dev rc {rc_dev}, reintentando)")
                 save_stories(stories)
-                print(f"[loop] {sid} -> blocked (Dev rc {rc_dev})")
                 continue
         except RuntimeError as e:
             error_str = str(e)
+            dev_attempt_count = story_dev_attempts.get(sid, 0)
+            if dev_attempt_count >= DEV_RETRY_THRESHOLD:
+                story["status"] = "blocked_dev"
+                error_details = f"Dev bloqueado fatal: {sid} - CLI error: {error_str} después de {dev_attempt_count} intentos."
+                append_note(f"- {sid} BLOCKED_DEV: {error_details}")
+                report_developer_failure(sid, error_details, qa_failure_details={})
+                print(f"[loop] {sid} -> blocked_dev (CLI error: {error_str}, {dev_attempt_count} intentos)")
+                story_dev_attempts.pop(sid, None)
+                save_stories(stories)
+                continue
+            
             if error_str.startswith("CODEX_"):
-                # Handle CLI-specific errors
                 if "CODEX_CLI_NOT_FOUND" in error_str or "CODEX_CLI_FAILED" in error_str:
-                    # Fatal error - CLI not available or command failed
                     append_note(f"- Dev bloqueado fatal: {sid} - CLI error: {error_str}")
                     story["status"] = "blocked_fatal"
                     save_stories(stories)
                     print(f"[loop] {sid} -> blocked_fatal (CLI error: {error_str})")
                     continue
                 elif "CODEX_CLI_TIMEOUT" in error_str:
-                    # Timeout - retry logic (similar to connection issues)
                     append_note(f"- Dev timeout CLI: {sid} - {error_str} - considera rollback a ollama/openai")
                     story["status"] = "blocked_timeout"
                     save_stories(stories)
                     print(f"[loop] {sid} -> blocked_timeout (CLI timeout: {error_str})")
                     continue
                 else:
-                    # Other CLI errors - mark as blocked
                     append_note(f"- Dev error CLI: {sid} - {error_str}")
                     story["status"] = "blocked"
                     save_stories(stories)
                     print(f"[loop] {sid} -> blocked (CLI error: {error_str})")
                     continue
             else:
-                # Re-raise non-CLI RuntimeErrors
                 raise
 
         # 4) QA
@@ -545,13 +570,18 @@ def main():
                 append_note(f"- {sid} ❌ TDD FAILURE: QA report missing - tests required.")
                 print(f"[loop] {sid} -> blocked_no_tests (QA report missing)")
 
+        elif qa_status in {"blocked_fatal", "critically_blocked"}:  # Handle fatal QA outcomes
+            story["status"] = "blocked_fatal"
+            append_note(f"- {sid} FATAL BLOCK (QA): {qa_failure_details.get('details', 'Critical QA error')[:100]}. Cannot force-approve!")
+            print(f"[loop] {sid} -> blocked_fatal (CRÍTICO QA - no force-approve)")
+
         else:
             # ❌ QA FAIL: Análisis de fallos con estados específicos
             # Analyze QA failure details for smarter decisions
             failure_analysis = analyze_qa_failure_severity(qa_failure_details)
 
             # LÓGICA SOBRE FORCE-APPROVAL INTELIGENTE
-            if failure_analysis["severity"] == "critically_blocked":
+            if failure_analysis["severity"] in {"blocked_fatal", "critically_blocked"}:
                 # 🚫 NUNCA force-approve: Errores críticos (syntax, imports, environment)
                 story["status"] = "blocked_fatal"  # Bloqueado permanentemente
                 append_note(f"- {sid} FATAL BLOCK: {failure_analysis['details'][:100]}. Cannot force-approve!")
@@ -611,7 +641,7 @@ def main():
         in_review_stories = find_in_review_stories(stories)
         if in_review_stories:
             print(f"[loop] 🔄 IMMEDIATE ARCHITECT INTERVENTION FOR: {[s['id'] for s in in_review_stories]}")
-            for story in in_review_stories[:2]:  # Process up to 2 immediately
+            for story in in_review_stories[:2]:  # Limit to 2 per iteration to avoid infinite loops
                 story_id = story['id']
                 # Update iteration counter for this story
                 story_arch_attempts[story_id] = story_arch_attempts.get(story_id, 0) + 1
@@ -644,6 +674,29 @@ def main():
         save_stories(stories)
 
     return 0
+
+def report_developer_failure(story_id: str, error_message: str, qa_failure_details: dict):
+    """Generates a detailed report for a blocked developer story."""
+    DEV_FAILED_REPORT.parent.mkdir(parents=True, exist_ok=True)
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    report_content = f"### ❌ Developer Failure Report - Story {story_id} ({now})\n\n"
+    report_content += f"**Error:** {error_message}\n\n"
+    
+    if qa_failure_details:
+        report_content += f"**QA Failure Details:**\n```json\n{json.dumps(qa_failure_details, indent=2, ensure_ascii=False)}\n```\n\n"
+    else:
+        report_content += "**QA Failure Details:** No detailed QA report available for this failure type.\n\n"
+
+    report_content += "**Recommendations:**\n"
+    report_content += "- Review the Developer prompt (`prompts/developer.md`) for clarity on code structure, imports, and test generation.\n"
+    report_content += "- Consider using a more capable LLM for the Developer role if the issue persists.\n"
+    report_content += "- Manually inspect the generated code in `project/` and logs in `artifacts/dev/` for insights.\n\n"
+    report_content += "---\n\n"
+
+    with DEV_FAILED_REPORT.open("a", encoding="utf-8") as f:
+        f.write(report_content)
+    print(f"[loop] Developer failure reported for {story_id} in {DEV_FAILED_REPORT}")
 
 if __name__ == "__main__":
     sys.exit(main())
