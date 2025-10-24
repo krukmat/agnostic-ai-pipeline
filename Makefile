@@ -91,24 +91,6 @@ iteration:
 	SKIP_PLAN="$${SKIP_PLAN:-0}" \
 	$(PY) scripts/run_iteration.py
 
-.PHONY: gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
-
-gcloud-init:
-	@gcloud init
-
-gcloud-auth-adc:
-	@gcloud auth application-default login
-
-gcloud-enable-apis:
-	@gcloud services enable aiplatform.googleapis.com
-
-vertex-ping:
-	@PROJECT_ID=$${PROJECT_ID:-$${GCP_PROJECT}} LOCATION=$${LOCATION:-$${VERTEX_LOCATION:-us-central1}} MODEL=$${MODEL:-$${VERTEX_MODEL:-gemini-2.5-flash}} \
-	bash scripts/vertex_chat.sh "ping"
-
-provider-vertex-cli:
-	@python3 scripts/providers/vertex_cli.py < prompts/vertex_payload.json
->>>>>>> origin/main
 .PHONY: reco-demo reco-on reco-off gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
 
 reco-demo:
@@ -135,22 +117,3 @@ vertex-ping:
 
 provider-vertex-cli:
 	@python3 scripts/providers/vertex_cli.py < prompts/vertex_payload.json
-=======
-.PHONY: gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
-
-gcloud-init:
-	@gcloud init
-
-gcloud-auth-adc:
-	@gcloud auth application-default login
-
-gcloud-enable-apis:
-	@gcloud services enable aiplatform.googleapis.com
-
-vertex-ping:
-	@PROJECT_ID=$${PROJECT_ID:-$${GCP_PROJECT}} LOCATION=$${LOCATION:-$${VERTEX_LOCATION:-us-central1}} MODEL=$${MODEL:-$${VERTEX_MODEL:-gemini-2.5-flash}} \
-	bash scripts/vertex_chat.sh "ping"
-
-provider-vertex-cli:
-	@python3 scripts/providers/vertex_cli.py < prompts/vertex_payload.json
->>>>>>> origin/main
