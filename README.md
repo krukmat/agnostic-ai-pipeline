@@ -179,13 +179,12 @@ artifacts/iterations/<iteration-name>/
 
 ## Model Recommender (RoRF)
 
-- Enable: `export MODEL_RECO_ENABLED=true` (default) so each role routes via the RoRF controller before sending a prompt.
-- How it works: when a role submits a prompt, `recommend_model()` embeds the message with Jina, feeds it to a pretrained RoRF router, and returns either the **weak**/cost-efficient or **strong**/high-quality model id defined in `config/model_recommender.yaml`.
-- Upstream reference: RoRF ships via the open-source controller described on the project page (search for “Routing on Random Forests” by notdiamond) where you can review router calibration notes and the list of pretrained Jina checkpoints bundled with the PyPI package.
-- Config: `config/model_recommender.yaml` defines role routes, strong/weak models, and router IDs.
-- Tuning: Increase `threshold` to shift more prompts toward the strong model; drop it to save cost.
-- Disable: `export MODEL_RECO_ENABLED=false` to fall back to the per-role model in `config.yaml`.
-- Smoke test: `make reco-demo` runs `scripts/reco_demo.py` and prints model picks per role.
+- **Enable/Disable**: Set `enabled: true` or `enabled: false` in `config/model_recommender.yaml`. When disabled, the system falls back to the `weak` model defined for each route.
+- **How it works**: When enabled, `recommend_model()` embeds the prompt with Jina, feeds it to a pretrained RoRF router, and returns either the **weak**/cost-efficient or **strong**/high-quality model ID defined in `config/model_recommender.yaml`.
+- **Upstream reference**: RoRF ships via the open-source controller described on the project page (search for “Routing on Random Forests” by notdiamond) where you can review router calibration notes and the list of pretrained Jina checkpoints bundled with the PyPI package.
+- **Config**: `config/model_recommender.yaml` defines the `enabled` flag, role routes, `strong`/`weak` models, and router IDs.
+- **Tuning**: Increase `threshold` to shift more prompts toward the `strong` model; drop it to save cost.
+- **Smoke test**: `make reco-demo` runs `scripts/reco_demo.py` and prints model picks per role, respecting the `enabled` flag.
 
 ## Vertex AI (Gemini) Providers
 
