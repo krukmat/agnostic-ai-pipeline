@@ -15,6 +15,24 @@ import yaml
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT / "src"
+if SRC_DIR.exists():
+    sys.path.insert(0, str(SRC_DIR))
+
+try:
+    from recommend.model_recommender import is_enabled as _reco_enabled, recommend_model
+except Exception:  # pragma: no cover - recommender optional
+    recommend_model = None  # type: ignore[assignment]
+
+    def _reco_enabled() -> bool:  # type: ignore[override]
+        return False
+
+try:
+    from .providers import PROVIDER_REGISTRY  # type: ignore
+except Exception:  # pragma: no cover - providers optional
+    PROVIDER_REGISTRY = {}
+
+
 CONFIG_P = ROOT / "config.yaml"
 
 
@@ -88,7 +106,8 @@ class Client:
         self.model = role_cfg.get("model", self.model)
         self.temperature = float(role_cfg.get("temperature", self.temperature))
         self.max_tokens = int(role_cfg.get("max_tokens", self.max_tokens))
-        self.provider_type = provider_cfg.get("type", "ollama")
+        self.provider_type = provider_cfg.get("type", provider_key)
+        self.provider_options = provider_cfg
         base_url = provider_cfg.get("base_url")
 
         if self.provider_type == "ollama":
@@ -112,7 +131,7 @@ class Client:
             maxt = legacy_args[3] if len(legacy_args) >= 4 else None
             base = legacy_args[4] if len(legacy_args) >= 5 else None
 
-            if prov in ("ollama", "openai"):
+            if prov in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk"):
                 self.provider_type = prov
             if isinstance(model, str) and model:
                 self.model = model
@@ -135,7 +154,7 @@ class Client:
             self.max_tokens = int(overrides["max_tokens"])
         if "provider" in overrides and overrides["provider"]:
             p = str(overrides["provider"]).strip().lower()
-            if p in ("ollama", "openai"):
+            if p in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk"):
                 self.provider_type = p
         if "base_url" in overrides and overrides["base_url"]:
             if self.provider_type == "ollama":
@@ -144,6 +163,18 @@ class Client:
                 self.oai_base = str(overrides["base_url"])
 
     async def chat(self, system: str, user: str) -> str:
+        if recommend_model and _reco_enabled():
+            prompt = f"{system.strip()}\n\n{user.strip()}"
+            try:
+                chosen_model = recommend_model(prompt, role=self.role)
+            except Exception:
+                chosen_model = None
+            if chosen_model:
+                self.model = chosen_model
+
+        if self.provider_type in ("vertex_cli", "vertex_sdk") and PROVIDER_REGISTRY:
+            return await asyncio.to_thread(self._vertex_chat, system, user)
+
         if self.provider_type == "codex_cli":
             return await asyncio.to_thread(self._codex_cli_chat, system, user)
         elif self.provider_type == "openai":
@@ -197,6 +228,37 @@ class Client:
             if isinstance(data, dict) and "response" in data:
                 return data["response"]
             return r.text
+
+    def _vertex_chat(self, system: str, user: str) -> str:
+        provider = PROVIDER_REGISTRY.get(self.provider_type)
+        if provider is None:
+            raise RuntimeError(f"Provider '{self.provider_type}' not available")
+
+        messages = [
+            {"role": "system", "content": [{"type": "text", "text": system}]},
+            {"role": "user", "content": [{"type": "text", "text": user}]},
+        ]
+
+        def _sanitize(value):
+            if isinstance(value, str) and "${" in value:
+                return None
+            return value
+
+        extra_kwargs = {}
+        if isinstance(self.provider_options, dict):
+            for key in ("project_id", "location", "temperature", "max_output_tokens"):
+                if key in self.provider_options:
+                    resolved = _sanitize(self.provider_options.get(key))
+                    if resolved is not None:
+                        extra_kwargs[key] = resolved
+
+        return provider(
+            messages=messages,
+            model=self.model,
+            temperature=self.temperature,
+            max_output_tokens=self.max_tokens,
+            **extra_kwargs,
+        )
 
     async def _openai_chat(self, system: str, user: str) -> str:
         url = f"{self.oai_base.rstrip('/')}/chat/completions"

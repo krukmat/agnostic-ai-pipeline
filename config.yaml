@@ -12,6 +12,20 @@ providers:
     input_format: flags  # --model <model> <prompt> directo
     output_clean: true   # limpiar ANSI codes y espacios
     extra_args: []  # Sin argumentos extra por ahora
+  vertex_cli:
+    type: vertex_cli
+    project_id: "${GCP_PROJECT}"
+    location: "${VERTEX_LOCATION:-us-central1}"
+    model: "${VERTEX_MODEL:-gemini-2.5-flash}"
+    temperature: "${VERTEX_TEMPERATURE:-0.2}"
+    max_output_tokens: "${VERTEX_MAX_OUTPUT_TOKENS:-2048}"
+  vertex_sdk:
+    type: vertex_sdk
+    project_id: "${GCP_PROJECT}"
+    location: "${VERTEX_LOCATION:-us-central1}"
+    model: "${VERTEX_MODEL:-gemini-2.5-flash}"
+    temperature: "${VERTEX_TEMPERATURE:-0.2}"
+    max_output_tokens: "${VERTEX_MAX_OUTPUT_TOKENS:-2048}"
 roles:
   ba:
     provider: ollama

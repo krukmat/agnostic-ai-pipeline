@@ -217,3 +217,4 @@ debug_product_owner_response.txt
 debug_architect_response_retry_tasks.txt
 debug_architect_response_retry_arch.txt
 debug_architect_response_retry_prd.txt
+gcloud-creds.md
