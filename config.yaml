@@ -12,30 +12,50 @@ providers:
     input_format: flags  # --model <model> <prompt> directo
     output_clean: true   # limpiar ANSI codes y espacios
     extra_args: []  # Sin argumentos extra por ahora
+  vertex_cli:
+    type: vertex_cli
+    project_id: "${GCP_PROJECT}"
+    location: "${VERTEX_LOCATION:-us-central1}"
+    model: "${VERTEX_MODEL:-gemini-2.5-flash}"
+    temperature: "${VERTEX_TEMPERATURE:-0.2}"
+    max_output_tokens: "${VERTEX_MAX_OUTPUT_TOKENS:-2048}"
+  vertex_sdk:
+    type: vertex_sdk
+    project_id: "${GCP_PROJECT}"
+    location: "${VERTEX_LOCATION:-us-central1}"
+    model: "${VERTEX_MODEL:-gemini-2.5-flash}"
+    temperature: "${VERTEX_TEMPERATURE:-0.2}"
+    max_output_tokens: "${VERTEX_MAX_OUTPUT_TOKENS:-2048}"
 roles:
   ba:
     provider: ollama
-    model: granite4:latest
+    model: granite4
     temperature: 0.4
     max_tokens: 8192
     top_p: 0.95
   architect:
-    provider: codex_cli  # default to Codex CLI for architecture role
-    model: gpt-5-codex
+    provider: ollama
+    model: qwen2.5-coder:7b
     temperature: 0.2
     max_tokens: 4096
     top_p: 0.95
   dev:
     provider: ollama
-    model: mistral:7b-instruct
+    model: qwen2.5-coder:7b
     temperature: 0.2
-    max_tokens: 2048
+    max_tokens: 4096
     top_p: 0.95
   qa:
     provider: ollama
     model: qwen2.5-coder:7b
     temperature: 0.2
     max_tokens: 2048
+    top_p: 0.95
+  product_owner:
+    provider: ollama
+    model: granite4
+    temperature: 0.8
+    max_tokens: 8192
     top_p: 0.95
 pipeline:
   force_approval_attempts: 3

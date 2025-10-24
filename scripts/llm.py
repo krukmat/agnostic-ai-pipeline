@@ -13,8 +13,27 @@ from typing import Any, Dict, Optional
 import httpx
 import yaml
 
+from logger import logger # Import the logger
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT / "src"
+if SRC_DIR.exists():
+    sys.path.insert(0, str(SRC_DIR))
+
+try:
+    from recommend.model_recommender import is_enabled as _reco_enabled, recommend_model
+except Exception as exc:  # pragma: no cover - recommender optional
+    logger.warning(f"[LLM] Model recommender import failed: {exc}")
+    recommend_model = None  # type: ignore[assignment]
+    _reco_enabled = lambda: False  # type: ignore[assignment]
+
+try:
+    from .providers import PROVIDER_REGISTRY  # type: ignore
+except Exception as exc:  # pragma: no cover - providers optional
+    logger.warning(f"[LLM] Providers import failed: {exc}")
+    PROVIDER_REGISTRY = {}
+
 CONFIG_P = ROOT / "config.yaml"
 
 
@@ -23,22 +42,29 @@ def load_config() -> Dict[str, Any]:
         try:
             data = yaml.safe_load(CONFIG_P.read_text(encoding="utf-8")) or {}
             if not isinstance(data, dict):
+                logger.warning("[LLM] config.yaml is not a dictionary. Returning empty config.")
                 return {}
             return data
-        except Exception:
+        except Exception as exc:
+            logger.error(f"[LLM] Error loading config.yaml: {exc}", exc_info=True)
             return {}
+    logger.info("[LLM] config.yaml not found. Returning empty config.")
     return {}
 
 
 def _default_role() -> str:
     role = os.environ.get("ROLE", "").strip().lower()
     if role:
+        logger.debug(f"[LLM] Role from env: {role}")
         return role
     argv0 = " ".join(sys.argv).lower()
     if "architect" in argv0:
+        logger.debug("[LLM] Inferred role: architect")
         return "architect"
     if "qa" in argv0:
+        logger.debug("[LLM] Inferred role: qa")
         return "qa"
+    logger.debug("[LLM] Inferred role: dev")
     return "dev"
 
 
@@ -65,7 +91,7 @@ class Client:
 
         # Provider defaults
         self.provider_type = "ollama"
-        self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or "http://localhost:11434"
+        self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434"
         self.oai_base = os.environ.get("OPENAI_API_BASE") or "http://localhost:4010/v1"
         self.oai_key = os.environ.get("OPENAI_API_KEY", "dummy")
 
@@ -88,7 +114,8 @@ class Client:
         self.model = role_cfg.get("model", self.model)
         self.temperature = float(role_cfg.get("temperature", self.temperature))
         self.max_tokens = int(role_cfg.get("max_tokens", self.max_tokens))
-        self.provider_type = provider_cfg.get("type", "ollama")
+        self.provider_type = provider_cfg.get("type", provider_key)
+        self.provider_options = provider_cfg
         base_url = provider_cfg.get("base_url")
 
         if self.provider_type == "ollama":
@@ -112,7 +139,7 @@ class Client:
             maxt = legacy_args[3] if len(legacy_args) >= 4 else None
             base = legacy_args[4] if len(legacy_args) >= 5 else None
 
-            if prov in ("ollama", "openai"):
+            if prov in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk"):
                 self.provider_type = prov
             if isinstance(model, str) and model:
                 self.model = model
@@ -135,30 +162,57 @@ class Client:
             self.max_tokens = int(overrides["max_tokens"])
         if "provider" in overrides and overrides["provider"]:
             p = str(overrides["provider"]).strip().lower()
-            if p in ("ollama", "openai"):
+            if p in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk"):
                 self.provider_type = p
         if "base_url" in overrides and overrides["base_url"]:
             if self.provider_type == "ollama":
                 self.ollama_base = str(overrides["base_url"])
             else:
                 self.oai_base = str(overrides["base_url"])
+        logger.debug(f"[LLM] Client initialized for role '{self.role}': provider={self.provider_type}, model={self.model}, temp={self.temperature}, max_tokens={self.max_tokens}")
+
 
     async def chat(self, system: str, user: str) -> str:
+        if recommend_model and _reco_enabled():
+            prompt = f"{system.strip()}\n\n{user.strip()}"
+            try:
+                chosen_model = recommend_model(prompt, role=self.role)
+                logger.info(f"[LLM] Model recommender chose: {chosen_model} for role {self.role}")
+            except Exception as exc:
+                logger.warning(f"[LLM] Model recommender failed for role {self.role}: {exc}. Falling back to default model.")
+                chosen_model = None
+            if chosen_model:
+                self.model = chosen_model
+
+        if self.provider_type in ("vertex_cli", "vertex_sdk") and PROVIDER_REGISTRY:
+            logger.debug(f"[LLM] Using Vertex provider: {self.provider_type}")
+            return await asyncio.to_thread(self._vertex_chat, system, user)
+
         if self.provider_type == "codex_cli":
+            logger.debug("[LLM] Using Codex CLI provider.")
             return await asyncio.to_thread(self._codex_cli_chat, system, user)
         elif self.provider_type == "openai":
+            logger.debug("[LLM] Using OpenAI provider.")
             return await self._openai_chat(system, user)
         else:
+            # Ollama models should not have "ollama/" prefix
+            model_name_for_ollama = self.model
+            if self.provider_type == "ollama" and model_name_for_ollama.startswith("ollama/"):
+                model_name_for_ollama = model_name_for_ollama[len("ollama/"):]
+            logger.debug(f"[LLM] Using Ollama provider. Model name for API: {model_name_for_ollama}")
+
+
             # prefer /api/chat, fallback to /api/generate for older Ollama
             try:
-                return await self._ollama_chat(system, user)
-            except Exception:
-                return await self._ollama_generate(system, user)
+                return await self._ollama_chat(system, user, model_name_for_ollama)
+            except Exception as exc:
+                logger.warning(f"[LLM] Ollama /api/chat failed: {exc}. Falling back to /api/generate.")
+                return await self._ollama_generate(system, user, model_name_for_ollama)
 
-    async def _ollama_chat(self, system: str, user: str) -> str:
+    async def _ollama_chat(self, system: str, user: str, model_name: str) -> str:
         url = f"{self.ollama_base.rstrip('/')}/api/chat"
         payload = {
-            "model": self.model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -169,7 +223,14 @@ class Client:
         async with httpx.AsyncClient(timeout=300) as client:
             r = await client.post(url, json=payload)
             if r.status_code == 404:
-                raise RuntimeError("OLLAMA_CHAT_404")
+                logger.debug(f"[OLLAMA_DEBUG] 404 Response Text (chat): {r.text}") # DEBUG
+                # Check if the 404 is due to the model not being found
+                if "model not found" in r.text.lower():
+                    logger.error(f"[LLM] OLLAMA_MODEL_NOT_FOUND: Model '{self.model}' not found on Ollama server.")
+                    raise RuntimeError(f"OLLAMA_MODEL_NOT_FOUND: {self.model}")
+                else:
+                    logger.error(f"[LLM] OLLAMA_CHAT_404: Endpoint not found or other 404 error for {url}. Response: {r.text}")
+                    raise RuntimeError("OLLAMA_CHAT_404: Endpoint not found or other 404 error.")
             r.raise_for_status()
             data = r.json()
             if isinstance(data, dict):
@@ -179,24 +240,70 @@ class Client:
                     return data.get("content", "")
                 if "response" in data:
                     return data["response"]
+            logger.warning(f"[LLM] Unexpected Ollama chat response format: {json.dumps(data)[:200]}...")
             return r.text
 
-    async def _ollama_generate(self, system: str, user: str) -> str:
+    async def _ollama_generate(self, system: str, user: str, model_name: str) -> str:
         url = f"{self.ollama_base.rstrip('/')}/api/generate"
         prompt = f"System:\n{system}\n\nUser:\n{user}\n\nAssistant:"
         payload = {
-            "model": self.model,
+            "model": model_name,
             "prompt": prompt,
             "options": {"temperature": self.temperature, "num_predict": self.max_tokens},
             "stream": False,
         }
         async with httpx.AsyncClient(timeout=300) as client:
             r = await client.post(url, json=payload)
+            if r.status_code == 404:
+                logger.debug(f"[OLLAMA_DEBUG] 404 Response Text (generate): {r.text}") # DEBUG
+                if "model not found" in r.text.lower():
+                    logger.error(f"[LLM] OLLAMA_MODEL_NOT_FOUND (generate): Model '{self.model}' not found on Ollama server.")
+                    raise RuntimeError(f"OLLAMA_MODEL_NOT_FOUND: {self.model}")
+                else:
+                    logger.error(f"[LLM] OLLAMA_GENERATE_404: Endpoint not found or other 404 error for {url}. Response: {r.text}")
             r.raise_for_status()
             data = r.json()
             if isinstance(data, dict) and "response" in data:
                 return data["response"]
+            logger.warning(f"[LLM] Unexpected Ollama generate response format: {json.dumps(data)[:200]}...")
             return r.text
+
+    def _vertex_chat(self, system: str, user: str) -> str:
+        provider = PROVIDER_REGISTRY.get(self.provider_type)
+        if provider is None:
+            logger.critical(f"[LLM] FATAL: Vertex provider '{self.provider_type}' not available in registry.")
+            raise RuntimeError(f"Provider '{self.provider_type}' not available")
+
+        messages = [
+            {"role": "system", "content": [{"type": "text", "text": system}]},
+            {"role": "user", "content": [{"type": "text", "text": user}]},
+        ]
+        logger.debug(f"[LLM] Vertex chat payload prepared. Model: {self.model}")
+
+
+        def _sanitize(value):
+            if isinstance(value, str) and "${" in value:
+                logger.warning(f"[LLM] Sanitizing Vertex option: '{value}' contains unresolved env var.")
+                return None
+            return value
+
+        extra_kwargs = {}
+        if isinstance(self.provider_options, dict):
+            for key in ("project_id", "location", "temperature", "max_output_tokens"):
+                if key in self.provider_options:
+                    resolved = _sanitize(self.provider_options.get(key))
+                    if resolved is not None:
+                        extra_kwargs[key] = resolved
+        logger.debug(f"[LLM] Vertex extra kwargs: {extra_kwargs}")
+
+
+        return provider(
+            messages=messages,
+            model=self.model,
+            temperature=self.temperature,
+            max_output_tokens=self.max_tokens,
+            **extra_kwargs,
+        )
 
     async def _openai_chat(self, system: str, user: str) -> str:
         url = f"{self.oai_base.rstrip('/')}/chat/completions"
@@ -211,21 +318,28 @@ class Client:
             "stream": False,
         }
         headers = {"Authorization": f"Bearer {self.oai_key}", "Content-Type": "application/json"}
+        logger.debug(f"[LLM] OpenAI chat payload prepared. Model: {self.model}")
+
+
         async with httpx.AsyncClient(timeout=300) as client:
             r = await client.post(url, headers=headers, json=payload)
             r.raise_for_status()
             data = r.json()
             try:
                 return data["choices"][0]["message"]["content"]
-            except Exception:
+            except Exception as exc:
+                logger.error(f"[LLM] Unexpected OpenAI chat response format: {exc}. Full response: {json.dumps(data)[:200]}...")
                 return json.dumps(data)
 
     def _codex_cli_chat(self, system: str, user: str) -> str:
         """Execute Codex CLI command and return response with timing and logging."""
         if not self.cli_command:
+            logger.critical("[LLM] FATAL: CODEX_CLI_NO_COMMAND - CLI command not configured.")
             raise RuntimeError("CODEX_CLI_NO_COMMAND")
 
         start_time = time.perf_counter()
+        logger.debug(f"[LLM] Starting Codex CLI chat. Command: {self.cli_command}")
+
 
         # Build command arguments
         cmd_args = list(self.cli_command)  # Copy the command list
@@ -249,21 +363,28 @@ class Client:
                 "max_tokens": self.max_tokens
             }
             input_data = json.dumps(payload, ensure_ascii=False)
+            logger.debug("[LLM] Codex CLI input format: stdin (JSON payload)")
         else:
             # For this specific CLI: only --model flag supported, combine prompts as direct argument
             cmd_args.extend(["--model", self.model])
             combined_prompt = f"System: {system}\n\nUser: {user}\n\nSettings: temperature={self.temperature}, max_tokens={self.max_tokens}"
             cmd_args.extend([combined_prompt])
+            logger.debug("[LLM] Codex CLI input format: direct argument (combined prompt)")
+
 
         try:
             # Prepare environment
             env = os.environ.copy()
             env.update(self.cli_env)
+            logger.debug(f"[LLM] Codex CLI environment updated with: {self.cli_env}")
+
 
             # Execute command with pty to handle terminal requirements
             try:
                 import pty
+                logger.debug("[LLM] Using pty for subprocess execution.")
             except ImportError:
+                logger.warning("[LLM] pty module not available. Falling back to direct subprocess.run.")
                 # Fallback without pty if not available
                 result = subprocess.run(
                     cmd_args,
@@ -303,6 +424,7 @@ class Client:
                         )
                     except subprocess.TimeoutExpired:
                         proc.kill()
+                        logger.error(f"[LLM] Codex CLI command timed out after {self.cli_timeout}s.")
                         raise subprocess.TimeoutExpired(cmd_args, self.cli_timeout)
                 finally:
                     try:
@@ -315,11 +437,14 @@ class Client:
                         pass
 
             duration = time.perf_counter() - start_time
+            logger.debug(f"[LLM] Codex CLI command executed in {duration:.3f} seconds. Return code: {result.returncode}")
+
 
             if result.returncode != 0:
                 error_msg = result.stderr.strip()[:200] if result.stderr else "Unknown error"
                 # Log timing and error for debugging
                 self._log_cli_operation(cmd_args, duration, error_msg, success=False)
+                logger.error(f"[LLM] CODEX_CLI_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
                 raise RuntimeError(f"CODEX_CLI_FAILED: {error_msg}")
 
             response = result.stdout
@@ -330,25 +455,33 @@ class Client:
                 response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
                 # Trim whitespace
                 response = response.strip()
+                logger.debug("[LLM] Codex CLI response cleaned.")
+
 
             if not response:
                 self._log_cli_operation(cmd_args, duration, "Empty response", success=False)
+                logger.error("[LLM] CODEX_CLI_EMPTY_RESPONSE: Empty response from Codex CLI.")
                 raise RuntimeError("CODEX_CLI_EMPTY_RESPONSE")
 
             # Log successful operation
             self._log_cli_operation(cmd_args, duration, response, success=True)
+            logger.debug("[LLM] Codex CLI operation logged successfully.")
+
 
             return response
 
         except subprocess.TimeoutExpired:
             duration = time.perf_counter() - start_time
             self._log_cli_operation(cmd_args, duration, "Timeout", success=False)
+            logger.error(f"[LLM] CODEX_CLI_TIMEOUT: Command timed out after {self.cli_timeout}s.")
             raise RuntimeError("CODEX_CLI_TIMEOUT")
         except FileNotFoundError:
+            logger.critical(f"[LLM] CODEX_CLI_NOT_FOUND: Command '{cmd_args[0] if cmd_args else 'unknown'}' not found. Is Codex CLI installed and in PATH?")
             raise RuntimeError("CODEX_CLI_NOT_FOUND")
         except Exception as e:
             duration = time.perf_counter() - start_time
             self._log_cli_operation(cmd_args, duration, str(e), success=False)
+            logger.critical(f"[LLM] CODEX_CLI_ERROR: Unhandled exception during Codex CLI call: {str(e)[:200]}", exc_info=True)
             raise RuntimeError(f"CODEX_CLI_ERROR: {str(e)[:200]}")
 
     def _log_cli_operation(self, cmd_args: list, duration: float, response_or_error: str, success: bool):
@@ -376,10 +509,10 @@ class Client:
             }
 
             raw_file.write_text(json.dumps(log_entry, indent=2, ensure_ascii=False), encoding="utf-8")
+            logger.debug(f"[LLM] CLI operation log saved to {raw_file}")
         except Exception as e:
             # Don't let logging errors break the flow
-            print(f"[CLI_LOGGING] Failed to log operation: {e}")
-            pass
+            logger.error(f"[LLM] Failed to log CLI operation: {e}", exc_info=True)
 
 
 # Backward-compat alias

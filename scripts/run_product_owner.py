@@ -1,98 +1,101 @@
 from __future__ import annotations
 
-import datetime
-import json
-import sys
-from typing import Optional
-
-import typer
+import asyncio
+import os
+import re
 import yaml
-from common import ensure_dirs, PLANNING
 
+from common import ensure_dirs, PLANNING, ROOT
+from llm import Client
+from logger import logger # Import the logger
+
+PO_PROMPT = (ROOT / "prompts" / "product_owner.md").read_text(encoding="utf-8")
 VISION_PATH = PLANNING / "product_vision.yaml"
 REVIEW_PATH = PLANNING / "product_owner_review.yaml"
+DEBUG_PATH = ROOT / "debug_product_owner_response.txt"
 
 
-def _load_requirements() -> dict:
-    req_path = PLANNING / "requirements.yaml"
-    if not req_path.exists():
-        raise FileNotFoundError("planning/requirements.yaml not found. Run BA stage first.")
-    return yaml.safe_load(req_path.read_text(encoding="utf-8")) or {}
+def extract_original_concept(requirements_text: str) -> str:
+    if not requirements_text.strip():
+        return ""
+    try:
+        data = yaml.safe_load(requirements_text)
+    except Exception as exc:
+        logger.warning(f"[PO] Failed to parse requirements metadata: {exc}")
+        return ""
+    if isinstance(data, dict):
+        meta = data.get("meta")
+        if isinstance(meta, dict):
+            original = meta.get("original_request")
+            if isinstance(original, str):
+                return original.strip()
+    return ""
 
 
-def _concept_from_requirements(data: dict) -> str:
-    meta = data.get("meta") if isinstance(data, dict) else {}
-    concept = meta.get("original_request") if isinstance(meta, dict) else ""
-    return str(concept or "Unknown concept")
+def grab_block(text: str, tag: str, label: str) -> str:
+    # Updated regex to be more robust for YAML block extraction
+    pattern = re.compile(rf"```{tag}\s*{label}\s*\n([\s\S]+?)\n```", re.MULTILINE)
+    match = pattern.search(text)
+    content = match.group(1).strip() if match else ""
+    logger.debug(f"[PO] Grabbed '{tag}:{label}' with {len(content)} characters")
+    return content
 
 
-def _write_vision(concept: str) -> dict:
-    timestamp = datetime.datetime.utcnow().isoformat() + "Z"
-    vision = {
-        "product_name": concept[:60],
-        "product_summary": concept,
-        "target_users": [],
-        "value_proposition": [],
-        "key_capabilities": [],
-        "non_goals": [],
-        "success_metrics": [],
-        "last_updated": timestamp,
-    }
-    VISION_PATH.write_text(yaml.safe_dump(vision, sort_keys=False), encoding="utf-8")
-    return vision
+def build_user_payload(concept: str, existing_vision: str, requirements: str) -> str:
+    concept_section = concept or "(concept not provided)"
+    vision_section = existing_vision.strip() if existing_vision else "(no existing vision)"
+    return (
+        f"CONCEPT:\n{concept_section}\n\n"
+        f"EXISTING_VISION:\n{vision_section}\n\n"
+        f"REQUIREMENTS:\n{requirements.strip()}\n\n"
+        "Follow the exact output format."
+    )
 
 
-def _write_review(alignment: str, notes: str) -> dict:
-    review = {
-        "status": alignment,
-        "summary": [notes],
-        "requirements_alignment": {
-            "aligned": [],
-            "gaps": [],
-            "conflicts": [],
-        },
-        "recommended_actions": [],
-        "narrative": notes,
-    }
-    REVIEW_PATH.write_text(yaml.safe_dump(review, sort_keys=False), encoding="utf-8")
-    return review
-
-
-def evaluate_alignment() -> dict:
+async def main() -> None:
     ensure_dirs()
-    data = _load_requirements()
-    concept = _concept_from_requirements(data)
-    vision = _write_vision(concept)
-    review = _write_review("aligned", "Baseline alignment generated automatically.")
-    return {
-        "concept": concept,
-        "vision_path": str(VISION_PATH),
-        "review_path": str(REVIEW_PATH),
-        "vision": vision,
-        "review": review,
-    }
+
+    requirements_path = PLANNING / "requirements.yaml"
+    if not requirements_path.exists():
+        logger.error("[PO] requirements.yaml not found. Run BA stage first.")
+        raise SystemExit(1)
+
+    requirements_content = requirements_path.read_text(encoding="utf-8")
+    concept_env = os.environ.get("CONCEPT", "").strip()
+    concept_meta = extract_original_concept(requirements_content)
+    concept = concept_env or concept_meta
+
+    existing_vision = ""
+    if VISION_PATH.exists():
+        existing_vision = VISION_PATH.read_text(encoding="utf-8")
+
+    client = Client(role="product_owner")
+    logger.info(f"[PO] Using CONCEPT: {concept or 'No concept provided'}")
+    logger.info("[PO] Maintaining product vision and evaluating BA alignment...")
+    logger.debug(f"[PO] Calling LLM via {client.provider_type} with model {client.model}, temp {client.temperature}, max_tokens {client.max_tokens}")
 
 
-app = typer.Typer(help="Product Owner agent CLI")
+    user = build_user_payload(concept, existing_vision, requirements_content)
+    response = await client.chat(system=PO_PROMPT, user=user)
+    DEBUG_PATH.write_text(response, encoding="utf-8")
+    logger.debug(f"[PO] Full response saved to {DEBUG_PATH}")
 
 
-@app.command()
-def evaluate() -> None:
-    result = evaluate_alignment()
-    typer.echo(json.dumps(result, indent=2))
+    vision_yaml = grab_block(response, "yaml", "VISION")
+    review_yaml = grab_block(response, "yaml", "REVIEW")
 
+    if vision_yaml:
+        VISION_PATH.write_text(vision_yaml.strip() + "\n", encoding="utf-8")
+        logger.info("✓ product_vision.yaml updated")
+    else:
+        logger.warning("[PO] VISION block missing in LLM response")
 
-@app.command()
-def serve(reload: bool = typer.Option(False, help="Auto-reload server on code changes")) -> None:
-    from a2a.cards import product_owner_card
-    from a2a.runtime import run_agent
-
-    card, handlers = product_owner_card()
-    run_agent("product_owner", card, handlers, reload=reload)
+    if review_yaml:
+        REVIEW_PATH.write_text(review_yaml.strip() + "\n", encoding="utf-8")
+        logger.info("✓ product_owner_review.yaml updated")
+    else:
+        logger.warning("[PO] REVIEW block missing in LLM response")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        typer.echo(json.dumps(evaluate_alignment(), indent=2))
-    else:
-        app()
+    asyncio.run(main())

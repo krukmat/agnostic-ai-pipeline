@@ -127,6 +127,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Skip architect planning step (useful for pure execution iterations)",
     )
+    parser.add_argument(
+        "--skip-po",
+        action="store_true",
+        help="Skip Product Owner validation step",
+    )
     return parser.parse_args(argv)
 
 
@@ -143,6 +148,7 @@ def main(argv: list[str]) -> int:
     loops_option = args.loops if args.loops is not None else int(env.get("LOOPS", "1"))
     allow_no_tests = args.allow_no_tests or env.get("ALLOW_NO_TESTS", "0") == "1"
     skip_ba = args.skip_ba or env.get("SKIP_BA", "0") == "1"
+    skip_po = args.skip_po or env.get("SKIP_PO", "0") == "1"
     skip_plan = args.skip_plan or env.get("SKIP_PLAN", "0") == "1"
 
     if concept:
@@ -157,6 +163,14 @@ def main(argv: list[str]) -> int:
             return rc
     else:
         print("[iteration] Skipping BA step as requested")
+
+    if not skip_po:
+        po_env = {"CONCEPT": concept} if concept else None
+        rc = run_command(["make", "po"], env=po_env)
+        if rc != 0:
+            return rc
+    else:
+        print("[iteration] Skipping Product Owner step as requested")
 
     if not skip_plan:
         plan_env = {"CONCEPT": concept} if concept else None
