@@ -25,3 +25,8 @@ routes:
     strong: qwen2.5-coder:32b-instruct-q8_0
     weak: qwen2.5-coder:7b
     threshold: 0.30
+  architect:
+    router_id: notdiamond/rorf-jina-llama31405b-mistrallarge
+    strong: qwen2.5-coder:32b-instruct-q8_0
+    weak: qwen2.5-coder:14b
+    threshold: 0.40
