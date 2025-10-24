@@ -2,7 +2,7 @@
 
 **Deliver finished products through repeatable BA → Product Owner → Architect → Dev → QA release loops.**
 
-## Project Overview
+## Project Overview 
 
 - **Purpose** – Automate the journey from business concept to QA-validated release, producing requirements, architecture, code, tests, and reports.
 - **Roles** – Business Analyst, Product Owner, Architect, Developer, QA, and Orchestrator working in sequence.
