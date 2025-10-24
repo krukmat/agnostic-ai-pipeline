@@ -12,8 +12,15 @@ from rorf.controller import Controller
 CONFIG_PATH = os.getenv("MODEL_RECO_CONFIG", "config/model_recommender.yaml")
 
 
+@lru_cache(maxsize=1)
+def _load_cfg() -> dict:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
 def is_enabled() -> bool:
-    return os.getenv("MODEL_RECO_ENABLED", "true").lower() == "true"
+    cfg = _load_cfg()
+    return cfg.get("enabled", False)
 
 
 RECO_ENABLED = is_enabled()
@@ -25,12 +32,6 @@ class RoleRoute:
     strong: str
     weak: str
     threshold: float
-
-
-@lru_cache(maxsize=1)
-def _load_cfg() -> dict:
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
 
 
 @lru_cache(maxsize=16)
