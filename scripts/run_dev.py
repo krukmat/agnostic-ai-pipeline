@@ -8,8 +8,9 @@ import re
 import sys
 import textwrap
 import pathlib
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
+import typer
 import yaml
 from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
@@ -242,10 +243,7 @@ def mark_in_review(story_id: str) -> None:
     save_stories(stories)
 
 
-async def main() -> None:
-    story_id = os.environ.get("STORY", "").strip()
-    retries = int(os.environ.get("DEV_RETRIES", "3"))
-
+async def implement_story(story_id: str | None = None, retries: int = 3) -> dict:
     stories = load_stories()
     story = pick_story(stories, story_id if story_id else None)
     if not story:
@@ -299,17 +297,44 @@ async def main() -> None:
     for w in written:
         logger.info(f" - {w}")
 
+    return {
+        "story_id": sid,
+        "files_written": written,
+        "artifacts_dir": str(run_dir),
+    }
+
+
+async def _main_env() -> None:
+    story_id = os.environ.get("STORY", "").strip() or None
+    retries = int(os.environ.get("DEV_RETRIES", "3"))
+    result = await implement_story(story_id, retries)
+    logger.info(json.dumps(result, indent=2))
+
+
+app = typer.Typer(help="Developer agent CLI")
+
+
+@app.command()
+def run(
+    story_id: Optional[str] = typer.Option(None, help="Story identifier"),
+    retries: int = typer.Option(3, help="LLM retry attempts"),
+) -> None:
+    result = asyncio.run(implement_story(story_id, retries))
+    typer.echo(json.dumps(result, indent=2))
+
+
+@app.command()
+def serve(reload: bool = typer.Option(False, help="Auto-reload server on code changes")) -> None:
+    from a2a.cards import developer_card
+    from a2a.runtime import run_agent
+
+    card, handlers = developer_card()
+    run_agent("developer", card, handlers, reload=reload)
+
 
 if __name__ == "__main__":
-    import asyncio as _asyncio
-    try:
-        _asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("[DEV] Developer script interrupted by user.")
-        sys.exit(130)
-    except SystemExit as e:
-        logger.error(f"[DEV] Developer script exited with code {e.code}")
-        sys.exit(e.code)
-    except Exception as e:
-        logger.critical(f"[DEV] Unhandled exception in Developer script: {e}", exc_info=True)
-        sys.exit(1)
+    # Check if running via make or directly
+    if len(sys.argv) == 1 and os.environ.get("STORY"):
+        asyncio.run(_main_env())
+    else:
+        app()

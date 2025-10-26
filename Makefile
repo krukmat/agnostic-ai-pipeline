@@ -19,6 +19,7 @@ help:
 	@echo "  set-role     -> role=<ba|architect|dev|qa> provider=<ollama|openai> model=..."
 	@echo "  set-quality  -> profile=<low|normal|high> [role=...]"
 	@echo "  clean        -> Limpia artifacts/ (FLUSH=1 también borra planning/ y project/)"
+	@echo "  warmup       -> Inicia los servicios A2A remotos necesarios"
 
 setup:
 	python3 -m venv .venv || true
@@ -90,6 +91,10 @@ iteration:
 	SKIP_BA="$${SKIP_BA:-0}" \
 	SKIP_PLAN="$${SKIP_PLAN:-0}" \
 	$(PY) scripts/run_iteration.py
+
+warmup:
+	@echo "--- Warming up remote services ---"
+	@$(PY) -c "from a2a.runtime import warmup; warmup()"
 
 .PHONY: reco-demo reco-on reco-off gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
 

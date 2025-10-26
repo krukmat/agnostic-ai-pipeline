@@ -11,6 +11,23 @@ DEFAULTS = ROOT / "project-defaults"
 def load_config() -> Dict[str, Any]:
     return yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
 
+def load_a2a_config() -> Dict[str, Any]:
+    """Return sanitized A2A configuration with defaults."""
+    raw = load_config().get("a2a") or {}
+    agents = raw.get("agents") if isinstance(raw, dict) else {}
+    if not isinstance(agents, dict):
+        agents = {}
+    auth = raw.get("authentication") if isinstance(raw, dict) else {}
+    if not isinstance(auth, dict):
+        auth = {"mode": "none"}
+
+    normalized: Dict[str, Any] = {}
+    if isinstance(raw, dict):
+        normalized.update({k: v for k, v in raw.items() if k not in {"agents", "authentication"}})
+    normalized["agents"] = agents
+    normalized["authentication"] = auth
+    return normalized
+
 def ensure_dirs():
     ART.mkdir(exist_ok=True, parents=True)
     PLANNING.mkdir(exist_ok=True, parents=True)

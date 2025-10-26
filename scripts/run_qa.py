@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os, sys, json, subprocess, pathlib, shutil, re, datetime
 import yaml
+import typer
 from common import ensure_dirs, ROOT
 from logger import logger # Import the logger
 
@@ -19,7 +20,6 @@ def has_any_test(py_dir: pathlib.Path) -> bool:
         logger.debug(f"[QA] Found Python test file: {p}")
         return True
     for p in py_dir.rglob("*_test.py"):
-        logger.debug(f"[QA] Found Python test file: {p}")
         return True
     logger.debug(f"[QA] No Python test files found in {py_dir}")
     return False
@@ -33,10 +33,8 @@ def has_any_web_test(web_dir: pathlib.Path) -> bool:
         logger.debug(f"[QA] Web tests directory not found: {tests}")
         return False
     for p in tests.rglob("*.test.js"):
-        logger.debug(f"[QA] Found Web test file: {p}")
         return True
     for p in tests.rglob("*.test.ts"):
-        logger.debug(f"[QA] Found Web test file: {p}")
         return True
     logger.debug(f"[QA] No Web test files found in {web_dir}")
     return False
@@ -482,5 +480,68 @@ def main():
     logger.info(f"[QA] Final status={status} (detail in {REPORT})")
     sys.exit(code)
 
+def run_quality_checks(*, allow_no_tests: bool = True, story: str = "") -> dict:
+    previous_story = os.environ.get("STORY")
+    previous_allow = os.environ.get("ALLOW_NO_TESTS")
+    os.environ["ALLOW_NO_TESTS"] = "1" if allow_no_tests else "0"
+    if story:
+        os.environ["STORY"] = story
+    elif "STORY" in os.environ:
+        os.environ.pop("STORY")
+
+    exit_code = 0
+    try:
+        main()
+    except SystemExit as exc:  # main exits via sys.exit
+        exit_code = int(exc.code or 0)
+    finally:
+        if previous_allow is not None:
+            os.environ["ALLOW_NO_TESTS"] = previous_allow
+        else:
+            os.environ.pop("ALLOW_NO_TESTS", None)
+        if previous_story is not None:
+            os.environ["STORY"] = previous_story
+        else:
+            os.environ.pop("STORY", None)
+
+    report_data = {}
+    if REPORT.exists():
+        try:
+            report_data = json.loads(REPORT.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            report_data = {}
+
+    status = report_data.get("status", "unknown")
+    return {
+        "status": status,
+        "code": exit_code,
+        "report_path": str(REPORT),
+        "report": report_data,
+    }
+
+
+app = typer.Typer(help="QA agent CLI")
+
+
+@app.command()
+def run(
+    allow_no_tests: bool = typer.Option(True, help="Allow passing when tests are missing"),
+    story_id: Optional[str] = typer.Option(None, help="Story identifier for logging"),
+) -> None:
+    result = run_quality_checks(allow_no_tests=allow_no_tests, story=story_id or "")
+    typer.echo(json.dumps(result, indent=2))
+
+
+@app.command()
+def serve(reload: bool = typer.Option(False, help="Auto-reload server on code changes")) -> None:
+    from a2a.cards import qa_card
+    from a2a.runtime import run_agent
+
+    card, handlers = qa_card()
+    run_agent("qa", card, handlers, reload=reload)
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 1:
+        main()
+    else:
+        app()
