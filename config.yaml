@@ -59,3 +59,44 @@ roles:
     top_p: 0.95
 pipeline:
   force_approval_attempts: 3
+a2a:
+  execution_mode: local # auto, local, remote
+  agents:
+    business_analyst:
+      url: http://localhost:8001/
+      capabilities:
+        streaming: false
+      skills: []
+      strategy: auto # auto, local, remote
+    product_owner:
+      url: http://localhost:8002/
+      capabilities:
+        streaming: false
+      skills: []
+      strategy: auto
+    architect:
+      url: http://localhost:8003/
+      capabilities:
+        streaming: false
+      skills: []
+      strategy: auto
+    developer:
+      url: http://localhost:8004/
+      capabilities:
+        streaming: false
+      skills: []
+      strategy: auto
+    qa:
+      url: http://localhost:8005/
+      capabilities:
+        streaming: false
+      skills: []
+      strategy: auto
+    orchestrator:
+      url: http://localhost:8010/
+      capabilities:
+        streaming: false
+      skills: []
+      strategy: auto
+  authentication:
+    mode: none

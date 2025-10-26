@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Mapping
+from typing import Dict, Mapping, Any
 
 from scripts.common import load_a2a_config
 
@@ -48,3 +48,9 @@ class A2AConfig:
 
 def get_agent_url(role: str) -> str:
     return A2AConfig().agent(role).url
+
+
+def get_agent_config(role: str) -> Dict[str, Any]:
+    """Return the raw config dictionary for a specific agent."""
+    cfg = load_a2a_config()
+    return (cfg.get("agents", {}) or {}).get(role) or {}

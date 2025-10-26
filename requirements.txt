@@ -8,3 +8,4 @@ fastapi>=0.112
 uvicorn
 google-genai>=0.6.0
 rorf>=0.1.0
+uvicorn

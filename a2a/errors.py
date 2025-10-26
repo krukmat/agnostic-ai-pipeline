@@ -22,7 +22,7 @@ class A2AErrorCode(Enum):
 
 
 @dataclass(frozen=True)
-class A2AError:
+class A2AError(Exception):
     code: A2AErrorCode
     message: str
     data: Optional[Dict[str, Any]] = None
@@ -40,3 +40,10 @@ class A2AError:
 def error_response(code: A2AErrorCode, message: str, *, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Return a JSON-RPC error envelope."""
     return A2AError(code=code, message=message, data=data).to_jsonrpc()
+
+
+class A2AStatusError(A2AError):
+    """An A2AError that includes an HTTP status code."""
+    def __init__(self, message: str, *, status_code: int, data: Optional[Dict[str, Any]] = None):
+        super().__init__(code=A2AErrorCode.UPSTREAM_FAILURE, message=message, data=data)
+        self.status_code = status_code

@@ -7,26 +7,26 @@ ART = ROOT / "artifacts"
 PLANNING = ROOT / "planning"
 PROJECT = ROOT / "project"
 DEFAULTS = ROOT / "project-defaults"
-A2A_CONFIG_PATH = ROOT / "config" / "a2a_agents.yaml"
 
 def load_config() -> Dict[str, Any]:
     return yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
 
 def load_a2a_config() -> Dict[str, Any]:
-    if not A2A_CONFIG_PATH.exists():
-        return {"agents": {}, "authentication": {"mode": "none"}}
-    try:
-        data = yaml.safe_load(A2A_CONFIG_PATH.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        raise RuntimeError(f"Failed to parse {A2A_CONFIG_PATH}: {exc}") from exc
-    agents = data.get("agents") if isinstance(data, dict) else {}
-    auth = data.get("authentication") if isinstance(data, dict) else {}
+    """Return sanitized A2A configuration with defaults."""
+    raw = load_config().get("a2a") or {}
+    agents = raw.get("agents") if isinstance(raw, dict) else {}
     if not isinstance(agents, dict):
         agents = {}
+    auth = raw.get("authentication") if isinstance(raw, dict) else {}
     if not isinstance(auth, dict):
         auth = {"mode": "none"}
-    auth.setdefault("mode", "none")
-    return {"agents": agents, "authentication": auth}
+
+    normalized: Dict[str, Any] = {}
+    if isinstance(raw, dict):
+        normalized.update({k: v for k, v in raw.items() if k not in {"agents", "authentication"}})
+    normalized["agents"] = agents
+    normalized["authentication"] = auth
+    return normalized
 
 def ensure_dirs():
     ART.mkdir(exist_ok=True, parents=True)
