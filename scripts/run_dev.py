@@ -20,11 +20,8 @@ from logger import logger # Import the logger
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLAN = ROOT / "planning"
 PROJECT = ROOT / "project"
-ART_DIR = ROOT / "artifacts" / "dev"
-ART_DIR.mkdir(parents=True, exist_ok=True)
-
-LOG_ALL = ART_DIR / "last_raw.txt"
-FILES_JSON = ART_DIR / "last_files.json"
+DEV_ART_DIR = ROOT / "artifacts" / "dev"
+DEV_ART_DIR.mkdir(parents=True, exist_ok=True)
 
 
 DEV_PROMPT = ROOT / "prompts" / "developer.md"
@@ -82,14 +79,6 @@ def load_stories() -> List[Dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
-def save_stories(stories: List[Dict[str, Any]]) -> None:
-    (PLAN / "stories.yaml").write_text(
-        yaml.safe_dump(stories, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
-    logger.debug("[DEV] Stories saved to planning/stories.yaml")
-
-
 def pick_story(stories: List[Dict[str, Any]], sid_env: str | None) -> Dict[str, Any] | None:
     if sid_env:
         sid_env_l = sid_env.strip().lower()
@@ -108,8 +97,23 @@ def pick_story(stories: List[Dict[str, Any]], sid_env: str | None) -> Dict[str, 
     return None
 
 
-# --- Repo tree snapshot ---
+# --- Repo tree snapshot with caching ---
+_repo_tree_cache = {"mtime": 0.0, "content": ""}
+
 def repo_tree(limit: int = 300) -> str:
+    """Generate a snapshot of the repository tree, with in-memory caching."""
+    global _repo_tree_cache
+    
+    try:
+        current_mtime = (ROOT / "project").stat().st_mtime
+    except FileNotFoundError:
+        current_mtime = 0.0
+
+    if current_mtime == _repo_tree_cache["mtime"] and _repo_tree_cache["content"]:
+        logger.debug("[DEV] Using cached repo tree.")
+        return _repo_tree_cache["content"]
+
+    logger.debug("[DEV] Generating new repo tree (project directory changed).")
     skip = {".venv","node_modules",".git","__pycache__","artifacts",".pytest_cache",".DS_Store",".idea",".vscode","dist","build"}
     files: List[str] = []
     for root, _, fns in os.walk(ROOT):
@@ -125,14 +129,22 @@ def repo_tree(limit: int = 300) -> str:
             files.append(relp)
             if len(files) >= limit:
                 logger.debug(f"[DEV] Repo tree limited to {limit} files.")
-                return "\n".join(files)
-    logger.debug(f"[DEV] Repo tree generated with {len(files)} files.")
-    return "\n".join(files)
+                break
+    
+    content = "\n".join(files)
+    _repo_tree_cache["mtime"] = current_mtime
+    _repo_tree_cache["content"] = content
+    
+    logger.debug(f"[DEV] Repo tree generated and cached with {len(files)} files.")
+    return content
 
 
 # --- LLM plumbing ---
-def extract_files_block(text: str) -> List[Dict[str, str]] | None:
-    LOG_ALL.write_text(text, encoding="utf-8")
+def extract_files_block(text: str, story_id: str) -> List[Dict[str, str]] | None:
+    story_art_dir = DEV_ART_DIR / story_id
+    story_art_dir.mkdir(parents=True, exist_ok=True)
+    (story_art_dir / "last_raw.txt").write_text(text, encoding="utf-8")
+
     candidates: List[str] = []
 
     # Try to find a single JSON object representing a file
@@ -233,16 +245,6 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> str:
     return await client.chat(system=system_prompt, user=user)
 
 
-def mark_in_review(story_id: str) -> None:
-    stories = load_stories()
-    for s in stories:
-        if str(s.get("id")) == str(story_id):
-            s["status"] = "in_review"
-            logger.info(f"[DEV] Story {story_id} marked as 'in_review'.")
-            break
-    save_stories(stories)
-
-
 async def implement_story(story_id: str | None = None, retries: int = 3) -> dict:
     stories = load_stories()
     story = pick_story(stories, story_id if story_id else None)
@@ -251,6 +253,9 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
         sys.exit(1)
 
     sid = story.get("id", "S?")
+    story_art_dir = DEV_ART_DIR / sid
+    story_art_dir.mkdir(parents=True, exist_ok=True)
+
     logger.info(f"[DEV] Implementando: {sid} - {story.get('description', '(sin desc)')}")
 
     files_ctx = repo_tree(limit=300)
@@ -261,7 +266,7 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
         try:
             logger.info(f"[DEV] LLM intento {i}/{retries}…")
             response = await llm_call(story, files_ctx)
-            files = extract_files_block(response or "")
+            files = extract_files_block(response or "", sid)
             if files:
                 logger.info(f"[DEV] LLM response parsed successfully after {i} attempts.")
                 break
@@ -283,15 +288,15 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
         rel2 = safe_write(rel, cnt)
         written.append(rel2)
 
-    FILES_JSON.write_text(json.dumps(files, indent=2, ensure_ascii=False), encoding="utf-8")
+    (story_art_dir / "files.json").write_text(json.dumps(files, indent=2, ensure_ascii=False), encoding="utf-8")
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = ART_DIR / f"{sid}-{stamp}"
+    run_dir = story_art_dir / f"run-{stamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "files.json").write_text(json.dumps(files, indent=2, ensure_ascii=False), encoding="utf-8")
-    logger.debug(f"[DEV] Artifacts saved to {run_dir}")
+    logger.debug(f"[DEV] Artifacts for run saved to {run_dir}")
 
-
-    mark_in_review(sid)
+    # The orchestrator is now responsible for marking the story status.
+    # We no longer call mark_in_review(sid) here.
 
     logger.info(f"✓ wrote {len(written)} files under project/ (story {sid})")
     for w in written:

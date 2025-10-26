@@ -1,16 +1,22 @@
 # scripts/run_qa.py
 from __future__ import annotations
-import os, sys, json, subprocess, pathlib, shutil, re, datetime
+import os, sys, json, subprocess, pathlib, re, datetime
+from typing import Optional
 import yaml
 import typer
 from common import ensure_dirs, ROOT
 from logger import logger # Import the logger
 
-ART = ROOT / "artifacts" / "qa"
-ART.mkdir(parents=True, exist_ok=True)
-REPORT = ART / "last_report.json"
-STORY_LOG_DIR = ART / "story_logs"
-STORY_LOG_DIR.mkdir(parents=True, exist_ok=True)
+QA_ART_DIR = ROOT / "artifacts" / "qa"
+QA_ART_DIR.mkdir(parents=True, exist_ok=True)
+# REPORT and STORY_LOG_DIR are now dynamic per story
+DEV_ART_DIR = ROOT / "artifacts" / "dev"
+
+BACKEND_PREFIX = "project/backend-fastapi/"
+WEB_PREFIX = "project/web-express/"
+
+def _matches_area(path: str, prefix: str) -> bool:
+    return path.startswith(prefix) or path == prefix.rstrip("/")
 
 def has_any_test(py_dir: pathlib.Path) -> bool:
     if not py_dir.exists():
@@ -39,11 +45,36 @@ def has_any_web_test(web_dir: pathlib.Path) -> bool:
     logger.debug(f"[QA] No Web test files found in {web_dir}")
     return False
 
-def log_contains_import_error() -> list[str]:
+def load_dev_snapshot(story_id: str) -> list[str]:
+    """Load the last developer artifact list for a story."""
+    if not story_id:
+        return []
+
+    story_dir = DEV_ART_DIR / story_id
+    files_path = story_dir / "files.json"
+    if not files_path.exists():
+        logger.debug(f"[QA] No developer snapshot found for story {story_id} in {files_path}")
+        return []
+
+    try:
+        data = json.loads(files_path.read_text(encoding="utf-8"))
+        paths = []
+        if isinstance(data, list):
+            for entry in data:
+                rel_path = entry.get("path")
+                if isinstance(rel_path, str):
+                    paths.append(rel_path.strip())
+        logger.debug(f"[QA] Loaded {len(paths)} changed paths from developer snapshot for {story_id}")
+        return paths
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[QA] Failed to load developer snapshot for {story_id}: {exc}")
+        return []
+
+def log_contains_import_error(story_art_dir: pathlib.Path) -> list[str]:
     """Inspect QA logs for ModuleNotFoundError entries and return missing modules."""
-    log_file = ART / "logs.txt"
+    log_file = story_art_dir / "logs.txt"
     if not log_file.exists():
-        logger.debug("[QA] logs.txt not found for import error check.")
+        logger.debug(f"[QA] logs.txt not found in {story_art_dir} for import error check.")
         return []
     text = log_file.read_text(encoding="utf-8")
     matches = re.findall(r"ModuleNotFoundError: No module named '([^']+)'", text)
@@ -85,7 +116,7 @@ def fix_backend_test_imports(test_dir: pathlib.Path) -> bool:
         logger.debug("[QA] No backend test imports needed correction.")
     return changed
 
-def analyze_test_failures(areas, be_rc, web_rc):
+def analyze_test_failures(story_art_dir: pathlib.Path, areas, be_rc, web_rc):
     """Analyze test logs to extract specific failure details"""
     failure_details = {
         "backend": {"errors": [], "warnings": [], "missing_coverage": []},
@@ -93,7 +124,7 @@ def analyze_test_failures(areas, be_rc, web_rc):
     }
 
     # Analyze backend logs (pytest)
-    pytest_log = ART / "pytest_output.txt"
+    pytest_log = story_art_dir / "pytest_output.txt"
     if pytest_log.exists():
         pytest_output = pytest_log.read_text(encoding="utf-8")
         failure_details["backend"]["errors"].extend(extract_pytest_errors(pytest_output))
@@ -124,7 +155,7 @@ def analyze_test_failures(areas, be_rc, web_rc):
 
 
     # Analyze web logs (npm test - jest)
-    npm_log = ART / "npm_output.txt"
+    npm_log = story_art_dir / "npm_output.txt"
     if npm_log.exists():
         npm_output = npm_log.read_text(encoding="utf-8")
         failure_details["web"]["errors"].extend(extract_npm_errors(npm_output))
@@ -224,46 +255,44 @@ def has_collection_errors(failure_details: dict) -> bool:
     logger.debug("[QA] No collection errors found.")
     return False
 
-def run_cmd(cmd, cwd=None) -> int:
+def run_cmd(cmd: list[str], story_art_dir: pathlib.Path, cwd: str | None = None) -> int:
     try:
         logger.info(f"[QA] Running command: {' '.join(cmd)} (cwd={cwd or os.getcwd()})")
         res = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         # Save logs separated by test type
-        log_file = ART / f"{cmd[0] if cmd else 'unknown'}_output.txt"
+        log_file = story_art_dir / f"{cmd[0] if cmd else 'unknown'}_output.txt"
         log_file.write_text(res.stdout, encoding="utf-8")
         logger.debug(f"[QA] Command output saved to {log_file}")
 
 
         # Also maintain general logs file
-        (ART / "logs.txt").write_text(res.stdout, encoding="utf-8")
-        logger.debug("[QA] Command output appended to general logs.txt")
+        (story_art_dir / "logs.txt").write_text(res.stdout, encoding="utf-8")
+        logger.debug(f"[QA] Command output saved to story-specific logs.txt")
 
 
         # Persist log per story for traceability
-        story_id = os.environ.get("STORY", "").strip()
-        if story_id:
-            timestamp = datetime.datetime.utcnow().isoformat()
-            story_log = STORY_LOG_DIR / f"{story_id}.log"
-            with story_log.open("a", encoding="utf-8") as handle:
-                handle.write(f"\n=== {timestamp} UTC | command: {' '.join(cmd)} ===\n")
-                handle.write(res.stdout)
-                handle.write("\n")
-            logger.debug(f"[QA] Command output appended to story log: {story_log}")
+        story_id = story_art_dir.name
+        timestamp = datetime.datetime.utcnow().isoformat()
+        story_log = story_art_dir / "run.log"
+        with story_log.open("a", encoding="utf-8") as handle:
+            handle.write(f"\n=== {timestamp} UTC | command: {' '.join(cmd)} ===\n")
+            handle.write(res.stdout)
+            handle.write("\n")
+        logger.debug(f"[QA] Command output appended to story log: {story_log}")
 
 
         # Add specific error reporting for common return codes
         error_details = ""
         if res.returncode == 127:
             # Command not found
-            pytest_path = str(be_root / ".venv" / "bin" / "pytest") if cwd == str(be_root) else "npm"
-            error_details = f"Command not found: {pytest_path}. Verify virtual environment is activated and dependencies are installed."
+            error_details = f"Command not found: {cmd[0]}. Verify virtual environment is activated and dependencies are installed."
             logger.error(f"[QA] ERROR: {error_details}")
 
 
         # Save command-specific error for final report
         if res.returncode != 0:
-            error_file = ART / f"{cmd[0] if cmd else 'unknown'}_error.txt"
+            error_file = story_art_dir / f"{cmd[0] if cmd else 'unknown'}_error.txt"
             error_file.write_text(error_details or "Unknown command error", encoding="utf-8")
             logger.error(f"[QA] Command failed with return code {res.returncode}. Error details saved to {error_file}")
 
@@ -273,14 +302,12 @@ def run_cmd(cmd, cwd=None) -> int:
     except FileNotFoundError as e:
         error_msg = f"Command not found: {cmd[0] if cmd else 'unknown'} - {e}"
         logger.critical(f"[QA] FATAL: {error_msg}")
-        (ART / "logs.txt").write_text(error_msg, encoding="utf-8")
-        story_id = os.environ.get("STORY", "").strip()
-        if story_id:
-            timestamp = datetime.datetime.utcnow().isoformat()
-            story_log = STORY_LOG_DIR / f"{story_id}.log"
-            with story_log.open("a", encoding="utf-8") as handle:
-                handle.write(f"\n=== {timestamp} UTC | command: {' '.join(cmd)} ===\n")
-                handle.write(error_msg + "\n")
+        (story_art_dir / "logs.txt").write_text(error_msg, encoding="utf-8")
+        timestamp = datetime.datetime.utcnow().isoformat()
+        story_log = story_art_dir / "run.log"
+        with story_log.open("a", encoding="utf-8") as handle:
+            handle.write(f"\n=== {timestamp} UTC | command: {' '.join(cmd)} ===\n")
+            handle.write(error_msg + "\n")
         return 127
     except Exception as e:
         logger.critical(f"[QA] Unhandled exception in run_cmd: {e}", exc_info=True)
@@ -288,28 +315,65 @@ def run_cmd(cmd, cwd=None) -> int:
 
 
 def main():
-    allow_no_tests = os.environ.get("ALLOW_NO_TESTS", "1") == "1"  # Default to True para compatibilidad
-    logger.info(f"[QA] Starting QA run. ALLOW_NO_TESTS={allow_no_tests}")
+    allow_no_tests = os.environ.get("ALLOW_NO_TESTS", "1") == "1"
+    story_id = os.environ.get("STORY", "").strip() or f"qa-run-{datetime.datetime.now():%Y%m%d-%H%M%S}"
+    story_art_dir = QA_ART_DIR / story_id
+    story_art_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"[QA] Starting QA run for story '{story_id}'. ALLOW_NO_TESTS={allow_no_tests}")
+    logger.info(f"[QA] Artifacts will be saved in: {story_art_dir}")
 
+    changed_paths = load_dev_snapshot(story_id)
+    backend_touched = any(_matches_area(path, BACKEND_PREFIX) for path in changed_paths)
+    web_touched = any(_matches_area(path, WEB_PREFIX) for path in changed_paths)
+    other_touched = [
+        path for path in changed_paths
+        if not _matches_area(path, BACKEND_PREFIX) and not _matches_area(path, WEB_PREFIX)
+    ]
+    scoped_execution = bool(changed_paths) and not other_touched
+    run_backend_tests = True
+    run_web_tests = True
+    if scoped_execution:
+        run_backend_tests = backend_touched
+        run_web_tests = web_touched
+        if not backend_touched and not web_touched:
+            # Fall back to full run if changes are outside backend/web but scoped
+            run_backend_tests = True
+            run_web_tests = True
+        else:
+            logger.info(
+                "[QA] Scoped execution enabled. Backend touched=%s, Web touched=%s",
+                backend_touched,
+                web_touched,
+            )
+    elif changed_paths:
+        logger.info(
+            "[QA] Developer snapshot includes %d non-mapped paths. Running full QA.",
+            len(changed_paths),
+        )
+    else:
+        logger.debug("[QA] No developer snapshot available. Running full QA suite.")
 
     # Backend
     be_root = ROOT / "project" / "backend-fastapi"
     be_tests = be_root / "tests"
     be_has = has_any_test(be_tests)
     be_rc = None
-    if be_has:
+    if not run_backend_tests:
+        be_rc = 0
+        logger.info("[QA] Skipping backend tests for story %s (no backend changes detected).", story_id)
+    elif be_has:
         logger.info(f"[QA] Backend has tests in {be_tests}. Running pytest...")
         # Use project-level virtual environment pytest
         pytest_bin = ROOT / ".venv" / "bin" / "pytest"
         if pytest_bin.exists():
-            be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], cwd=str(be_root))
+            be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], story_art_dir=story_art_dir, cwd=str(be_root))
             if be_rc not in (0, 10):
                 logger.warning(f"[QA] Pytest returned {be_rc}. Checking for import errors...")
-                missing = log_contains_import_error()
+                missing = log_contains_import_error(story_art_dir)
                 if any(m.startswith("backend_fastapi") or "backend-fastapi" in m for m in missing):
                     if fix_backend_test_imports(be_tests):
                         logger.info("[QA] Auto-corrected backend test imports. Re-running pytest.")
-                        be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], cwd=str(be_root))
+                        be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], story_art_dir=story_art_dir, cwd=str(be_root))
                     else:
                         logger.warning("[QA] Could not auto-correct backend test imports.")
                 else:
@@ -326,24 +390,40 @@ def main():
     web_root = ROOT / "project" / "web-express"
     web_tests = has_any_web_test(web_root)
     web_rc = None
-    if web_tests and (web_root / "package.json").exists():
+    if not run_web_tests:
+        web_rc = 0
+        logger.info("[QA] Skipping web tests for story %s (no web changes detected).", story_id)
+    elif not (web_root / "package.json").exists():
+        web_rc = 10 # no tests / not applicable
+        logger.info("[QA] No package.json found for web project. Skipping web tests.")
+    elif web_tests:
         logger.info(f"[QA] Web has tests in {web_root}. Running npm test...")
         # Use npm for compatibility
-        web_rc = run_cmd(["npm", "test", "--silent", "--", "--passWithNoTests"], cwd=str(web_root))
+        web_rc = run_cmd(["npm", "test", "--silent", "--", "--passWithNoTests"], story_art_dir=story_art_dir, cwd=str(web_root))
     else:
         web_rc = 10  # no tests
-        logger.info("[QA] No web tests found or package.json missing. Setting web return code to 10.")
+        logger.info("[QA] No web tests found. Setting web return code to 10.")
 
 
     # Future extensions: mobile etc. (omitted for now)
     areas = {
-        "backend": {"has_tests": be_has, "rc": be_rc},
-        "web":     {"has_tests": web_tests, "rc": web_rc},
+        "backend": {
+            "has_tests": be_has,
+            "rc": be_rc,
+            "skipped": not run_backend_tests,
+            "touched": backend_touched,
+        },
+        "web":     {
+            "has_tests": web_tests,
+            "rc": web_rc,
+            "skipped": not run_web_tests,
+            "touched": web_touched,
+        },
     }
     logger.debug(f"[QA] Test areas summary: {areas}")
 
 
-    failure_details = analyze_test_failures(areas, be_rc, web_rc)
+    failure_details = analyze_test_failures(story_art_dir, areas, be_rc, web_rc)
     collection_errors_present = has_collection_errors(failure_details)
     logger.debug(f"[QA] Collection errors present: {collection_errors_present}")
 
@@ -399,85 +479,19 @@ def main():
         "allow_no_tests": allow_no_tests,
         "areas": areas,
         "failure_details": failure_details,
-        "story_context": os.environ.get("STORY", ""),  # Current story context
+        "story_context": story_id,
     }
-    REPORT.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    logger.info(f"[QA] QA report written to {REPORT}")
+    report_path = story_art_dir / "report.json"
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    # For orchestrator compatibility, also write a "last_report" at the top level
+    (QA_ART_DIR / "last_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    logger.info(f"[QA] QA report for {story_id} written to {report_path}")
 
 
-    # Mark stories as done if QA passes
-    if status == "pass":
-        from pathlib import Path
-        import yaml
+    # The orchestrator is now responsible for all status updates.
+    # This script only reports the QA status.
 
-        stories_file = ROOT / "planning" / "stories.yaml"
-        if stories_file.exists():
-            try:
-                with open(stories_file, 'r', encoding='utf-8') as f:
-                    stories = yaml.safe_load(f) or []
-
-                # Mark all in_review stories as done
-                updated = False
-                for story in stories:
-                    if isinstance(story, dict) and story.get('status') == 'in_review':
-                        story['status'] = 'done'
-                        updated = True
-                        logger.info(f"[QA] Story {story.get('id', '?')} marked as done")
-
-
-                if updated:
-                    with open(stories_file, 'w', encoding='utf-8') as f:
-                        yaml.safe_dump(stories, f, sort_keys=False, allow_unicode=True, default_flow_style=False)
-                    logger.info("[QA] Stories updated in planning/stories.yaml")
-
-
-                # Check if this completes all backlogs - trigger new iteration (always check when QA passes)
-                all_done = all(story.get('status') == 'done' for story in stories if isinstance(story, dict))
-                if all_done:
-                    logger.info("[QA] 🎉 ALL STORIES COMPLETED! Starting new iteration...")
-                    logger.info("[QA] 📢 Informing Architect and BA about completion")
-
-
-                    # Generate new context for next iteration based on completed work
-                    completed_work = [s.get('description', '') for s in stories if isinstance(s, dict)]
-                    new_context = f"COMPLETED WORK SUMMARY:\n" + "\n".join(f"- {desc}" for desc in completed_work[:5])
-                    new_context += f"\n\nEVALUATION: {len(completed_work)} stories delivered. Consider expanding scope or refining existing features based on successful implementation."
-                    logger.debug(f"[QA] New context for BA re-evaluation: {new_context[:200]}...")
-
-
-                    # Trigger new BA evaluation for potential scope expansion
-                    logger.info("[QA] 🔄 Triggering Business Analyst re-evaluation...")
-                    import subprocess
-                    import pathlib
-
-                    # Set CONCEPT with completion context for next iteration
-                    env_concept = new_context[:500]  # Limit size
-                    architect_cmd = [".venv/bin/python", str(ROOT / "scripts" / "run_ba.py")]
-                    env_vars = os.environ.copy()
-                    env_vars["CONCEPT"] = env_concept
-
-                    try:
-                        result = subprocess.run(
-                            architect_cmd,
-                            env=env_vars,
-                            cwd=str(ROOT),
-                            capture_output=True,
-                            text=True,
-                            timeout=60
-                        )
-                        if result.returncode == 0:
-                            logger.info("[QA] ✅ BA triggered new requirements evaluation")
-                        else:
-                            logger.warning(f"[QA] ⚠️ BA trigger failed: {result.stderr}")
-                    except subprocess.TimeoutExpired:
-                        logger.warning("[QA] ⏱️ BA trigger timed out")
-                    except Exception as e:
-                        logger.error(f"[QA] ❌ BA trigger error: {e}")
-
-            except Exception as e:
-                logger.error(f"[QA] Error updating stories: {e}", exc_info=True)
-
-    logger.info(f"[QA] Final status={status} (detail in {REPORT})")
+    logger.info(f"[QA] Final status={status} (detail in {report_path})")
     sys.exit(code)
 
 def run_quality_checks(*, allow_no_tests: bool = True, story: str = "") -> dict:
@@ -504,10 +518,12 @@ def run_quality_checks(*, allow_no_tests: bool = True, story: str = "") -> dict:
         else:
             os.environ.pop("STORY", None)
 
+    # The orchestrator reads the global "last_report.json", so we check that one
+    report_path = QA_ART_DIR / "last_report.json"
     report_data = {}
-    if REPORT.exists():
+    if report_path.exists():
         try:
-            report_data = json.loads(REPORT.read_text(encoding="utf-8"))
+            report_data = json.loads(report_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             report_data = {}
 
@@ -515,7 +531,7 @@ def run_quality_checks(*, allow_no_tests: bool = True, story: str = "") -> dict:
     return {
         "status": status,
         "code": exit_code,
-        "report_path": str(REPORT),
+        "report_path": str(report_path),
         "report": report_data,
     }
 

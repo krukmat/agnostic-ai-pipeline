@@ -160,7 +160,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLAN = ROOT / "planning"
 STORIES_P = PLAN / "stories.yaml"
 NOTES_P = PLAN / "notes.md"
-QA_REPORT = ROOT / "artifacts" / "qa" / "last_report.json"
 DEV_FAILED_REPORT = ROOT / "artifacts" / "dev" / "failed_stories.md"
 
 def load_stories():
@@ -403,15 +402,20 @@ async def run_architect_for_review(story_id: str, iteration_count: int = 1) -> D
     result.setdefault("story_id", story_id)
     return result
 
-def next_todo(stories):
+def next_todo_batch(stories, batch_size: int = 3):
+    """Selects a batch of 'todo' stories."""
+    batch = []
     for s in stories:
         if s.get("status","").lower() == "todo":
-            logger.debug(f"[loop] Found 'todo' story: {s.get('id', 'S?')}")
-            return s
-    logger.debug("[loop] No 'todo' stories found.")
-    return None
+            batch.append(s)
+            if len(batch) >= batch_size:
+                break
+    if batch:
+        logger.debug(f"[loop] Found batch of {len(batch)} 'todo' stories.")
+    else:
+        logger.debug("[loop] No 'todo' stories found.")
+    return batch
 
-# REMOVED: No longer creating separate test stories - tests are part of each user story per TDD
 
 def find_in_review_stories(stories):
     """Find stories in review that need architect intervention"""
@@ -554,59 +558,13 @@ def analyze_qa_failure_severity(qa_failure_details):
     }
 
 
-async def _process_iteration(
-    iteration_index: int,
-    stories: list[dict[str, Any]],
+async def _process_story(
+    story: dict[str, Any],
     *,
     allow_no_tests: bool,
-    enable_architect_intervention: bool,
     status_no_tests: str,
-) -> bool:
-    logger.info(f"[loop] Iteración {iteration_index}: processing {len(stories)} stories")
-
-    in_review_stories = find_in_review_stories(stories)
-    if in_review_stories and enable_architect_intervention:
-        logger.info(f"[loop] {len(in_review_stories)} stories in review need architect intervention")
-        for story in in_review_stories[:2]:
-            story_id = story["id"]
-            story_arch_attempts[story_id] = story_arch_attempts.get(story_id, 0) + 1
-
-            logger.info(f"[loop] Architect adjusting criteria for {story_id}")
-            arch_result = await run_architect_for_review(
-                story_id,
-                story_arch_attempts[story_id],
-            )
-            if arch_result.get("status") == "ok":
-                attempt_count = story_arch_attempts[story_id]
-                was_force_approved = attempt_count >= FORCE_APPROVAL_THRESHOLD and story.get("priority") in ["P1", "P0"]
-                if was_force_approved:
-                    story["status"] = "done_force_architect"
-                    append_note(
-                        f"- Architect FORCE APPROVED {story_id} (immediate, attempt {attempt_count}, "
-                        f"P{story.get('priority')} priority)"
-                    )
-                    logger.info(f"[loop] Architect FORCE APPROVED {story_id} (iteration {attempt_count})")
-                    story_dev_attempts.pop(story_id, None)
-                    story_arch_attempts.pop(story_id, None)
-                else:
-                    attempt = attempt_count
-                    story["status"] = "todo"
-                    story_arch_attempts[story_id] = 0
-                    append_note(f"- Architect adjusted criteria for {story_id} (attempt {attempt}) → Dev must rework")
-                    logger.info(f"[loop] Architect adjusted criteria for {story_id} → Dev must rework (counter reset)")
-            else:
-                detail = arch_result.get("detail") or arch_result.get("error") or arch_result
-                logger.warning(f"[loop] Architect could not adjust criteria for {story_id} (detail={detail})")
-                append_note(f"- Architect could not adjust criteria for {story_id} (detail={detail})")
-
-        stories = load_stories()
-        save_stories(stories)
-
-    story = next_todo(stories)
-    if not story:
-        logger.info("[loop] Backlog vacío o sin 'todo'. Fin.")
-        return False
-
+) -> None:
+    """Process a single story through Dev and QA."""
     sid = story["id"]
     story_dev_attempts[sid] = story_dev_attempts.get(sid, 0) + 1
 
@@ -644,25 +602,19 @@ async def _process_iteration(
             logger.warning(
                 f"[loop] {sid} -> in_review (Developer status={dev_status}, exit_code={exit_code}, reintentando)"
             )
-        save_stories(stories)
-        return True
+        return
 
     qa_payload = {"allow_no_tests": allow_no_tests, "story_id": sid}
     qa_result = await execute_role("qa", qa_payload)
     qa_status = qa_result.get("status", "unknown")
     qa_code = int(qa_result.get("code", 0 if qa_status == "pass" else 1))
-    logger.debug(f"[loop] QA run finished with status={qa_status}, code={qa_code}")
+    logger.debug(f"[loop] QA run for {sid} finished with status={qa_status}, code={qa_code}")
 
-    qa_failure_details: Dict[str, Any] = {}
-    if QA_REPORT.exists():
-        try:
-            rep = json.loads(QA_REPORT.read_text(encoding="utf-8"))
-            qa_status = rep.get("status", "unknown")
-            qa_failure_details = rep.get("failure_details", {})
-            logger.debug(f"[loop] QA report loaded. Status: {qa_status}")
-        except Exception as exc:
-            qa_status = "unknown"
-            logger.error(f"[loop] Error loading QA report: {exc}", exc_info=True)
+    qa_report = qa_result.get("report", {})
+    qa_failure_details: Dict[str, Any] = qa_report.get("failure_details", {})
+    # Re-check status from the report itself, as it's the source of truth
+    if qa_report.get("story_context") == sid:
+        qa_status = qa_report.get("status", qa_status)
 
     if qa_status == "pass":
         story["status"] = "done"
@@ -670,35 +622,9 @@ async def _process_iteration(
         story_arch_attempts.pop(sid, None)
         logger.info(f"[loop] {sid} -> done (QA pass)")
         append_note(f"- {sid} aprobado por QA.")
-        activated_waiters = check_and_activate_waiting_stories(stories, sid)
-        save_stories(stories)
-        if activated_waiters:
-            logger.info(
-                f"[loop] ✅ DEPENDENCY RESOLUTION: Activated {len(activated_waiters)} waiting stories: {activated_waiters}"
-            )
-        return True
+        return
 
     if qa_status == "no_tests":
-        if QA_REPORT.exists():
-            rep = json.loads(QA_REPORT.read_text(encoding="utf-8"))
-            backend_has_tests = rep.get("areas", {}).get("backend", {}).get("has_tests", False)
-            backend_rc = rep.get("areas", {}).get("backend", {}).get("rc", 1)
-            logger.debug(
-                f"[loop] QA status 'no_tests'. Backend has tests: {backend_has_tests}, Backend RC: {backend_rc}"
-            )
-
-            if backend_has_tests and backend_rc == 0:
-                story["status"] = "done"
-                append_note(f"- {sid} ✅ TDD APPROVED: Backend tests executed and passed.")
-                logger.info(f"[loop] {sid} -> done (✅ TDD: backend tests passed)")
-            else:
-                story["status"] = "blocked_no_tests"
-                append_note(f"- {sid} ❌ TDD FAILURE: Backend requires tests as integral part.")
-                logger.warning(f"[loop] {sid} -> blocked_no_tests (❌ TDD: backend needs tests)")
-
-            save_stories(stories)
-            return True
-
         if allow_no_tests:
             story["status"] = "in_review"
             append_note(f"- {sid} QA -> in_review (no tests, allowed).")
@@ -707,70 +633,56 @@ async def _process_iteration(
             story["status"] = status_no_tests
             append_note(f"- {sid} BLOQUEADO por falta de tests (QA). Requiere intervención.")
             logger.warning(f"[loop] {sid} -> {status_no_tests} (QA: no tests not allowed)")
-        save_stories(stories)
-        return True
+        return
 
     failure_analysis = analyze_qa_failure_severity(qa_failure_details)
     severity = failure_analysis.get("severity", "standard")
     logger.info(f"[loop] QA failure severity for {sid}: {severity}")
 
     append_note(f"- QA FAIL {sid}: {failure_analysis.get('details', 'Sin detalle')}")
-    logger.info(f"[loop] QA failure details: {json.dumps(failure_analysis, indent=2, ensure_ascii=False)}")
 
     if severity == "blocked_fatal":
         story["status"] = "blocked_fatal"
-        append_note(f"- {sid} BLOCKED_FATAL: QA fatal errors. {failure_analysis.get('details', '')}")
-        logger.error(f"[loop] {sid} -> blocked_fatal (fatal QA errors)")
-
     elif severity == "force_applicable":
         attempt_counter = story_arch_attempts.get(sid, 0) + 1
         story_arch_attempts[sid] = attempt_counter
         if attempt_counter >= FORCE_APPROVAL_THRESHOLD and story.get("priority") in ["P1", "P0"]:
             story["status"] = "done_force_architect"
-            append_note(f"- {sid} FORCE APPROVED after QA by architect (force applicable, attempt {attempt_counter}).")
-            logger.warning(f"[loop] {sid} -> done_force_architect (QA force approval)")
         else:
             story["status"] = "in_review"
-            append_note(
-                f"- {sid} QA -> in_review (force-applicable). Architect iteration {attempt_counter}/{FORCE_APPROVAL_THRESHOLD}"
-            )
-            logger.info(f"[loop] {sid} -> in_review (QA force-applicable, attempt {attempt_counter})")
-
     elif severity == "test_only":
         story["status"] = "in_review_tests"
-        append_note(f"- {sid} QA -> in_review_tests (solo fallas de tests). Requiere ajuste de casos.")
-        logger.info(f"[loop] {sid} -> in_review_tests (solo fallas de tests)")
-
     elif severity == "persistent":
         iteration_count = story_dev_attempts.get(sid, 0)
         if iteration_count >= DEV_RETRY_THRESHOLD:
             story["status"] = "blocked_quality_issues"
-            append_note(f"- {sid} BLOQUEADO por issues de calidad después de {iteration_count} intentos.")
-            logger.error(f"[loop] {sid} -> blocked_quality_issues (múltiples fallos calidad)")
         else:
             story["status"] = "in_review_retry"
-            append_note(f"- {sid} Persistent failure ({iteration_count} iterations). Escalating complexity.")
-            logger.warning(f"[loop] {sid} -> in_review_retry (persistent failure)")
-
     else:
         story["status"] = "in_review"
-        append_note(
-            f"- {sid} QA Fail estándar (code={qa_code}): {failure_analysis['details'][:80]}. "
-            "Requiere intervención de arquitecto."
-        )
-        logger.info(f"[loop] {sid} -> in_review (QA fail - architect review needed)")
+    
+    logger.info(f"[loop] {sid} -> {story['status']} (QA fail - severity: {severity})")
 
-    save_stories(stories)
 
-    stories = load_stories()
+async def _process_iteration(
+    iteration_index: int,
+    stories: list[dict[str, Any]],
+    *,
+    allow_no_tests: bool,
+    enable_architect_intervention: bool,
+    status_no_tests: str,
+) -> bool:
+    logger.info(f"[loop] Iteración {iteration_index}: processing {len(stories)} stories")
+
+    # 1. Architect intervention (sequential, high-level task)
     in_review_stories = find_in_review_stories(stories)
-    if in_review_stories:
-        logger.info(f"[loop] 🔄 IMMEDIATE ARCHITECT INTERVENTION FOR: {[s['id'] for s in in_review_stories]}")
+    if in_review_stories and enable_architect_intervention:
+        logger.info(f"[loop] {len(in_review_stories)} stories in review need architect intervention")
         for story in in_review_stories[:2]:
             story_id = story["id"]
             story_arch_attempts[story_id] = story_arch_attempts.get(story_id, 0) + 1
 
-            logger.info(f"[loop] Architect IMMEDIATELY adjusting criteria for {story_id}")
+            logger.info(f"[loop] Architect adjusting criteria for {story_id}")
             arch_result = await run_architect_for_review(
                 story_id,
                 story_arch_attempts[story_id],
@@ -778,32 +690,78 @@ async def _process_iteration(
             if arch_result.get("status") == "ok":
                 attempt_count = story_arch_attempts[story_id]
                 was_force_approved = attempt_count >= FORCE_APPROVAL_THRESHOLD and story.get("priority") in ["P1", "P0"]
-
                 if was_force_approved:
                     story["status"] = "done_force_architect"
                     append_note(
                         f"- Architect FORCE APPROVED {story_id} (immediate, attempt {attempt_count}, "
                         f"P{story.get('priority')} priority)"
                     )
-                    logger.info(f"[loop] Architect IMMEDIATELY FORCE APPROVED {story_id}")
+                    logger.info(f"[loop] Architect FORCE APPROVED {story_id} (iteration {attempt_count})")
                     story_dev_attempts.pop(story_id, None)
                     story_arch_attempts.pop(story_id, None)
                 else:
                     attempt = attempt_count
                     story["status"] = "todo"
                     story_arch_attempts[story_id] = 0
-                    append_note(
-                        f"- Architect IMMEDIATELY adjusted criteria for {story_id} (attempt {attempt}) → Dev must rework"
-                    )
-                    logger.info(
-                        f"[loop] Architect IMMEDIATELY adjusted criteria for {story_id} → Ready for dev rework (counter reset)"
-                    )
+                    append_note(f"- Architect adjusted criteria for {story_id} (attempt {attempt}) → Dev must rework")
+                    logger.info(f"[loop] Architect adjusted criteria for {story_id} → Dev must rework (counter reset)")
             else:
                 detail = arch_result.get("detail") or arch_result.get("error") or arch_result
                 logger.warning(f"[loop] Architect could not adjust criteria for {story_id} (detail={detail})")
                 append_note(f"- Architect could not adjust criteria for {story_id} (detail={detail})")
+        save_stories(stories) # Save changes from architect
+        stories = load_stories() # Reload to get a clean state
 
+    # 2. Batch processing of 'todo' stories
+    story_batch = next_todo_batch(stories)
+    if not story_batch:
+        if not in_review_stories: # Only end if there's nothing in review either
+             logger.info("[loop] Backlog vacío o sin 'todo'. Fin.")
+             return False
+        else:
+             logger.info("[loop] No 'todo' stories, but some are in review. Continuing iteration.")
+             return True
+
+
+    # Mark batch as in_progress and save to lock them
+    for story in story_batch:
+        story["status"] = "in_progress"
+        logger.info(f"[loop] Story {story['id']} marked as 'in_progress'.")
     save_stories(stories)
+
+    # Process batch concurrently
+    tasks = [
+        _process_story(
+            story,
+            allow_no_tests=allow_no_tests,
+            status_no_tests=status_no_tests,
+        )
+        for story in story_batch
+    ]
+    await asyncio.gather(*tasks)
+
+    # 3. Final state saving and dependency checks
+    # The story objects in story_batch are modified in-place by _process_story.
+    # We need to merge these changes back into the main list of stories.
+    story_map = {s["id"]: s for s in stories}
+    for processed_story in story_batch:
+        story_map[processed_story["id"]] = processed_story
+    
+    all_stories = list(story_map.values())
+
+    completed_in_batch = [s["id"] for s in story_batch if s.get("status") == "done"]
+    
+    if completed_in_batch:
+        activated_waiters = []
+        for sid in completed_in_batch:
+            # Pass the full, updated list to the check function
+            activated_waiters.extend(check_and_activate_waiting_stories(all_stories, sid))
+        if activated_waiters:
+             logger.info(
+                f"[loop] ✅ DEPENDENCY RESOLUTION: Activated {len(activated_waiters)} waiting stories: {activated_waiters}"
+            )
+
+    save_stories(all_stories)
     return True
 
 async def main():

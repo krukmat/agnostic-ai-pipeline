@@ -5,6 +5,8 @@ import json
 import os
 import re
 import sys
+import hashlib
+import time
 from typing import List, Tuple, Optional
 
 import yaml
@@ -28,6 +30,11 @@ COMPLEXITY_CLASSIFIER_PROMPT = (
     ROOT / "prompts" / "architect_complexity_classifier.md"
 ).read_text(encoding="utf-8")
 
+_COMPLEXITY_CACHE: dict[str, tuple[str, float]] = {}
+COMPLEXITY_CACHE_TTL_SECONDS = 300
+
+def _complexity_cache_key(requirements_text: str) -> str:
+    return hashlib.sha256(requirements_text.encode("utf-8")).hexdigest()
 
 def get_architect_prompt(mode: str, tier: str) -> str:
     if mode == "review_adjustment":
@@ -41,6 +48,16 @@ async def classify_complexity_with_llm(requirements_text: str) -> str:
     if not cleaned:
         return "simple"
 
+    cache_key = _complexity_cache_key(cleaned)
+    cached = _COMPLEXITY_CACHE.get(cache_key)
+    now = time.time()
+    if cached:
+        cached_value, cached_at = cached
+        if now - cached_at <= COMPLEXITY_CACHE_TTL_SECONDS:
+            logger.debug(f"[ARCHITECT] Using cached complexity tier '{cached_value}' (age {now - cached_at:.1f}s).")
+            return cached_value
+        logger.debug("[ARCHITECT] Complexity cache entry expired; recomputing.")
+
     try:
         client = Client(role="architect")
         user = (
@@ -51,12 +68,15 @@ async def classify_complexity_with_llm(requirements_text: str) -> str:
         response = await client.chat(system=COMPLEXITY_CLASSIFIER_PROMPT, user=user)
         tier = parse_complexity_response(response)
         if tier:
+            _COMPLEXITY_CACHE[cache_key] = (tier, time.time())
             return tier
         print(f"[ARCHITECT] Unexpected classifier response: {response[:120]!r}")
     except Exception as exc:
         print(f"[ARCHITECT] Complexity classifier failed via LLM: {exc}")
 
-    return fallback_complexity(cleaned)
+    fallback = fallback_complexity(cleaned)
+    _COMPLEXITY_CACHE[cache_key] = (fallback, time.time())
+    return fallback
 
 
 def parse_complexity_response(text: str) -> str | None:
@@ -283,7 +303,28 @@ async def run_architect_job(
     elif architect_mode == "review_adjustment":
         complexity_tier = "medium"
     else:
-        complexity_tier = await classify_complexity_with_llm(requirements_content)
+        # Caching logic for complexity tier
+        arch_cache_dir = ROOT / "artifacts" / "architect"
+        arch_cache_dir.mkdir(parents=True, exist_ok=True)
+        tier_cache_path = arch_cache_dir / "tier_cache.json"
+        
+        req_hash = hashlib.sha256(requirements_content.encode('utf-8')).hexdigest()
+        
+        cache = {}
+        if tier_cache_path.exists():
+            try:
+                cache = json.loads(tier_cache_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                cache = {}
+
+        if req_hash in cache:
+            complexity_tier = cache[req_hash]
+            print(f"[ARCHITECT] Using cached complexity tier: {complexity_tier}")
+        else:
+            complexity_tier = await classify_complexity_with_llm(requirements_content)
+            cache[req_hash] = complexity_tier
+            tier_cache_path.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+            print(f"[ARCHITECT] Classified and cached complexity tier: {complexity_tier}")
 
     arch_prompt = get_architect_prompt(architect_mode, complexity_tier)
 
