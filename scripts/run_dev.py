@@ -179,17 +179,23 @@ def extract_files_block(text: str, story_id: str) -> List[Dict[str, str]] | None
     parsed_file_entry = None
     stripped_text = text.strip()
 
+    # Task: fix-gemini-parser - Strip markdown fences before parsing
+    # Gemini often wraps JSON in ```json...```
+    cleaned_text = re.sub(r'^```\w*\s*\n', '', stripped_text, flags=re.MULTILINE)
+    cleaned_text = re.sub(r'\n```\s*$', '', cleaned_text).strip()
+
     # First, attempt to load the entire payload as JSON (covers wrapped responses)
-    top_level = _json_load(stripped_text)
+    top_level = _json_load(cleaned_text)
     if top_level:
         parsed_file_entry = _find_file_entry(top_level)
         if parsed_file_entry:
-            logger.debug("[DEV] Extracted file entry from top-level JSON structure.")
+            logger.debug("[DEV] Extracted file entry from top-level JSON structure (after fence cleanup).")
 
     # Fallback: search for inline JSON object snippets
     if not parsed_file_entry:
         candidates: List[str] = []
-        for match in re.finditer(r"(\{[\s\S]*?\})", stripped_text):
+        # Task: fix-gemini-parser - use cleaned_text for fallback too
+        for match in re.finditer(r"(\{[\s\S]*?\})", cleaned_text):
             candidates.append(match.group(1))
 
         if candidates:

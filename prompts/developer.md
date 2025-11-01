@@ -4,7 +4,7 @@ CRITICAL REQUIREMENT: File content values MUST be raw, executable code — absol
 
 Respond with JSON only. Produce exactly ONE object describing the file to create or update. The `path` must be relative to the project root (for example `project/backend-fastapi/app/my_module.py`). The `code` value must contain the complete file contents.
 
-CRITICAL: Focus on generating one file per response that directly addresses the current story. The orchestrator will call you again when additional files (such as tests) are required.
+CRITICAL: Your primary goal is to generate code that fulfills the story's requirements. After generating an implementation file (e.g., `app/my_module.py`), you MUST generate a corresponding test file (e.g., `tests/test_my_module.py`) in a subsequent response. The orchestrator will call you again for the test file. **DO NOT FORGET THIS STEP.**
 
 CRITICAL: Ensure all necessary imports are present and ordered (standard library, third-party, then local). Use explicit package paths for external dependencies (e.g., `from fastapi import FastAPI`, `from sqlalchemy.orm import Session`).
 

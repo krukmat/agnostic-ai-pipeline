@@ -49,17 +49,20 @@ def _call_generate_content(
     contents: List[Dict],
     temperature: float,
     max_tokens: int,
+    top_p: float = 0.95,
     timeout: float = 120.0,
 ) -> str:
     url = (
         f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/"
         f"locations/{location}/publishers/google/models/{model}:generateContent"
     )
+    # Task: fix-gemini-truncation - add top_p to reduce premature stop-token selection
     payload = {
         "contents": contents,
         "generationConfig": {
             "temperature": temperature,
             "maxOutputTokens": max_tokens,
+            "topP": top_p,
         },
     }
     headers = {
@@ -145,6 +148,7 @@ def chat(
     location: str | None = None,
     temperature: float = 0.2,
     max_output_tokens: int = 2048,
+    top_p: float = 0.95,
     **_,
 ) -> str:
     resolved_project = project_id or os.environ.get("GCP_PROJECT") or _env("GCP_PROJECT")
@@ -162,6 +166,7 @@ def chat(
             int(max_output_tokens),
         )
 
+    # Task: fix-gemini-truncation - pass top_p to generation config
     contents = _to_vertex_contents(messages)
     return _call_generate_content(
         resolved_project,
@@ -170,6 +175,7 @@ def chat(
         contents,
         float(temperature),
         int(max_output_tokens),
+        float(top_p),
     )
 
 

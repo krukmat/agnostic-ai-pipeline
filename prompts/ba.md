@@ -87,7 +87,7 @@ functional_requirements:
     user_impact: <how this improves user experience>
     priority: <Critical/High/Medium/Low>
     acceptance_criteria:
-      - <specific, testable condition>
+      - A specific, testable condition.
     dependencies: <other FRs or external factors required>
 
 non_functional_requirements:
