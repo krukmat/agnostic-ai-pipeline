@@ -18,7 +18,7 @@ help:
 	@echo "  show-config  -> Muestra config.yaml"
 	@echo "  set-role     -> role=<ba|architect|dev|qa> provider=<ollama|openai> model=..."
 	@echo "  set-quality  -> profile=<low|normal|high> [role=...]"
-	@echo "  clean        -> Limpia artifacts/ (FLUSH=1 también borra planning/ y project/)"
+	@echo "  clean        -> Limpia artifacts/ y reestablece planning/ + project/ (usa CLEAN_FLUSH=0 para conservarlos)"
 	@echo "  warmup       -> Inicia los servicios A2A remotos necesarios"
 
 setup:
@@ -55,7 +55,7 @@ qa:
 	QA_RUN_TESTS="$${QA_RUN_TESTS:-0}" $(PY) scripts/run_qa.py
 
 clean:
-	CLEAN_FLUSH="$${CLEAN_FLUSH:-$${FLUSH:-0}}" $(PY) scripts/run_cleanup.py
+	CLEAN_FLUSH="$${CLEAN_FLUSH:-$${FLUSH:-1}}" $(PY) scripts/run_cleanup.py
 
 loop:
 	LOOP_MODE="$${LOOP_MODE:-full}" MAX_LOOPS="$${MAX_LOOPS:-1}" ALLOW_NO_TESTS="$${ALLOW_NO_TESTS:-0}" ARCHITECT_INTERVENTION="$${ARCHITECT_INTERVENTION:-1}" $(PY) scripts/orchestrate.py

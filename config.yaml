@@ -11,9 +11,13 @@ providers:
     - exec
     cwd: .
     timeout: 300
-    input_format: flags
+    input_format: stdin_text
     output_clean: true
-    extra_args: []
+    extra_args:
+    - --disable
+    - rollout_recorder
+    append_temperature: false
+    append_max_tokens: false
   claude_cli:
     type: claude_cli
     command:
@@ -29,7 +33,7 @@ providers:
     parse_json: true
     append_system_prompt: true
     extra_args: []
-    debug: false
+    debug: true
     debug_args:
     - --verbose
     - --debug

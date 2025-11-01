@@ -28,11 +28,20 @@ except Exception as exc:  # pragma: no cover - recommender optional
     recommend_model = None  # type: ignore[assignment]
     _reco_enabled = lambda: False  # type: ignore[assignment]
 
+PROVIDER_REGISTRY: dict[str, Any] = {}
+_providers_import_err: Exception | None = None
+
 try:
     from .providers import PROVIDER_REGISTRY  # type: ignore
-except Exception as exc:  # pragma: no cover - providers optional
-    logger.warning(f"[LLM] Providers import failed: {exc}")
-    PROVIDER_REGISTRY = {}
+except Exception as exc_relative:  # pragma: no cover - providers optional
+    try:
+        from scripts.providers import PROVIDER_REGISTRY  # type: ignore
+    except Exception as exc_absolute:
+        _providers_import_err = exc_absolute
+        logger.warning(f"[LLM] Providers import failed: {exc_absolute}")
+
+if not PROVIDER_REGISTRY and _providers_import_err:
+    logger.debug(f"[LLM] Provider registry fallback unavailable: {_providers_import_err}")
 
 CONFIG_P = ROOT / "config.yaml"
 
@@ -471,7 +480,6 @@ class Client:
                 logger.debug("[LLM] Using pty for subprocess execution.")
             except ImportError:
                 logger.warning("[LLM] pty module not available. Falling back to direct subprocess.run.")
-                # Fallback without pty if not available
                 result = subprocess.run(
                     cmd_args,
                     input=input_data,
@@ -482,45 +490,58 @@ class Client:
                     timeout=self.cli_timeout
                 )
             else:
-                # Use pty to simulate terminal for CLI that requires it
-                master, slave = pty.openpty()
-
                 try:
-                    proc = subprocess.Popen(
+                    master, slave = pty.openpty()
+                except OSError as exc:
+                    logger.warning(f"[LLM] Unable to acquire pty ({exc}). Falling back to direct subprocess.run.")
+                    result = subprocess.run(
                         cmd_args,
-                        stdin=slave if input_data else None,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
+                        input=input_data,
+                        capture_output=True,
+                        text=True,
                         cwd=self.cli_cwd,
                         env=env,
-                        text=True
+                        timeout=self.cli_timeout
                     )
-
-                    if input_data:
-                        os.write(master, input_data.encode('utf-8'))
-                        os.close(master)
-
+                else:
                     try:
-                        stdout, stderr = proc.communicate(timeout=self.cli_timeout)
+                        proc = subprocess.Popen(
+                            cmd_args,
+                            stdin=slave if input_data else None,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            cwd=self.cli_cwd,
+                            env=env,
+                            text=True
+                        )
+
+                        if input_data:
+                            os.write(master, input_data.encode("utf-8"))
+                            os.write(master, b"\n")
+
+                        try:
+                            stdout, stderr = proc.communicate(timeout=self.cli_timeout)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            stdout, stderr = proc.communicate()
+                            logger.error(f"[LLM] {self.provider_type} command timed out after {self.cli_timeout}s.")
+                            raise
+
                         result = subprocess.CompletedProcess(
                             args=cmd_args,
                             returncode=proc.returncode,
                             stdout=stdout,
                             stderr=stderr
                         )
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        logger.error(f"[LLM] {self.provider_type} command timed out after {self.cli_timeout}s.")
-                        raise subprocess.TimeoutExpired(cmd_args, self.cli_timeout)
-                finally:
-                    try:
-                        os.close(slave)
-                    except:
-                        pass
-                    try:
-                        os.close(master)
-                    except:
-                        pass
+                    finally:
+                        try:
+                            os.close(slave)
+                        except:
+                            pass
+                        try:
+                            os.close(master)
+                        except:
+                            pass
 
             duration = time.perf_counter() - start_time
             logger.debug(

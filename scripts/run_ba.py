@@ -11,11 +11,12 @@ from typing import Any, Dict, List, Optional
 
 import typer
 import yaml
-from common import ensure_dirs, PLANNING, ROOT
+from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
 
 BA_PROMPT = (ROOT / "prompts" / "ba.md").read_text(encoding="utf-8")
+DEBUG_DIR = ART / "debug"
 
 
 async def generate_requirements(concept: str) -> dict:
@@ -29,8 +30,8 @@ async def generate_requirements(concept: str) -> dict:
     logger.debug(f"[BA] LLM returned {len(text)} characters")
     logger.debug(f"[BA] Response preview: {text[:300]}...")
 
-    debug_file = ROOT / "debug_ba_response.txt"
-    debug_file.write_text(text, encoding="utf-8")
+    debug_file = DEBUG_DIR / "debug_ba_response.txt"
+    save_text(debug_file, text)
     logger.debug(f"[BA] Full response saved to {debug_file}")
 
     def grab(tag: str, label: str) -> str:

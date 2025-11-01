@@ -62,6 +62,15 @@ To run open-source models like Llama or Mistral on your own machine.
 make set-role role=dev provider=ollama model="mistral:7b-instruct"
 ```
 
+### Local-Only Example with Ollama
+For an entirely local stack, point the core roles to Ollama models:
+```bash
+make set-role role=architect provider=ollama model="qwen2.5-coder:7b"
+make set-role role=dev provider=ollama model="qwen2.5-coder:14b"
+make set-role role=qa provider=ollama model="qwen2.5-coder:7b"
+```
+This keeps every agent on locally hosted models while the pipeline remains ready to switch back to hosted providers when needed.
+
 ---
 
 ## Quick Start Guide

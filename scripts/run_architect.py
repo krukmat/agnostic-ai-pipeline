@@ -12,7 +12,7 @@ from typing import List, Tuple, Optional
 import yaml
 import typer
 
-from common import ensure_dirs, PLANNING, ROOT
+from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
 
@@ -32,6 +32,7 @@ COMPLEXITY_CLASSIFIER_PROMPT = (
 
 _COMPLEXITY_CACHE: dict[str, tuple[str, float]] = {}
 COMPLEXITY_CACHE_TTL_SECONDS = 300
+DEBUG_DIR = ART / "debug"
 
 def _complexity_cache_key(requirements_text: str) -> str:
     return hashlib.sha256(requirements_text.encode("utf-8")).hexdigest()
@@ -366,8 +367,8 @@ async def run_architect_job(
 
     text = await client.chat(system=arch_prompt, user=user_input)
 
-    raw_response_path = ROOT / "debug_architect_response.txt"
-    raw_response_path.write_text(text, encoding="utf-8")
+    raw_response_path = DEBUG_DIR / "debug_architect_response.txt"
+    save_text(raw_response_path, text)
 
     def grab(tag: str, label: str) -> str:
         # Updated regex to be more robust for YAML/CSV block extraction
@@ -381,7 +382,9 @@ async def run_architect_job(
         print("[ARCHITECT] WARNING: PRD block missing in LLM response. Retrying...")
         # Simple retry logic for missing blocks
         text = await client.chat(system=arch_prompt, user=user_input)
-        (ROOT / "debug_architect_response_retry_prd.txt").write_text(text, encoding="utf-8")
+        retry_path = DEBUG_DIR / "debug_architect_response_retry_prd.txt"
+        save_text(retry_path, text)
+        logger.warning(f"[ARCHITECT] Saved retry response for missing PRD block at {retry_path}")
         prd_content = grab("yaml", "PRD")
         if not prd_content:
             print("[ARCHITECT] ERROR: PRD block still missing after retry.")
@@ -392,7 +395,9 @@ async def run_architect_job(
         # Retry logic for missing blocks
         for i in range(1, 3): # Try up to 2 more times
             text = await client.chat(system=arch_prompt, user=user_input)
-            (ROOT / f"debug_architect_response_retry_arch_{i}.txt").write_text(text, encoding="utf-8")
+            retry_path = DEBUG_DIR / f"debug_architect_response_retry_arch_{i}.txt"
+            save_text(retry_path, text)
+            logger.warning(f"[ARCHITECT] Saved retry response for missing ARCHITECTURE block at {retry_path}")
             arch_content = grab("yaml", "ARCHITECTURE")
             if arch_content:
                 print(f"[ARCHITECT] ARCHITECTURE block recovered after {i} retries.")
@@ -406,7 +411,9 @@ async def run_architect_job(
         # Retry logic for missing blocks
         for i in range(1, 3): # Try up to 2 more times
             text = await client.chat(system=arch_prompt, user=user_input)
-            (ROOT / f"debug_architect_response_retry_tasks_{i}.txt").write_text(text, encoding="utf-8")
+            retry_path = DEBUG_DIR / f"debug_architect_response_retry_tasks_{i}.txt"
+            save_text(retry_path, text)
+            logger.warning(f"[ARCHITECT] Saved retry response for missing TASKS block at {retry_path}")
             tasks_content = grab("csv", "TASKS")
             if tasks_content:
                 print(f"[ARCHITECT] TASKS block recovered after {i} retries.")
@@ -494,7 +501,7 @@ def serve(reload: bool = typer.Option(False, help="Auto-reload server on code ch
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1 and os.environ.get("CONCEPT"):
+    if len(sys.argv) == 1:
         asyncio.run(main())
     else:
         app()

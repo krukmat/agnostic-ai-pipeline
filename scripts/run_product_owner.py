@@ -5,14 +5,14 @@ import os
 import re
 import yaml
 
-from common import ensure_dirs, PLANNING, ROOT
+from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
 
 PO_PROMPT = (ROOT / "prompts" / "product_owner.md").read_text(encoding="utf-8")
 VISION_PATH = PLANNING / "product_vision.yaml"
 REVIEW_PATH = PLANNING / "product_owner_review.yaml"
-DEBUG_PATH = ROOT / "debug_product_owner_response.txt"
+DEBUG_PATH = ART / "debug" / "debug_product_owner_response.txt"
 
 
 def extract_original_concept(requirements_text: str) -> str:
@@ -77,7 +77,7 @@ async def main() -> None:
 
     user = build_user_payload(concept, existing_vision, requirements_content)
     response = await client.chat(system=PO_PROMPT, user=user)
-    DEBUG_PATH.write_text(response, encoding="utf-8")
+    save_text(DEBUG_PATH, response)
     logger.debug(f"[PO] Full response saved to {DEBUG_PATH}")
 
 
