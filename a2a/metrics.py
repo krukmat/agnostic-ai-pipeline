@@ -24,6 +24,9 @@ def save_metrics():
     if not _metrics:
         return
 
+    # Ensure the directory exists right before writing.
+    METRICS_DIR.mkdir(parents=True, exist_ok=True)
+
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     file_path = METRICS_DIR / f"{timestamp}.json"
     with open(file_path, "w", encoding="utf-8") as f:

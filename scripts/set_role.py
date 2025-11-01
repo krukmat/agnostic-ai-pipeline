@@ -4,7 +4,11 @@ cfg_p = ROOT/"config.yaml"
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--role", required=True, choices=["ba","architect","dev","qa"])
-ap.add_argument("--provider", required=False, choices=["ollama","openai"])
+ap.add_argument(
+    "--provider",
+    required=False,
+    choices=["ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli"],
+)
 ap.add_argument("--model", required=False)
 args = ap.parse_args()
 

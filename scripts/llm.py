@@ -102,6 +102,16 @@ class Client:
         self.cli_timeout = 300
         self.cli_input_format = "stdin"
         self.cli_output_clean = True
+        self.cli_extra_args: list[str] = []
+        self.cli_parse_json = False
+        self.cli_append_model_flag = True
+        self.cli_append_system_prompt = False
+        self.cli_append_temperature_flag = False
+        self.cli_append_max_tokens_flag = False
+        self.cli_prompt_template: str | None = None
+        self.cli_debug = False
+        self.cli_debug_args: list[str] = []
+        self.cli_log_stderr = False
 
         # Load from config.yaml (roles/providers)
         roles = cfg.get("roles", {}) if isinstance(cfg.get("roles", {}), dict) else {}
@@ -122,14 +132,47 @@ class Client:
             self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or base_url or self.ollama_base
         elif self.provider_type == "openai":
             self.oai_base = os.environ.get("OPENAI_API_BASE") or base_url or self.oai_base
-        elif self.provider_type == "codex_cli":
-            self.cli_command = provider_cfg.get("command", ["codex", "chat"])
+        elif self.provider_type in ("codex_cli", "claude_cli"):
+            default_command = ["codex", "chat"] if self.provider_type == "codex_cli" else ["claude", "-p", "--print"]
+            self.cli_command = provider_cfg.get("command", default_command)
             self.cli_cwd = provider_cfg.get("cwd", self.cli_cwd)
             self.cli_env = provider_cfg.get("env", self.cli_env)
             self.cli_timeout = int(provider_cfg.get("timeout", self.cli_timeout))
             self.cli_input_format = provider_cfg.get("input_format", self.cli_input_format)
             self.cli_output_clean = bool(provider_cfg.get("output_clean", self.cli_output_clean))
-            self.cli_extra_args = provider_cfg.get("extra_args", [])
+            extra_args_cfg = provider_cfg.get("extra_args", [])
+            if isinstance(extra_args_cfg, (list, tuple)):
+                self.cli_extra_args = [str(arg) for arg in extra_args_cfg]
+            elif isinstance(extra_args_cfg, str) and extra_args_cfg.strip():
+                self.cli_extra_args = [extra_args_cfg]
+            else:
+                self.cli_extra_args = []
+            self.cli_parse_json = bool(provider_cfg.get("parse_json", self.provider_type == "claude_cli"))
+            self.cli_append_model_flag = bool(provider_cfg.get("append_model", True))
+            self.cli_append_system_prompt = bool(
+                provider_cfg.get("append_system_prompt", self.provider_type == "claude_cli")
+            )
+            self.cli_append_temperature_flag = bool(
+                provider_cfg.get("append_temperature", self.provider_type == "codex_cli")
+            )
+            self.cli_append_max_tokens_flag = bool(
+                provider_cfg.get("append_max_tokens", self.provider_type == "codex_cli")
+            )
+            prompt_template_default = (
+                "{user}" if self.provider_type == "claude_cli" else
+                "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
+            )
+            self.cli_prompt_template = provider_cfg.get("prompt_template", prompt_template_default)
+            default_debug_args = ["--verbose", "--debug"] if self.provider_type == "claude_cli" else []
+            debug_args_cfg = provider_cfg.get("debug_args", default_debug_args)
+            if isinstance(debug_args_cfg, (list, tuple)):
+                self.cli_debug_args = [str(arg) for arg in debug_args_cfg]
+            elif isinstance(debug_args_cfg, str) and debug_args_cfg.strip():
+                self.cli_debug_args = [debug_args_cfg]
+            else:
+                self.cli_debug_args = default_debug_args
+            self.cli_debug = bool(provider_cfg.get("debug", False))
+            self.cli_log_stderr = bool(provider_cfg.get("log_stderr", self.cli_debug))
 
         # Legacy positional override (provider, model, temp, max_tokens, base_url)
         if legacy_args:
@@ -139,7 +182,7 @@ class Client:
             maxt = legacy_args[3] if len(legacy_args) >= 4 else None
             base = legacy_args[4] if len(legacy_args) >= 5 else None
 
-            if prov in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk"):
+            if prov in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli"):
                 self.provider_type = prov
             if isinstance(model, str) and model:
                 self.model = model
@@ -162,7 +205,7 @@ class Client:
             self.max_tokens = int(overrides["max_tokens"])
         if "provider" in overrides and overrides["provider"]:
             p = str(overrides["provider"]).strip().lower()
-            if p in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk"):
+            if p in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli"):
                 self.provider_type = p
         if "base_url" in overrides and overrides["base_url"]:
             if self.provider_type == "ollama":
@@ -188,9 +231,9 @@ class Client:
             logger.debug(f"[LLM] Using Vertex provider: {self.provider_type}")
             return await asyncio.to_thread(self._vertex_chat, system, user)
 
-        if self.provider_type == "codex_cli":
-            logger.debug("[LLM] Using Codex CLI provider.")
-            return await asyncio.to_thread(self._codex_cli_chat, system, user)
+        if self.provider_type in ("codex_cli", "claude_cli"):
+            logger.debug(f"[LLM] Using CLI provider: {self.provider_type}")
+            return await asyncio.to_thread(self._cli_chat, system, user)
         elif self.provider_type == "openai":
             logger.debug("[LLM] Using OpenAI provider.")
             return await self._openai_chat(system, user)
@@ -331,52 +374,95 @@ class Client:
                 logger.error(f"[LLM] Unexpected OpenAI chat response format: {exc}. Full response: {json.dumps(data)[:200]}...")
                 return json.dumps(data)
 
-    def _codex_cli_chat(self, system: str, user: str) -> str:
-        """Execute Codex CLI command and return response with timing and logging."""
+    def _cli_chat(self, system: str, user: str) -> str:
+        """Execute configured CLI provider command and return response with timing and logging."""
         if not self.cli_command:
-            logger.critical("[LLM] FATAL: CODEX_CLI_NO_COMMAND - CLI command not configured.")
-            raise RuntimeError("CODEX_CLI_NO_COMMAND")
+            label = self.provider_type.upper()
+            logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
+            raise RuntimeError(f"{label}_NO_COMMAND")
 
         start_time = time.perf_counter()
-        logger.debug(f"[LLM] Starting Codex CLI chat. Command: {self.cli_command}")
+        logger.debug(f"[LLM] Starting CLI chat for provider '{self.provider_type}'. Command: {self.cli_command}")
 
 
         # Build command arguments
         cmd_args = list(self.cli_command)  # Copy the command list
-
-        # Add any extra args from config
-        if hasattr(self, 'cli_extra_args') and self.cli_extra_args:
+        if self.cli_extra_args:
             cmd_args.extend(self.cli_extra_args)
+
+        if self.cli_debug and self.cli_debug_args:
+            cmd_args.extend(self.cli_debug_args)
+
+        def _has_flag(flag: str) -> bool:
+            for arg in cmd_args:
+                if arg == flag or arg.startswith(f"{flag}="):
+                    return True
+            return False
+
+        if self.cli_append_model_flag and not _has_flag("--model"):
+            cmd_args.extend(["--model", self.model])
+
+        if self.cli_append_temperature_flag and not _has_flag("--temperature"):
+            cmd_args.extend(["--temperature", str(self.temperature)])
+
+        if self.provider_type == "claude_cli":
+            if not _has_flag("--settings"):
+                # The Claude CLI uses the API parameter name `max_tokens_to_sample` within its settings.
+                # Wrap in quotes to ensure proper shell interpretation.
+                settings_json = json.dumps({"max_tokens_to_sample": self.max_tokens}, separators=(',', ':'))
+                # The settings_json is already a string, it will be properly quoted by subprocess
+                cmd_args.extend(["--settings", settings_json])
+        elif self.cli_append_max_tokens_flag and not _has_flag("--max-tokens"):
+            cmd_args.extend(["--max-tokens", str(self.max_tokens)])
+
+        # The system prompt is now combined with the user prompt for stdin_text format
+        if self.cli_append_system_prompt and self.provider_type != "claude_cli" and not _has_flag("--system-prompt"):
+            cmd_args.extend(["--system-prompt", system])
+
+        prompt_template = self.cli_prompt_template or (
+            "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
+        )
+        
+        # For claude_cli with stdin_text, we combine system and user prompts.
+        if self.provider_type == "claude_cli" and self.cli_input_format == "stdin_text":
+            prompt_text = f"{system}\n\n{user}"
+        else:
+            prompt_text = prompt_template.format(
+                system=system,
+                user=user,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                model=self.model,
+            )
 
         # Prepare input based on format
         input_data = None
-        if self.cli_input_format == "stdin":
-            # Send parameters through stdin as JSON
-            cmd_args.extend(["--model", self.model])
-            cmd_args.extend(["--temperature", str(self.temperature)])
-            cmd_args.extend(["--max-tokens", str(self.max_tokens)])
+        normalized_format = (self.cli_input_format or "").lower()
+        if normalized_format in ("stdin", "stdin_json", "json"):
             payload = {
                 "system": system,
                 "user": user,
                 "model": self.model,
                 "temperature": self.temperature,
-                "max_tokens": self.max_tokens
+                "max_tokens": self.max_tokens,
+                "prompt": prompt_text,
             }
             input_data = json.dumps(payload, ensure_ascii=False)
-            logger.debug("[LLM] Codex CLI input format: stdin (JSON payload)")
+            logger.debug("[LLM] CLI input format: stdin (JSON payload)")
+        elif normalized_format in ("stdin_text", "stdin-raw", "text"):
+            input_data = prompt_text
+            logger.debug("[LLM] CLI input format: stdin (text payload)")
         else:
-            # For this specific CLI: only --model flag supported, combine prompts as direct argument
-            cmd_args.extend(["--model", self.model])
-            combined_prompt = f"System: {system}\n\nUser: {user}\n\nSettings: temperature={self.temperature}, max_tokens={self.max_tokens}"
-            cmd_args.extend([combined_prompt])
-            logger.debug("[LLM] Codex CLI input format: direct argument (combined prompt)")
+            cmd_args.append(prompt_text)
+            logger.debug("[LLM] CLI input format: direct argument (combined prompt)")
 
 
         try:
             # Prepare environment
             env = os.environ.copy()
             env.update(self.cli_env)
-            logger.debug(f"[LLM] Codex CLI environment updated with: {self.cli_env}")
+            if self.cli_env:
+                logger.debug(f"[LLM] CLI environment updated with: {self.cli_env}")
 
 
             # Execute command with pty to handle terminal requirements
@@ -424,7 +510,7 @@ class Client:
                         )
                     except subprocess.TimeoutExpired:
                         proc.kill()
-                        logger.error(f"[LLM] Codex CLI command timed out after {self.cli_timeout}s.")
+                        logger.error(f"[LLM] {self.provider_type} command timed out after {self.cli_timeout}s.")
                         raise subprocess.TimeoutExpired(cmd_args, self.cli_timeout)
                 finally:
                     try:
@@ -437,17 +523,47 @@ class Client:
                         pass
 
             duration = time.perf_counter() - start_time
-            logger.debug(f"[LLM] Codex CLI command executed in {duration:.3f} seconds. Return code: {result.returncode}")
+            logger.debug(
+                f"[LLM] CLI command for provider '{self.provider_type}' executed in {duration:.3f} seconds. "
+                f"Return code: {result.returncode}"
+            )
+
+            stderr_text = result.stderr or ""
+            stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
 
 
             if result.returncode != 0:
-                error_msg = result.stderr.strip()[:200] if result.stderr else "Unknown error"
+                error_msg = "Unknown error"
+                # Claude CLI can return errors in stdout as JSON, even with a non-zero exit code.
+                if result.stdout:
+                    try:
+                        data = json.loads(result.stdout.strip())
+                        if isinstance(data, dict) and data.get("is_error"):
+                            error_msg = data.get("result") or data.get("error") or error_msg
+                    except json.JSONDecodeError:
+                        pass  # Not a JSON error, fall back to stderr.
+
+                if error_msg == "Unknown error" and result.stderr:
+                    error_msg = result.stderr.strip()[:200]
+
                 # Log timing and error for debugging
-                self._log_cli_operation(cmd_args, duration, error_msg, success=False)
-                logger.error(f"[LLM] CODEX_CLI_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
-                raise RuntimeError(f"CODEX_CLI_FAILED: {error_msg}")
+                self._log_cli_operation(
+                    cmd_args,
+                    duration,
+                    error_msg,
+                    success=False,
+                    stderr=stderr_for_log,
+                    debug_enabled=self.cli_debug,
+                )
+                label = self.provider_type.upper()
+                logger.error(f"[LLM] {label}_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
+                if result.stderr:
+                    logger.warning(f"[LLM] Stderr from {label}: {result.stderr.strip()}")
+                raise RuntimeError(f"{label}_FAILED: {error_msg}")
 
             response = result.stdout
+            if result.stderr and (self.cli_log_stderr or self.cli_debug):
+                logger.info(f"[LLM] Stderr from {self.provider_type.upper()}: {result.stderr.strip()}")
 
             # Clean response if configured
             if self.cli_output_clean:
@@ -455,36 +571,149 @@ class Client:
                 response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
                 # Trim whitespace
                 response = response.strip()
-                logger.debug("[LLM] Codex CLI response cleaned.")
+                logger.debug("[LLM] CLI response cleaned.")
 
+            if self.cli_parse_json:
+                parsed = self._parse_cli_json_output(response)
+                if parsed is not None:
+                    response = parsed
 
             if not response:
-                self._log_cli_operation(cmd_args, duration, "Empty response", success=False)
-                logger.error("[LLM] CODEX_CLI_EMPTY_RESPONSE: Empty response from Codex CLI.")
-                raise RuntimeError("CODEX_CLI_EMPTY_RESPONSE")
+                self._log_cli_operation(
+                    cmd_args,
+                    duration,
+                    "Empty response",
+                    success=False,
+                    stderr=stderr_for_log,
+                    debug_enabled=self.cli_debug,
+                )
+                label = self.provider_type.upper()
+                logger.error(f"[LLM] {label}_EMPTY_RESPONSE: Empty response from CLI.")
+                raise RuntimeError(f"{label}_EMPTY_RESPONSE")
 
             # Log successful operation
-            self._log_cli_operation(cmd_args, duration, response, success=True)
-            logger.debug("[LLM] Codex CLI operation logged successfully.")
+            self._log_cli_operation(
+                cmd_args,
+                duration,
+                response,
+                success=True,
+                stderr=stderr_for_log,
+                debug_enabled=self.cli_debug,
+            )
+            logger.debug("[LLM] CLI operation logged successfully.")
 
 
             return response
 
         except subprocess.TimeoutExpired:
             duration = time.perf_counter() - start_time
-            self._log_cli_operation(cmd_args, duration, "Timeout", success=False)
-            logger.error(f"[LLM] CODEX_CLI_TIMEOUT: Command timed out after {self.cli_timeout}s.")
-            raise RuntimeError("CODEX_CLI_TIMEOUT")
+            self._log_cli_operation(
+                cmd_args,
+                duration,
+                "Timeout",
+                success=False,
+                stderr=None,
+                debug_enabled=self.cli_debug,
+            )
+            label = self.provider_type.upper()
+            logger.error(f"[LLM] {label}_TIMEOUT: Command timed out after {self.cli_timeout}s.")
+            raise RuntimeError(f"{label}_TIMEOUT")
         except FileNotFoundError:
-            logger.critical(f"[LLM] CODEX_CLI_NOT_FOUND: Command '{cmd_args[0] if cmd_args else 'unknown'}' not found. Is Codex CLI installed and in PATH?")
-            raise RuntimeError("CODEX_CLI_NOT_FOUND")
+            label = self.provider_type.upper()
+            logger.critical(
+                f"[LLM] {label}_NOT_FOUND: Command '{cmd_args[0] if cmd_args else 'unknown'}' not found. "
+                f"Ensure CLI is installed and on PATH."
+            )
+            raise RuntimeError(f"{label}_NOT_FOUND")
         except Exception as e:
             duration = time.perf_counter() - start_time
-            self._log_cli_operation(cmd_args, duration, str(e), success=False)
-            logger.critical(f"[LLM] CODEX_CLI_ERROR: Unhandled exception during Codex CLI call: {str(e)[:200]}", exc_info=True)
-            raise RuntimeError(f"CODEX_CLI_ERROR: {str(e)[:200]}")
+            self._log_cli_operation(
+                cmd_args,
+                duration,
+                str(e),
+                success=False,
+                stderr=None,
+                debug_enabled=self.cli_debug,
+            )
+            label = self.provider_type.upper()
+            logger.critical(
+                f"[LLM] {label}_ERROR: Unhandled exception during CLI call: {str(e)[:200]}",
+                exc_info=True,
+            )
+            raise RuntimeError(f"{label}_ERROR: {str(e)[:200]}")
 
-    def _log_cli_operation(self, cmd_args: list, duration: float, response_or_error: str, success: bool):
+    def _parse_cli_json_output(self, raw_output: str) -> str | None:
+        """Attempt to extract assistant text from JSON CLI responses, handling markdown code blocks."""
+        if not raw_output:
+            return None
+
+        # Regex to find a JSON code block, supporting both ```json and ```
+        json_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_output, re.DOTALL)
+        
+        candidate = raw_output.strip()
+        if json_block_match:
+            candidate = json_block_match.group(1).strip()
+
+        data = None
+        try:
+            data = json.loads(candidate)
+        except json.JSONDecodeError:
+            # Fallback for streaming or line-delimited JSON
+            for line in reversed(raw_output.strip().splitlines()):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    break 
+                except json.JSONDecodeError:
+                    continue
+
+        if not data:
+            return None
+
+        if isinstance(data, dict):
+            content = data.get("content")
+            if isinstance(content, list):
+                segments = []
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        text = part.get("text")
+                        if text:
+                            segments.append(text)
+                if segments:
+                    return "\n".join(segments).strip()
+            if "text" in data and isinstance(data["text"], str):
+                return data["text"].strip()
+
+        if isinstance(data, list):
+            segments = []
+            for item in data:
+                if isinstance(item, dict):
+                    maybe_text = item.get("text")
+                    if isinstance(maybe_text, str):
+                        segments.append(maybe_text)
+                    content = item.get("content")
+                    if isinstance(content, list):
+                        for part in content:
+                            if isinstance(part, dict) and part.get("type") == "text":
+                                text = part.get("text")
+                                if text:
+                                    segments.append(text)
+            if segments:
+                return "\n".join(segments).strip()
+
+        return None
+
+    def _log_cli_operation(
+        self,
+        cmd_args: list,
+        duration: float,
+        response_or_error: str,
+        success: bool,
+        stderr: str | None = None,
+        debug_enabled: bool | None = None,
+    ):
         """Log CLI operation details for monitoring and debugging."""
         try:
             role_dir = re.sub(r"[^a-z0-9_\-]", "-", (self.role or "generic"))
@@ -499,14 +728,18 @@ class Client:
             log_entry = {
                 "timestamp": timestamp,
                 "role": self.role,
-                "provider": "codex_cli",
+                "provider": self.provider_type,
                 "command": cmd_args,
                 "duration_seconds": round(duration, 3),
                 "response_length": len(response_or_error) if success else 0,
                 "success": success,
                 "response": response_or_error if success else None,
-                "error": response_or_error if not success else None
+                "error": response_or_error if not success else None,
             }
+            if stderr:
+                log_entry["stderr"] = stderr
+            if debug_enabled is not None:
+                log_entry["debug"] = debug_enabled
 
             raw_file.write_text(json.dumps(log_entry, indent=2, ensure_ascii=False), encoding="utf-8")
             logger.debug(f"[LLM] CLI operation log saved to {raw_file}")

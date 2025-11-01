@@ -48,6 +48,14 @@ To use models like GPT-4 through a Codex-compatible CLI.
 make set-role role=dev provider=codex_cli model="gpt-4-turbo"
 ```
 
+### Claude Code CLI (Anthropic)
+To call Anthropic's Claude Code via its local CLI (no direct API integration required).
+```bash
+make set-role role=dev provider=claude_cli model="claude-3-5-sonnet-latest"
+```
+*Prerequisites*: run `claude login` (or equivalent token setup) beforehand and ensure the binary is on your `PATH`.
+*Optional verbose mode*: set `debug: true` on the `claude_cli` provider in `config.yaml` to add `--verbose --debug` flags and persist CLI stderr under `artifacts/<role>/last_raw.txt`.
+
 ### Ollama (Local Models)
 To run open-source models like Llama or Mistral on your own machine.
 ```bash

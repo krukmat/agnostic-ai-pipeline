@@ -1,5 +1,5 @@
 # RoRF-based per-prompt recommender configuration
-enabled: true
+enabled: false
 default_threshold: 0.30  # Higher -> more traffic to strong models
 routes:
   ba:
