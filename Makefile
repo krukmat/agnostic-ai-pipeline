@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-PY    := ./.venv/bin/python
+PY    := ./.venv/bin/python -u
 
 help:
 	@echo "Targets:"

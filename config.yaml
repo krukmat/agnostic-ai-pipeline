@@ -15,7 +15,9 @@ providers:
     output_clean: true
     extra_args:
     - --disable
-    - rollout_recorder
+    - rollout-recorder
+    - -c
+    - 'sandbox_permissions=["disk-full-access"]'
     append_temperature: false
     append_max_tokens: false
   claude_cli:

@@ -21,6 +21,10 @@ SRC_DIR = ROOT / "src"
 if SRC_DIR.exists():
     sys.path.insert(0, str(SRC_DIR))
 
+# Add ROOT to sys.path to allow importing scripts package
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 try:
     from recommend.model_recommender import is_enabled as _reco_enabled, recommend_model
 except Exception as exc:  # pragma: no cover - recommender optional
@@ -385,12 +389,14 @@ class Client:
 
     def _cli_chat(self, system: str, user: str) -> str:
         """Execute configured CLI provider command and return response with timing and logging."""
+        logger.debug(f"[LLM] _cli_chat: Entered for provider {self.provider_type}")
         if not self.cli_command:
             label = self.provider_type.upper()
             logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
             raise RuntimeError(f"{label}_NO_COMMAND")
 
         start_time = time.perf_counter()
+        logger.debug(f"[LLM] _cli_chat: Command to execute: {self.cli_command}")
         logger.debug(f"[LLM] Starting CLI chat for provider '{self.provider_type}'. Command: {self.cli_command}")
 
 
@@ -401,6 +407,8 @@ class Client:
 
         if self.cli_debug and self.cli_debug_args:
             cmd_args.extend(self.cli_debug_args)
+
+        logger.debug(f"[LLM] _cli_chat: Full command args: {cmd_args}")
 
         def _has_flag(flag: str) -> bool:
             for arg in cmd_args:
@@ -466,82 +474,31 @@ class Client:
             logger.debug("[LLM] CLI input format: direct argument (combined prompt)")
 
 
+        logger.debug(f"[LLM] _cli_chat: About to execute subprocess. Input format: {self.cli_input_format}")
+        logger.debug(f"[LLM] _cli_chat: Input data length: {len(input_data) if input_data else 0} chars")
+
         try:
             # Prepare environment
             env = os.environ.copy()
             env.update(self.cli_env)
             if self.cli_env:
                 logger.debug(f"[LLM] CLI environment updated with: {self.cli_env}")
+            logger.debug(f"[LLM] _cli_chat: Environment prepared, timeout: {self.cli_timeout}s")
 
 
-            # Execute command with pty to handle terminal requirements
-            try:
-                import pty
-                logger.debug("[LLM] Using pty for subprocess execution.")
-            except ImportError:
-                logger.warning("[LLM] pty module not available. Falling back to direct subprocess.run.")
-                result = subprocess.run(
-                    cmd_args,
-                    input=input_data,
-                    capture_output=True,
-                    text=True,
-                    cwd=self.cli_cwd,
-                    env=env,
-                    timeout=self.cli_timeout
-                )
-            else:
-                try:
-                    master, slave = pty.openpty()
-                except OSError as exc:
-                    logger.warning(f"[LLM] Unable to acquire pty ({exc}). Falling back to direct subprocess.run.")
-                    result = subprocess.run(
-                        cmd_args,
-                        input=input_data,
-                        capture_output=True,
-                        text=True,
-                        cwd=self.cli_cwd,
-                        env=env,
-                        timeout=self.cli_timeout
-                    )
-                else:
-                    try:
-                        proc = subprocess.Popen(
-                            cmd_args,
-                            stdin=slave if input_data else None,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            cwd=self.cli_cwd,
-                            env=env,
-                            text=True
-                        )
-
-                        if input_data:
-                            os.write(master, input_data.encode("utf-8"))
-                            os.write(master, b"\n")
-
-                        try:
-                            stdout, stderr = proc.communicate(timeout=self.cli_timeout)
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
-                            stdout, stderr = proc.communicate()
-                            logger.error(f"[LLM] {self.provider_type} command timed out after {self.cli_timeout}s.")
-                            raise
-
-                        result = subprocess.CompletedProcess(
-                            args=cmd_args,
-                            returncode=proc.returncode,
-                            stdout=stdout,
-                            stderr=stderr
-                        )
-                    finally:
-                        try:
-                            os.close(slave)
-                        except:
-                            pass
-                        try:
-                            os.close(master)
-                        except:
-                            pass
+            # Execute command directly with subprocess.run (simpler and more reliable than pty)
+            logger.debug("[LLM] _cli_chat: Using subprocess.run (no pty)")
+            logger.debug("[LLM] Using subprocess.run for CLI execution.")
+            result = subprocess.run(
+                cmd_args,
+                input=input_data,
+                capture_output=True,
+                text=True,
+                cwd=self.cli_cwd,
+                env=env,
+                timeout=self.cli_timeout
+            )
+            logger.debug(f"[LLM] _cli_chat: subprocess.run completed. Return code: {result.returncode}")
 
             duration = time.perf_counter() - start_time
             logger.debug(

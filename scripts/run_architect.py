@@ -270,14 +270,19 @@ async def run_architect_job(
     iteration_count: int = 1,
     force_tier: str | None = None,
 ) -> dict:
+    logger.debug("[ARCHITECT] Starting run_architect_job")
     ensure_dirs()
+    logger.debug("[ARCHITECT] Directories ensured")
 
     requirements_path = PLANNING / "requirements.yaml"
     requirements_content = requirements_path.read_text(encoding="utf-8") if requirements_path.exists() else ""
+    logger.debug(f"[ARCHITECT] Requirements loaded: {len(requirements_content)} chars")
     concept_meta = extract_original_concept(requirements_content)
     concept_value = (concept or "").strip() or concept_meta
+    logger.debug(f"[ARCHITECT] Concept value: {concept_value}")
 
     stories_content, _stories_snapshot = load_stories()
+    logger.debug("[ARCHITECT] Stories loaded")
 
     if architect_mode == "review_adjustment" and story_id:
         print(f"[ARCHITECT] Programmatic review adjustment for {story_id} (level={detail_level}, iteration={iteration_count})")
@@ -298,31 +303,39 @@ async def run_architect_job(
         print(f"[ARCHITECT] Programmatic adjustment failed; falling back to LLM for {story_id}")
 
     forced = (force_tier or "").strip().lower()
+    logger.debug(f"[ARCHITECT] Force tier: {forced}")
     if forced in {"simple", "medium", "corporate"}:
         complexity_tier = forced
         print(f"[ARCHITECT] Forced complexity tier via env: {complexity_tier}")
     elif architect_mode == "review_adjustment":
         complexity_tier = "medium"
+        logger.debug("[ARCHITECT] Review adjustment mode, tier=medium")
     else:
+        logger.debug("[ARCHITECT] Starting complexity classification")
         # Caching logic for complexity tier
         arch_cache_dir = ROOT / "artifacts" / "architect"
         arch_cache_dir.mkdir(parents=True, exist_ok=True)
         tier_cache_path = arch_cache_dir / "tier_cache.json"
-        
+
         req_hash = hashlib.sha256(requirements_content.encode('utf-8')).hexdigest()
-        
+        logger.debug(f"[ARCHITECT] Requirements hash: {req_hash[:12]}...")
+
         cache = {}
         if tier_cache_path.exists():
             try:
                 cache = json.loads(tier_cache_path.read_text(encoding="utf-8"))
+                logger.debug(f"[ARCHITECT] Cache loaded with {len(cache)} entries")
             except json.JSONDecodeError:
                 cache = {}
+                logger.debug("[ARCHITECT] Cache file corrupted, starting fresh")
 
         if req_hash in cache:
             complexity_tier = cache[req_hash]
             print(f"[ARCHITECT] Using cached complexity tier: {complexity_tier}")
         else:
+            logger.debug("[ARCHITECT] Cache miss, calling LLM to classify complexity...")
             complexity_tier = await classify_complexity_with_llm(requirements_content)
+            logger.debug(f"[ARCHITECT] LLM returned tier: {complexity_tier}")
             cache[req_hash] = complexity_tier
             tier_cache_path.write_text(json.dumps(cache, indent=2), encoding="utf-8")
             print(f"[ARCHITECT] Classified and cached complexity tier: {complexity_tier}")
@@ -445,6 +458,7 @@ async def run_architect_job(
 
 
 async def main() -> None:
+    logger.debug("[ARCHITECT] Entered main()")
     architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
     concept_env = os.environ.get("CONCEPT", "").strip()
     story_id = os.environ.get("STORY", "").strip()
@@ -454,6 +468,7 @@ async def main() -> None:
     except ValueError:
         iteration_count = 1
     force_tier = os.environ.get("FORCE_ARCHITECT_TIER", "").strip().lower()
+    logger.debug(f"[ARCHITECT] Calling run_architect_job with mode={architect_mode}")
 
     result = await run_architect_job(
         concept=concept_env,
@@ -501,7 +516,10 @@ def serve(reload: bool = typer.Option(False, help="Auto-reload server on code ch
 
 
 if __name__ == "__main__":
+    logger.debug(f"[ARCHITECT] __main__ started, sys.argv: {sys.argv}")
     if len(sys.argv) == 1:
+        logger.debug("[ARCHITECT] Running main() via asyncio")
         asyncio.run(main())
     else:
+        logger.debug("[ARCHITECT] Running typer app")
         app()
