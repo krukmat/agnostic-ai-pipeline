@@ -18,98 +18,99 @@ BUSINESS ANALYSIS REQUIREMENTS:
 - **Risk Assessment**: Identify business risks, technical constraints, and mitigation strategies
 - **Usage & Process Complexity**: Estimate total and peak user volumes, concurrent usage profiles, and classify business process complexity (low/medium/high) with justification
 
+**IMPORTANT YAML FORMATTING RULES:**
+- DO NOT use backticks (`) inside YAML values - they break parsing
+- DO NOT use `#` comments in the YAML - generate actual YAML keys and values
+- Use plain text or wrap in double quotes if needed
+- Example: "POST /api/auth/register" NOT `POST /api/auth/register`
+
+**CRITICAL: Generate actual YAML with real keys and values. Do NOT output comments like `# Overview:`, instead output `overview:`**
+
 Output strictly in this fenced block (no extra prose):
+
 ```yaml REQUIREMENTS
-# Business Requirements Document
-# Structure:
+overview:
+  business_context: <market analysis, competitive landscape, strategic positioning>
+  business_objectives:
+    - objective: <specific, measurable business goal>
+      rationale: <why this matters to the business>
+      success_criteria: <how we'll measure achievement>
+  value_proposition: <unique selling points and competitive advantages>
+  target_market: <market size, segments, growth potential>
+  expected_user_volume:
+    estimate: <total customers or users expected in first year>
+    concurrency: <peak simultaneous users or throughput assumptions>
+  process_complexity:
+    level: <low/medium/high>
+    drivers: <key workflow characteristics that drive complexity>
 
-# Overview:
-#   business_context: Market analysis, competitive landscape, strategic positioning
-#   business_objectives:
-#     - objective: Specific, measurable business goal
-#       rationale: Why this matters to the business
-#       success_criteria: How we'll measure achievement
-#   value_proposition: Unique selling points and competitive advantages
-#   target_market: Market size, segments, growth potential
-#   expected_user_volume:
-#     estimate: Total customers or users expected in first year
-#     concurrency: Peak simultaneous users or throughput assumptions
-#   process_complexity:
-#     level: low/medium/high classification
-#     drivers: Key workflow characteristics that drive complexity
+stakeholders:
+  - name: <stakeholder name>
+    role: <position/title>
+    interests: <what they care about>
+    influence: <decision-making power>
+    requirements: <specific needs from the system>
 
-# Stakeholders:
-#   - name: Stakeholder name
-#     role: Position/title
-#     interests: What they care about
-#     influence: Decision-making power
-#     requirements: Specific needs from the system
+user_personas:
+  - id: Persona_001
+    name: <realistic name and title>
+    demographics: <age, location, education, income, tech_savviness>
+    background: <professional background and experience level>
+    goals:
+      primary: <main objective when using the product>
+      secondary: <additional desired outcomes>
+    pain_points:
+      functional: <specific problems the product solves>
+      emotional: <frustrations and anxieties addressed>
+    behaviors: <how they currently solve their problems>
+    technical_requirements: <device preferences, connectivity needs, accessibility>
+    success_metrics: <how they'll measure their own success>
 
-# User Personas:
-#   - id: Persona_001
-#     name: Realistic name and title
-#     demographics: age, location, education, income, tech_savviness
-#     background: Professional background and experience level
-#     goals:
-#       primary: Main objective when using the product
-#       secondary: Additional desired outcomes
-#     pain_points:
-#       functional: Specific problems the product solves
-#       emotional: Frustrations and anxieties addressed
-#     behaviors: How they currently solve their problems
-#     technical_requirements: Device preferences, connectivity needs, accessibility requirements
-#     success_metrics: How they'll measure their own success
+user_journey_maps:
+  - journey_name: <complete user workflow>
+    persona: <which persona this applies to>
+    stages:
+      - stage: <Awareness/Consideration/Decision/Retention>
+        actions: <what user does>
+        touchpoints: <where they interact with product>
+        emotions: <how they feel>
+        opportunities: <moments to improve experience>
 
-# User Journey Maps:
-#   - journey_name: Complete user workflow
-#     persona: Which persona this applies to
-#     stages:
-#       - stage: Awareness/Consideration/Decision/Retention
-#         actions: What user does
-#         touchpoints: Where they interact with product
-#         emotions: How they feel (frustrated, confident, delighted)
-#         opportunities: Moments to improve experience
+functional_requirements:
+  - id: FR001
+    name: <business-focused name>
+    description: <detailed functional description>
+    business_value: <specific value delivered to users/business>
+    user_impact: <how this improves user experience>
+    priority: <Critical/High/Medium/Low>
+    acceptance_criteria:
+      - <specific, testable condition>
+    dependencies: <other FRs or external factors required>
 
-# Functional Requirements:
-#   Each requirement must have:
-#   - id: FR001, FR002, etc.
-#   - name: Business-focused name
-#   - description: Detailed functional description
-#   - business_value: Specific value delivered to users/business
-#   - user_impact: How this improves user experience
-#   - priority: Critical/High/Medium/Low with business justification
-#   - acceptance_criteria:
-#     - Specific, testable conditions
-#     - Include edge cases and error scenarios
-#   - dependencies: Other FRs or external factors required
-#   - business_rules: Domain-specific rules and constraints
-#   - kpi_impact: Which KPIs this requirement affects
+non_functional_requirements:
+  performance: <response times, throughput requirements>
+  security: <data protection, access controls, compliance>
+  usability: <accessibility, internationalization, user experience>
+  scalability: <user load, data volume, geographic expansion>
+  reliability: <uptime, error rates, disaster recovery>
 
-# Non-Functional Requirements:
-#   - performance: Response times, throughput requirements
-#   - security: Data protection, access controls, compliance
-#   - usability: Accessibility, internationalization, user experience
-#   - scalability: User load, data volume, geographic expansion
-#   - reliability: Uptime, error rates, disaster recovery
+success_metrics:
+  kpis:
+    - name: <metric name>
+      description: <what it measures>
+      target: <specific numerical target>
+      measurement_method: <how to collect data>
+      business_impact: <why this matters>
 
-# Success Metrics:
-#   kpis:
-#     - name: Metric name
-#       description: What it measures
-#       target: Specific numerical target
-#       measurement_method: How to collect data
-#       business_impact: Why this matters
+assumptions_and_constraints:
+  business_assumptions: <market and user behavior assumptions>
+  technical_constraints: <platform and integration limitations>
+  regulatory_requirements: <compliance and legal considerations>
 
-# Assumptions and Constraints:
-#   - business_assumptions: Market and user behavior assumptions
-#   - technical_constraints: Platform and integration limitations
-#   - regulatory_requirements: Compliance and legal considerations
-#   - resource_constraints: Budget, time, and skill limitations
-
-# Risk Assessment:
-#   - business_risks: Market, competitive, and financial risks
-#   - technical_risks: Implementation and operational risks
-#   - mitigation_strategies: How to address identified risks
+risk_assessment:
+  business_risks: <market, competitive, and financial risks>
+  technical_risks: <implementation and operational risks>
+  mitigation_strategies: <how to address identified risks>
 ```
 
 Guidelines:

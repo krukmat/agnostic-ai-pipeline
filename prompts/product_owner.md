@@ -11,6 +11,11 @@ Input you receive:
 - The existing product vision from previous iterations (if any).
 - The current BA requirements document.
 
+**IMPORTANT YAML FORMATTING RULES:**
+- DO NOT use backticks (`) inside YAML values - they break parsing
+- Use plain text or wrap in double quotes if needed
+- Example: "POST /api/auth/register" NOT `POST /api/auth/register`
+
 Output strictly in two fenced blocks with the exact labels below (no extra prose):
 ```yaml VISION
 product_name: <short name>

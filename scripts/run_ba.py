@@ -41,7 +41,55 @@ async def generate_requirements(concept: str) -> dict:
         logger.debug(f"[BA] Grabbed '{tag}:{label}' with {len(content)} characters")
         return content
 
+    def sanitize_yaml(content: str) -> str:
+        """Remove markdown backticks from YAML content to prevent parsing errors.
+
+        Task: fix-stories - YAML sanitization for BA output
+        """
+        if not content.strip():
+            return content
+
+        try:
+            # Try to parse and re-serialize to ensure valid YAML
+            data = yaml.safe_load(content)
+            # Re-serialize with safe_dump to ensure proper formatting
+            sanitized = yaml.safe_dump(
+                data,
+                sort_keys=False,
+                allow_unicode=True,
+                default_flow_style=False
+            )
+            logger.debug(f"[BA] YAML sanitized via parse/dump cycle")
+            return sanitized
+        except yaml.YAMLError as exc:
+            # If parsing fails, try regex-based backtick removal
+            logger.warning(f"[BA] YAML parsing failed: {exc}. Attempting regex cleanup...")
+
+            # Remove backticks from YAML values
+            # Pattern: match backticks that are likely markdown formatting
+            cleaned = re.sub(r'`([^`]+?)`', r'\1', content)
+
+            # Try parsing again after cleanup
+            try:
+                data = yaml.safe_load(cleaned)
+                sanitized = yaml.safe_dump(
+                    data,
+                    sort_keys=False,
+                    allow_unicode=True,
+                    default_flow_style=False
+                )
+                logger.info(f"[BA] YAML sanitized via regex cleanup")
+                return sanitized
+            except yaml.YAMLError as exc2:
+                logger.error(f"[BA] YAML sanitization failed even after cleanup: {exc2}")
+                # Return cleaned version anyway, it's better than corrupted
+                return cleaned
+
     requirements_text = grab("yaml", "REQUIREMENTS")
+
+    # Task: fix-stories - Sanitize YAML before adding metadata
+    requirements_text = sanitize_yaml(requirements_text)
+
     if concept:
         try:
             meta_block = yaml.safe_dump({"meta": {"original_request": concept}}, sort_keys=False).strip()

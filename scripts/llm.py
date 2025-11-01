@@ -246,7 +246,8 @@ class Client:
 
         if self.provider_type in ("codex_cli", "claude_cli"):
             logger.debug(f"[LLM] Using CLI provider: {self.provider_type}")
-            return await asyncio.to_thread(self._cli_chat, system, user)
+            # Task: fix async CLI execution - use async subprocess instead of thread pool
+            return await self._cli_chat_async(system, user)
         elif self.provider_type == "openai":
             logger.debug("[LLM] Using OpenAI provider.")
             return await self._openai_chat(system, user)
@@ -386,6 +387,216 @@ class Client:
             except Exception as exc:
                 logger.error(f"[LLM] Unexpected OpenAI chat response format: {exc}. Full response: {json.dumps(data)[:200]}...")
                 return json.dumps(data)
+
+    async def _cli_chat_async(self, system: str, user: str) -> str:
+        """Async version of _cli_chat using asyncio subprocess.
+
+        Task: fix async CLI execution - native async subprocess instead of thread pool
+        """
+        start_time = time.perf_counter()
+        logger.debug(f"[LLM] _cli_chat_async: Entered for provider {self.provider_type}")
+
+        if not self.cli_command:
+            label = self.provider_type.upper()
+            logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
+            raise RuntimeError(f"{label}_NO_COMMAND")
+
+        # Build command arguments
+        cmd_args = list(self.cli_command)
+        if self.cli_extra_args:
+            cmd_args.extend(self.cli_extra_args)
+
+        if self.cli_debug and self.cli_debug_args:
+            cmd_args.extend(self.cli_debug_args)
+
+        logger.debug(f"[LLM] _cli_chat_async: Full command args: {cmd_args}")
+
+        def _has_flag(flag: str) -> bool:
+            for arg in cmd_args:
+                if arg == flag or arg.startswith(f"{flag}="):
+                    return True
+            return False
+
+        if self.cli_append_model_flag and not _has_flag("--model"):
+            cmd_args.extend(["--model", self.model])
+
+        if self.cli_append_temperature_flag and not _has_flag("--temperature"):
+            cmd_args.extend(["--temperature", str(self.temperature)])
+
+        if self.provider_type == "claude_cli":
+            if not _has_flag("--settings"):
+                settings_json = json.dumps({"max_tokens_to_sample": self.max_tokens}, separators=(',', ':'))
+                cmd_args.extend(["--settings", settings_json])
+        elif self.cli_append_max_tokens_flag and not _has_flag("--max-tokens"):
+            cmd_args.extend(["--max-tokens", str(self.max_tokens)])
+
+        if self.cli_append_system_prompt and self.provider_type != "claude_cli" and not _has_flag("--system-prompt"):
+            cmd_args.extend(["--system-prompt", system])
+
+        prompt_template = self.cli_prompt_template or (
+            "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
+        )
+
+        if self.provider_type == "claude_cli" and self.cli_input_format == "stdin_text":
+            prompt_text = f"{system}\n\n{user}"
+        else:
+            prompt_text = prompt_template.format(
+                system=system,
+                user=user,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                model=self.model,
+            )
+
+        # Prepare input based on format
+        input_data = None
+        normalized_format = (self.cli_input_format or "").lower()
+        if normalized_format in ("stdin", "stdin_json", "json"):
+            payload = {
+                "system": system,
+                "user": user,
+                "model": self.model,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "prompt": prompt_text,
+            }
+            input_data = json.dumps(payload, ensure_ascii=False)
+            logger.debug("[LLM] CLI input format: stdin (JSON payload)")
+        elif normalized_format in ("stdin_text", "stdin-raw", "text"):
+            input_data = prompt_text
+            logger.debug("[LLM] CLI input format: stdin (text payload)")
+        else:
+            cmd_args.append(prompt_text)
+            logger.debug("[LLM] CLI input format: direct argument (combined prompt)")
+
+        logger.debug(f"[LLM] _cli_chat_async: Input data length: {len(input_data) if input_data else 0} chars")
+
+        try:
+            # Prepare environment
+            env = os.environ.copy()
+            env.update(self.cli_env)
+            if self.cli_env:
+                logger.debug(f"[LLM] CLI environment updated with: {self.cli_env}")
+            logger.debug(f"[LLM] _cli_chat_async: Environment prepared, timeout: {self.cli_timeout}s")
+
+            # Execute command using async subprocess
+            logger.debug("[LLM] _cli_chat_async: Using asyncio.create_subprocess_exec")
+            process = await asyncio.create_subprocess_exec(
+                *cmd_args,
+                stdin=asyncio.subprocess.PIPE if input_data else None,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.cli_cwd,
+                env=env
+            )
+
+            # Communicate with timeout
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    process.communicate(input_data.encode('utf-8') if input_data else None),
+                    timeout=self.cli_timeout
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                duration = time.perf_counter() - start_time
+                self._log_cli_operation(
+                    cmd_args,
+                    duration,
+                    "Timeout",
+                    success=False,
+                    stderr=None,
+                    debug_enabled=self.cli_debug,
+                )
+                label = self.provider_type.upper()
+                logger.error(f"[LLM] {label}_TIMEOUT: Command timed out after {self.cli_timeout}s.")
+                raise RuntimeError(f"{label}_TIMEOUT")
+
+            stdout_text = stdout_bytes.decode('utf-8', errors='replace')
+            stderr_text = stderr_bytes.decode('utf-8', errors='replace')
+            returncode = process.returncode
+
+            logger.debug(f"[LLM] _cli_chat_async: subprocess completed. Return code: {returncode}")
+
+            duration = time.perf_counter() - start_time
+            logger.debug(
+                f"[LLM] CLI command for provider '{self.provider_type}' executed in {duration:.3f} seconds. "
+                f"Return code: {returncode}"
+            )
+
+            stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
+
+            if returncode != 0:
+                error_msg = "Unknown error"
+                if stdout_text:
+                    try:
+                        data = json.loads(stdout_text.strip())
+                        if isinstance(data, dict) and data.get("is_error"):
+                            error_msg = data.get("result") or data.get("error") or error_msg
+                    except json.JSONDecodeError:
+                        pass
+
+                if error_msg == "Unknown error" and stderr_text:
+                    error_msg = stderr_text.strip()[:200]
+
+                self._log_cli_operation(
+                    cmd_args,
+                    duration,
+                    error_msg,
+                    success=False,
+                    stderr=stderr_for_log,
+                    debug_enabled=self.cli_debug,
+                )
+                label = self.provider_type.upper()
+                logger.error(f"[LLM] {label}_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
+                if stderr_text:
+                    logger.warning(f"[LLM] Stderr from {label}: {stderr_text.strip()}")
+                raise RuntimeError(f"{label}_FAILED: {error_msg}")
+
+            response = stdout_text
+            if stderr_text and (self.cli_log_stderr or self.cli_debug):
+                logger.info(f"[LLM] Stderr from {self.provider_type.upper()}: {stderr_text.strip()}")
+
+            if self.cli_output_clean:
+                response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
+                response = response.strip()
+                logger.debug("[LLM] CLI response cleaned.")
+
+            if self.cli_parse_json:
+                parsed = self._parse_cli_json_output(response)
+                if parsed is not None:
+                    response = parsed
+
+            if not response:
+                self._log_cli_operation(
+                    cmd_args,
+                    duration,
+                    "Empty response",
+                    success=False,
+                    stderr=stderr_for_log,
+                    debug_enabled=self.cli_debug,
+                )
+                label = self.provider_type.upper()
+                logger.error(f"[LLM] {label}_EMPTY_RESPONSE: Empty response from CLI.")
+                raise RuntimeError(f"{label}_EMPTY_RESPONSE")
+
+            self._log_cli_operation(
+                cmd_args,
+                duration,
+                response,
+                success=True,
+                stderr=stderr_for_log,
+                debug_enabled=self.cli_debug,
+            )
+            logger.debug("[LLM] CLI operation logged successfully.")
+
+            return response
+
+        except Exception as exc:
+            if "TIMEOUT" not in str(exc) and "FAILED" not in str(exc):
+                duration = time.perf_counter() - start_time
+                logger.error(f"[LLM] CLI execution failed: {exc}")
+            raise
 
     def _cli_chat(self, system: str, user: str) -> str:
         """Execute configured CLI provider command and return response with timing and logging."""

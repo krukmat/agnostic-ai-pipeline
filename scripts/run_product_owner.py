@@ -41,6 +41,51 @@ def grab_block(text: str, tag: str, label: str) -> str:
     return content
 
 
+def sanitize_yaml(content: str) -> str:
+    """Remove markdown backticks from YAML content to prevent parsing errors.
+
+    Task: fix-stories - YAML sanitization for PO output
+    """
+    if not content.strip():
+        return content
+
+    try:
+        # Try to parse and re-serialize to ensure valid YAML
+        data = yaml.safe_load(content)
+        # Re-serialize with safe_dump to ensure proper formatting
+        sanitized = yaml.safe_dump(
+            data,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False
+        )
+        logger.debug(f"[PO] YAML sanitized via parse/dump cycle")
+        return sanitized
+    except yaml.YAMLError as exc:
+        # If parsing fails, try regex-based backtick removal
+        logger.warning(f"[PO] YAML parsing failed: {exc}. Attempting regex cleanup...")
+
+        # Remove backticks from YAML values
+        # Pattern: match backticks that are likely markdown formatting
+        cleaned = re.sub(r'`([^`]+?)`', r'\1', content)
+
+        # Try parsing again after cleanup
+        try:
+            data = yaml.safe_load(cleaned)
+            sanitized = yaml.safe_dump(
+                data,
+                sort_keys=False,
+                allow_unicode=True,
+                default_flow_style=False
+            )
+            logger.info(f"[PO] YAML sanitized via regex cleanup")
+            return sanitized
+        except yaml.YAMLError as exc2:
+            logger.error(f"[PO] YAML sanitization failed even after cleanup: {exc2}")
+            # Return cleaned version anyway, it's better than corrupted
+            return cleaned
+
+
 def build_user_payload(concept: str, existing_vision: str, requirements: str) -> str:
     concept_section = concept or "(concept not provided)"
     vision_section = existing_vision.strip() if existing_vision else "(no existing vision)"
@@ -84,14 +129,17 @@ async def main() -> None:
     vision_yaml = grab_block(response, "yaml", "VISION")
     review_yaml = grab_block(response, "yaml", "REVIEW")
 
+    # Task: fix-stories - Sanitize YAML before writing
     if vision_yaml:
-        VISION_PATH.write_text(vision_yaml.strip() + "\n", encoding="utf-8")
+        sanitized_vision = sanitize_yaml(vision_yaml)
+        VISION_PATH.write_text(sanitized_vision.strip() + "\n", encoding="utf-8")
         logger.info("✓ product_vision.yaml updated")
     else:
         logger.warning("[PO] VISION block missing in LLM response")
 
     if review_yaml:
-        REVIEW_PATH.write_text(review_yaml.strip() + "\n", encoding="utf-8")
+        sanitized_review = sanitize_yaml(review_yaml)
+        REVIEW_PATH.write_text(sanitized_review.strip() + "\n", encoding="utf-8")
         logger.info("✓ product_owner_review.yaml updated")
     else:
         logger.warning("[PO] REVIEW block missing in LLM response")

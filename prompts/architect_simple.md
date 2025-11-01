@@ -12,6 +12,11 @@ SIMPLIFIED GUIDELINES:
 
 OUTPUT STRICTLY IN THIS FORMAT:
 
+**IMPORTANT YAML FORMATTING RULES:**
+- DO NOT use backticks (`) inside YAML values - they break parsing
+- Use plain text or wrap in double quotes if needed
+- Example: "POST /api/auth/register" NOT `POST /api/auth/register`
+
 ```yaml EPICS
 - id: E1
   name: Epic Name

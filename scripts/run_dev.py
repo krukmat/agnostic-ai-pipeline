@@ -145,29 +145,64 @@ def extract_files_block(text: str, story_id: str) -> List[Dict[str, str]] | None
     story_art_dir.mkdir(parents=True, exist_ok=True)
     (story_art_dir / "last_raw.txt").write_text(text, encoding="utf-8")
 
-    candidates: List[str] = []
-
-    # Try to find a single JSON object representing a file
-    json_match = re.search(r'(\{[\s\S]*?\})', text.strip())
-    if json_match:
-        candidates.append(json_match.group(1))
-        logger.debug(f"[DEV] Found JSON block candidate with {len(json_match.group(1))} characters.")
-    else:
-        logger.debug("[DEV] No JSON block candidate found.")
-
-
-    # Extract and clean file object
-    parsed_file_entry = None
-    for candidate in candidates:
+    def _json_load(candidate: str) -> Any | None:
         try:
-            parsed = json.loads(candidate.strip())
+            return json.loads(candidate)
+        except Exception as exc:
+            logger.debug(f"[DEV] Failed to load JSON candidate: {exc}")
+            return None
+
+    def _find_file_entry(obj: Any) -> Dict[str, Any] | None:
+        if isinstance(obj, dict):
+            if "path" in obj and "code" in obj:
+                return obj
+            for value in obj.values():
+                if isinstance(value, (dict, list)):
+                    found = _find_file_entry(value)
+                    if found:
+                        return found
+                elif isinstance(value, str):
+                    candidate = value.strip()
+                    if candidate.startswith("{") or candidate.startswith("["):
+                        nested = _json_load(candidate)
+                        if nested:
+                            found = _find_file_entry(nested)
+                            if found:
+                                return found
+        elif isinstance(obj, list):
+            for item in obj:
+                found = _find_file_entry(item)
+                if found:
+                    return found
+        return None
+
+    parsed_file_entry = None
+    stripped_text = text.strip()
+
+    # First, attempt to load the entire payload as JSON (covers wrapped responses)
+    top_level = _json_load(stripped_text)
+    if top_level:
+        parsed_file_entry = _find_file_entry(top_level)
+        if parsed_file_entry:
+            logger.debug("[DEV] Extracted file entry from top-level JSON structure.")
+
+    # Fallback: search for inline JSON object snippets
+    if not parsed_file_entry:
+        candidates: List[str] = []
+        for match in re.finditer(r"(\{[\s\S]*?\})", stripped_text):
+            candidates.append(match.group(1))
+
+        if candidates:
+            logger.debug(f"[DEV] Scanned {len(candidates)} inline JSON candidate(s).")
+        else:
+            logger.debug("[DEV] No inline JSON candidates located.")
+
+        for candidate in candidates:
+            parsed = _json_load(candidate.strip())
             if isinstance(parsed, dict) and "path" in parsed and "code" in parsed:
                 parsed_file_entry = parsed
-                logger.debug("[DEV] Successfully parsed file entry from JSON block.")
+                logger.debug("[DEV] Successfully parsed file entry from inline JSON block.")
                 break
-        except Exception as exc:
-            logger.debug(f"[DEV] Failed to parse JSON candidate: {exc}")
-            continue
 
     if not parsed_file_entry:
         logger.warning("[DEV] No valid FILES JSON block parsed from LLM response.")

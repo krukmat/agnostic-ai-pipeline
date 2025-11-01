@@ -389,6 +389,50 @@ async def run_architect_job(
         match = pattern.search(text)
         return match.group(1).strip() if match else ""
 
+    def sanitize_yaml(content: str) -> str:
+        """Remove markdown backticks from YAML content to prevent parsing errors.
+
+        Task: fix-stories - YAML sanitization for architect output
+        """
+        if not content.strip():
+            return content
+
+        try:
+            # Try to parse and re-serialize to ensure valid YAML
+            data = yaml.safe_load(content)
+            # Re-serialize with safe_dump to ensure proper formatting
+            sanitized = yaml.safe_dump(
+                data,
+                sort_keys=False,
+                allow_unicode=True,
+                default_flow_style=False
+            )
+            logger.debug(f"[ARCHITECT] YAML sanitized via parse/dump cycle")
+            return sanitized
+        except yaml.YAMLError as exc:
+            # If parsing fails, try regex-based backtick removal
+            logger.warning(f"[ARCHITECT] YAML parsing failed: {exc}. Attempting regex cleanup...")
+
+            # Remove backticks from YAML values
+            # Pattern: match backticks that are likely markdown formatting
+            cleaned = re.sub(r'`([^`]+?)`', r'\1', content)
+
+            # Try parsing again after cleanup
+            try:
+                data = yaml.safe_load(cleaned)
+                sanitized = yaml.safe_dump(
+                    data,
+                    sort_keys=False,
+                    allow_unicode=True,
+                    default_flow_style=False
+                )
+                logger.info(f"[ARCHITECT] YAML sanitized via regex cleanup")
+                return sanitized
+            except yaml.YAMLError as exc2:
+                logger.error(f"[ARCHITECT] YAML sanitization failed even after cleanup: {exc2}")
+                # Return cleaned version anyway, it's better than corrupted
+                return cleaned
+
     # Extract and save all planning artifacts
     prd_content = grab("yaml", "PRD")
     if not prd_content:
@@ -434,11 +478,25 @@ async def run_architect_job(
         if not tasks_content:
             print("[ARCHITECT] ERROR: TASKS block still missing after retry.")
 
-    (PLANNING / "prd.yaml").write_text(prd_content, encoding="utf-8")
-    (PLANNING / "architecture.yaml").write_text(arch_content, encoding="utf-8")
-    (PLANNING / "epics.yaml").write_text(grab("yaml", "EPICS"), encoding="utf-8")
-    (PLANNING / "stories.yaml").write_text(grab("yaml", "STORIES"), encoding="utf-8")
-    (PLANNING / "tasks.csv").write_text(tasks_content, encoding="utf-8")
+    # Task: fix-stories - Apply YAML sanitization to all outputs
+    # Only write files that have actual content (not empty)
+    if prd_content:
+        (PLANNING / "prd.yaml").write_text(sanitize_yaml(prd_content), encoding="utf-8")
+    else:
+        (PLANNING / "prd.yaml").write_text("", encoding="utf-8")  # Empty file for simple tier
+
+    if arch_content:
+        (PLANNING / "architecture.yaml").write_text(sanitize_yaml(arch_content), encoding="utf-8")
+    else:
+        (PLANNING / "architecture.yaml").write_text("", encoding="utf-8")  # Empty file for simple tier
+
+    (PLANNING / "epics.yaml").write_text(sanitize_yaml(grab("yaml", "EPICS")), encoding="utf-8")
+    (PLANNING / "stories.yaml").write_text(sanitize_yaml(grab("yaml", "STORIES")), encoding="utf-8")
+
+    if tasks_content:
+        (PLANNING / "tasks.csv").write_text(tasks_content, encoding="utf-8")
+    else:
+        (PLANNING / "tasks.csv").write_text("", encoding="utf-8")  # Empty file for simple tier
 
     print("✓ planning written under planning/")
 
