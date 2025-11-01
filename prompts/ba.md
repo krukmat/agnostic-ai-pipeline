@@ -54,7 +54,10 @@ stakeholders:
 user_personas:
   - id: Persona_001
     name: <realistic name and title>
-    demographics: <age, location, education, income, tech_savviness>
+    demographics:
+      - age: <e.g., 35>
+      - location: <e.g., New York, USA>
+      - education: <e.g., Bachelor's in Marketing>
     background: <professional background and experience level>
     goals:
       primary: <main objective when using the product>

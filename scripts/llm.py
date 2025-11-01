@@ -346,7 +346,8 @@ class Client:
 
         extra_kwargs = {}
         if isinstance(self.provider_options, dict):
-            for key in ("project_id", "location", "temperature", "max_output_tokens"):
+            # Pass only project_id and location as extra kwargs, as others are passed directly.
+            for key in ("project_id", "location"):
                 if key in self.provider_options:
                     resolved = _sanitize(self.provider_options.get(key))
                     if resolved is not None:
@@ -563,9 +564,12 @@ class Client:
                 logger.debug("[LLM] CLI response cleaned.")
 
             if self.cli_parse_json:
+                # This logic is now robust enough for any provider.
                 parsed = self._parse_cli_json_output(response)
                 if parsed is not None:
                     response = parsed
+                else:
+                    logger.warning(f"[LLM] Failed to parse JSON from response: {response[:500]}")
 
             if not response:
                 self._log_cli_operation(
@@ -905,11 +909,7 @@ class Client:
     ):
         """Log CLI operation details for monitoring and debugging."""
         try:
-            role_dir = re.sub(r"[^a-z0-9_\-]", "-", (self.role or "generic"))
-            if not role_dir:
-                role_dir = "generic"
-
-            artifacts_dir = ROOT / "artifacts" / role_dir
+            artifacts_dir = ROOT / "artifacts"
             artifacts_dir.mkdir(parents=True, exist_ok=True)
             raw_file = artifacts_dir / "last_raw.txt"
 

@@ -8,6 +8,13 @@ from typing import Dict, List
 
 import httpx
 
+# Import logger for debugging
+try:
+    from logger import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
 
 def _env(name: str, default: str | None = None) -> str:
     value = os.environ.get(name, default)
@@ -63,14 +70,34 @@ def _call_generate_content(
         response = client.post(url, headers=headers, json=payload)
         response.raise_for_status()
         data = response.json()
+
+    # Task: fix-vertex-cli-truncation - debug logging
     candidates = data.get("candidates", [])
     if not candidates:
+        logger.warning("[VERTEX_CLI] No candidates in response")
         return ""
-    parts = candidates[0].get("content", {}).get("parts", [])
-    for part in parts:
-        if "text" in part:
-            return part["text"]
-    return ""
+
+    candidate = candidates[0]
+    finish_reason = candidate.get("finishReason")
+    safety_ratings = candidate.get("safetyRatings", [])
+
+    logger.debug(f"[VERTEX_CLI] finishReason: {finish_reason}")
+    logger.debug(f"[VERTEX_CLI] safetyRatings: {safety_ratings}")
+
+    # Task: fix-vertex-cli-truncation - concatenate all text parts instead of returning first
+    parts = candidate.get("content", {}).get("parts", [])
+    logger.debug(f"[VERTEX_CLI] Parts count: {len(parts)}")
+
+    text_parts = []
+    for idx, part in enumerate(parts):
+        if "text" in part and part["text"]:
+            part_len = len(part["text"])
+            logger.debug(f"[VERTEX_CLI] Part {idx} length: {part_len}")
+            text_parts.append(part["text"])
+
+    result = "".join(text_parts) if text_parts else ""
+    logger.debug(f"[VERTEX_CLI] Total result length: {len(result)}")
+    return result
 
 
 def _call_openai_compat(

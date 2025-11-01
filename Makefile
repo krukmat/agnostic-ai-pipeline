@@ -20,6 +20,14 @@ help:
 	@echo "  set-quality  -> profile=<low|normal|high> [role=...]"
 	@echo "  clean        -> Limpia artifacts/ y reestablece planning/ + project/ (usa CLEAN_FLUSH=0 para conservarlos)"
 	@echo "  warmup       -> Inicia los servicios A2A remotos necesarios"
+	@echo "  spike        -> BA→PO→Architect→Dev sin QA para pruebas de concepto"
+
+spike:
+	@echo "==> Ejecutando spike (BA→PO→Architect→Dev)..."
+	$(MAKE) ba CONCEPT="$${CONCEPT}"
+	$(MAKE) po
+	$(MAKE) plan
+	LOOP_MODE=dev_only $(MAKE) loop
 
 setup:
 	python3 -m venv .venv || true
