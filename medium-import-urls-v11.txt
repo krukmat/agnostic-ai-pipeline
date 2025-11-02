@@ -1,0 +1,7 @@
+https://krukmat.github.io/agnostic-ai-pipeline/01-roles-to-agents-v11/
+https://krukmat.github.io/agnostic-ai-pipeline/04-tools-integration-cline-ollama-routers-v11/
+https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks-v11/
+https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints-v11/
+https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety-v11/
+https://krukmat.github.io/agnostic-ai-pipeline/02-cost-first-orchestration-v11/
+https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v11/
