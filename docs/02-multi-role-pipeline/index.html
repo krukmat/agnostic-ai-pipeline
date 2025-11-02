@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inside the AI Development Team: BA → Architect → Developer → QA</title>
+  <meta name="description" content="How a multi-role AI pipeline actually works: from business concept to production code.">
+  <meta property="og:title" content="Inside the AI Development Team: BA → Architect → Developer → QA">
+  <meta property="og:description" content="How a multi-role AI pipeline actually works: from business concept to production code.">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root { --maxw: 720px; --accent: #0066cc; }
+    body {
+      font-family: Georgia, Cambria, "Times New Roman", serif;
+      line-height: 1.75;
+      color: #1a1a1a;
+      background: #fff;
+      margin: 0;
+      padding: 0;
+    }
+    main {
+      max-width: var(--maxw);
+      margin: 3rem auto;
+      padding: 0 1.5rem;
+    }
+    h1 {
+      font-size: 2.4rem;
+      line-height: 1.2;
+      margin: 1.5rem 0 0.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      font-size: 1.75rem;
+      margin: 2.5rem 0 1rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    h3 {
+      font-size: 1.3rem;
+      margin: 2rem 0 0.75rem;
+      font-weight: 600;
+    }
+    .subtitle {
+      font-size: 1.25rem;
+      color: #666;
+      margin: 0.5rem 0 2rem;
+      font-style: italic;
+    }
+    .meta {
+      color: #999;
+      font-size: 0.95rem;
+      margin-bottom: 2rem;
+      font-family: -apple-system, system-ui, sans-serif;
+    }
+    p { margin: 1.25rem 0; }
+    .callout {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin: 2rem 0;
+      font-size: 1.1rem;
+    }
+    .callout strong { color: #fff; }
+    .insight-box {
+      background: #f8f9fa;
+      border-left: 4px solid var(--accent);
+      padding: 1.25rem 1.5rem;
+      margin: 2rem 0;
+      font-size: 1.05rem;
+    }
+    pre {
+      overflow-x: auto;
+      background: #282c34;
+      color: #abb2bf;
+      padding: 1.25rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin: 1.5rem 0;
+    }
+    code {
+      font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", monospace;
+      background: #f5f5f5;
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    .mermaid {
+      background: #f8f9fa;
+      padding: 2rem 1rem;
+      border-radius: 8px;
+      margin: 2rem 0;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+    a:hover {
+      border-bottom-color: var(--accent);
+    }
+    .repo-link {
+      background: #24292e;
+      color: white;
+      padding: 1rem 1.5rem;
+      border-radius: 6px;
+      display: inline-block;
+      margin: 2rem 0;
+      font-family: -apple-system, system-ui, sans-serif;
+      font-weight: 500;
+    }
+    .repo-link:hover {
+      background: #1a1f24;
+      border-bottom: none;
+    }
+    ul, ol {
+      margin: 1.25rem 0;
+      padding-left: 1.75rem;
+    }
+    li { margin: 0.75rem 0; }
+    .footer {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid #e5e5e5;
+      color: #999;
+      font-size: 0.9rem;
+      font-family: -apple-system, system-ui, sans-serif;
+    }
+    blockquote {
+      border-left: 4px solid #ddd;
+      margin: 2rem 0;
+      padding-left: 1.5rem;
+      color: #666;
+      font-style: italic;
+    }
+    .role-card {
+      background: #f8f9fa;
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin: 1.5rem 0;
+      border-left: 4px solid var(--accent);
+    }
+    .role-card h4 {
+      margin-top: 0;
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Inside the AI Development Team: BA → Architect → Developer → QA</h1>
+    <p class="subtitle">How a multi-role AI pipeline actually works: from business concept to production code (and what gets generated along the way).</p>
+    <p class="meta">Part 2 of 7 • 12 min read • <a href="../00-vision-ok/">← Part 1: The Vision</a></p>
+
+    <h2>The Reality Check</h2>
+
+    <p>In <a href="../00-vision-ok/">Part 1</a>, I showed you the vision: a pipeline that treats AI models like infrastructure. Now let's talk about how it actually works.</p>
+
+    <p>Here's the truth: it's not magic. It's just a bunch of specialized roles, each doing one thing well, passing artifacts to the next role in line.</p>
+
+    <p>Think of it like a real development team. You wouldn't ask your QA engineer to write the architecture docs. You wouldn't ask your business analyst to implement the backend. Same principle here.</p>
+
+    <h2>The Five Roles (and What They Actually Do)</h2>
+
+    <div class="mermaid">
+flowchart LR
+    A[Business Analyst] -->|requirements.yaml| B[Product Owner]
+    B -->|product_vision.yaml| C[Architect]
+    C -->|stories.yaml| D[Developer]
+    D -->|code + tests| E[QA]
+    E -->|approval| F[Done]
+    E -->|failure| C
+
+    style A fill:#e1f5ff
+    style B fill:#fff4e1
+    style C fill:#ffe1f5
+    style D fill:#e1ffe1
+    style E fill:#ffe1e1
+    style F fill:#d4edda
+    </div>
+
+    <p>Let me walk you through what happens when you run <code>make iteration CONCEPT="User login with email"</code>.</p>
+
+    <h3>1. Business Analyst (BA)</h3>
+
+    <div class="role-card">
+      <h4>Role: Business Analyst</h4>
+      <p><strong>Input:</strong> Your concept string</p>
+      <p><strong>Output:</strong> <code>planning/requirements.yaml</code></p>
+      <p><strong>Model:</strong> Ollama (local, free)</p>
+      <p><strong>Cost:</strong> $0</p>
+    </div>
+
+    <p>The BA's job is simple: understand what you want to build.</p>
+
+    <p>You give it a vague concept like "User login with email and password". It asks itself questions a real BA would ask:</p>
+
+    <ul>
+      <li>What are the functional requirements?</li>
+      <li>What are the non-functional requirements (security, performance)?</li>
+      <li>What constraints exist?</li>
+      <li>What's in scope? What's out of scope?</li>
+    </ul>
+
+    <p>Then it writes a <code>requirements.yaml</code> file that looks like this:</p>
+
+    <pre><code class="language-yaml">project_name: "User Authentication System"
+functional_requirements:
+  - User can register with email and password
+  - Password must be hashed (bcrypt)
+  - User can login with credentials
+  - Invalid credentials return 401
+non_functional_requirements:
+  - Response time &lt; 200ms
+  - Passwords stored securely (hashed)
+  - Email validation required
+constraints:
+  - Backend: FastAPI
+  - Database: PostgreSQL
+  - No third-party auth providers</code></pre>
+
+    <p>Notice: it's using a local Ollama model. This is a draft. It doesn't need to be perfect. It just needs to be good enough for the next step.</p>
+
+    <h3>2. Product Owner (PO)</h3>
+
+    <div class="role-card">
+      <h4>Role: Product Owner</h4>
+      <p><strong>Input:</strong> <code>requirements.yaml</code></p>
+      <p><strong>Output:</strong> <code>product_vision.yaml</code>, <code>product_owner_review.yaml</code></p>
+      <p><strong>Model:</strong> Ollama (local, free)</p>
+      <p><strong>Cost:</strong> $0</p>
+    </div>
+
+    <p>The PO validates the requirements. Does this make sense from a product perspective?</p>
+
+    <ul>
+      <li>Are the requirements clear?</li>
+      <li>Is there any ambiguity?</li>
+      <li>Are there edge cases we're missing?</li>
+      <li>Does this align with product goals?</li>
+    </ul>
+
+    <p>The PO might flag issues like: "No password reset flow specified" or "What happens if email is already registered?"</p>
+
+    <p>Then it writes a <code>product_vision.yaml</code> that clarifies these points.</p>
+
+    <p>Still using a local model. Still free. Still a draft.</p>
+
+    <h3>3. Architect</h3>
+
+    <div class="role-card">
+      <h4>Role: Architect</h4>
+      <p><strong>Input:</strong> <code>product_vision.yaml</code></p>
+      <p><strong>Output:</strong> <code>stories.yaml</code>, <code>epics.yaml</code>, <code>architecture.yaml</code></p>
+      <p><strong>Model:</strong> Gemini 2.5-pro (cloud, $0.20/feature)</p>
+      <p><strong>Cost:</strong> ~$0.20</p>
+    </div>
+
+    <p>This is where it gets real. The Architect breaks down the vision into actionable user stories.</p>
+
+    <p>Each story has:</p>
+    <ul>
+      <li>ID (S1, S2, S3...)</li>
+      <li>Description (what to build)</li>
+      <li>Acceptance criteria (how to verify it works)</li>
+      <li>Priority (P1, P2, P3)</li>
+    </ul>
+
+    <p>Example story:</p>
+
+    <pre><code class="language-yaml">- id: S1
+  description: "Create POST /api/auth/register endpoint"
+  acceptance:
+    - Endpoint accepts email and password
+    - Password is hashed with bcrypt
+    - Returns 201 on success
+    - Returns 400 if email already exists
+    - Includes automated tests for all scenarios
+  priority: P1
+  status: todo</code></pre>
+
+    <p>The Architect also decides the complexity tier (Simple, Medium, Corporate) and adjusts the level of detail accordingly.</p>
+
+    <p>This is the first step that costs money (Gemini at ~$0.30/1M tokens). But it's still cheap compared to using GPT-4 for the entire pipeline.</p>
+
+    <h3>4. Developer</h3>
+
+    <div class="role-card">
+      <h4>Role: Developer</h4>
+      <p><strong>Input:</strong> <code>stories.yaml</code> (status: todo)</p>
+      <p><strong>Output:</strong> Generated code in <code>project/</code></p>
+      <p><strong>Model:</strong> GPT-4 / Codex (cloud, ~$5/feature)</p>
+      <p><strong>Cost:</strong> ~$5</p>
+    </div>
+
+    <p>The Developer takes the next <code>todo</code> story and implements it.</p>
+
+    <p>What it actually does:</p>
+    <ol>
+      <li>Reads the story acceptance criteria</li>
+      <li>Writes the tests first (TDD enforcement)</li>
+      <li>Implements the code to make tests pass</li>
+      <li>Runs the tests locally</li>
+      <li>Marks the story as <code>doing</code> → <code>in_review</code></li>
+    </ol>
+
+    <p>For the registration endpoint, it generates:</p>
+
+    <pre><code class="language-python"># project/backend-fastapi/routes/auth.py
+from fastapi import APIRouter, HTTPException
+from passlib.hash import bcrypt
+from models.user import User
+from database import db
+
+router = APIRouter()
+
+@router.post("/api/auth/register")
+async def register(email: str, password: str):
+    # Check if user exists
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Hash password
+    hashed = bcrypt.hash(password)
+
+    # Create user
+    user = await db.users.insert_one({
+        "email": email,
+        "password": hashed
+    })
+
+    return {"id": str(user.inserted_id)}, 201</code></pre>
+
+    <p>Plus tests:</p>
+
+    <pre><code class="language-python"># project/backend-fastapi/tests/test_auth.py
+def test_register_success():
+    response = client.post("/api/auth/register", json={
+        "email": "test@example.com",
+        "password": "secure123"
+    })
+    assert response.status_code == 201
+
+def test_register_duplicate_email():
+    # Register once
+    client.post("/api/auth/register", json={
+        "email": "test@example.com",
+        "password": "secure123"
+    })
+    # Try again
+    response = client.post("/api/auth/register", json={
+        "email": "test@example.com",
+        "password": "secure123"
+    })
+    assert response.status_code == 400</code></pre>
+
+    <p>This is where most of the cost goes (~$5 per feature using GPT-4). But it's also where the value is.</p>
+
+    <h3>5. QA Engineer</h3>
+
+    <div class="role-card">
+      <h4>Role: QA Engineer</h4>
+      <p><strong>Input:</strong> Generated code + tests</p>
+      <p><strong>Output:</strong> <code>artifacts/qa/report.md</code>, approval/rejection</p>
+      <p><strong>Model:</strong> Claude 3.5 Sonnet (cloud, ~$1.50/feature)</p>
+      <p><strong>Cost:</strong> ~$1.50</p>
+    </div>
+
+    <p>QA validates everything:</p>
+    <ul>
+      <li>Do the tests actually test what the acceptance criteria say?</li>
+      <li>Is the code quality acceptable?</li>
+      <li>Are there edge cases missing?</li>
+      <li>Does it follow best practices?</li>
+    </ul>
+
+    <p>If <code>QA_RUN_TESTS=1</code>, it also runs the tests and checks coverage.</p>
+
+    <p>QA can either:</p>
+    <ul>
+      <li><strong>Approve</strong> → Story marked as <code>done</code></li>
+      <li><strong>Reject</strong> → Story goes back to <code>todo</code>, Architect refines it</li>
+    </ul>
+
+    <h2>The Feedback Loop (When QA Fails)</h2>
+
+    <p>Here's where it gets interesting.</p>
+
+    <p>If QA rejects a story, the Architect gets involved again. It reads the QA feedback and refines the story based on what went wrong.</p>
+
+    <div class="mermaid">
+sequenceDiagram
+    participant Dev as Developer
+    participant QA as QA Engineer
+    participant Arch as Architect
+
+    Dev->>QA: Code + Tests
+    QA->>QA: Validate against acceptance criteria
+    alt Tests fail or quality issues
+        QA->>Arch: Rejection + failure_context
+        Arch->>Arch: Refine story based on feedback
+        Arch->>Dev: Updated story.yaml
+        Dev->>QA: New implementation
+    else All good
+        QA->>Dev: Approved
+    end
+    </div>
+
+    <p>This is controlled by <code>ARCHITECT_INTERVENTION=1</code> (default).</p>
+
+    <p>If you set <code>ARCHITECT_INTERVENTION=0</code>, the story just goes back to <code>todo</code> without refinement.</p>
+
+    <h2>What Actually Gets Generated (Artifacts)</h2>
+
+    <p>Every time you run <code>make iteration</code>, you get a complete snapshot:</p>
+
+    <pre><code>artifacts/iterations/login-feature-20251102/
+├── summary.json          # Cost, duration, model usage
+├── requirements.yaml     # BA output
+├── product_vision.yaml   # PO output
+├── stories.yaml          # Architect output
+├── architecture.yaml     # System design
+├── epics.yaml           # High-level features
+└── code.zip             # All generated code
+
+planning/
+├── requirements.yaml
+├── product_vision.yaml
+├── stories.yaml
+├── architecture.yaml
+├── epics.yaml
+└── tasks.csv
+
+project/backend-fastapi/
+├── main.py
+├── routes/
+│   └── auth.py
+├── models/
+│   └── user.py
+└── tests/
+    └── test_auth.py
+
+artifacts/qa/
+├── report.md            # QA findings
+└── coverage.json        # Test coverage</code></pre>
+
+    <p>Everything is tracked. You can diff between iterations. You can rollback. You can see exactly which model was used for which step.</p>
+
+    <div class="callout">
+      <strong>The key insight:</strong> Artifacts = trazabilidad completa. From concept to code, every decision is documented.
+    </div>
+
+    <h2>Real Example: Login Feature End-to-End</h2>
+
+    <p>Let's walk through a real run:</p>
+
+    <pre><code class="language-bash">make iteration CONCEPT="User login with email and password"</code></pre>
+
+    <p><strong>Step 1: BA (2 seconds, $0)</strong></p>
+    <p>Generates <code>requirements.yaml</code> with 8 functional requirements, 4 non-functional, 3 constraints.</p>
+
+    <p><strong>Step 2: PO (3 seconds, $0)</strong></p>
+    <p>Validates requirements, flags missing password reset flow, writes <code>product_vision.yaml</code>.</p>
+
+    <p><strong>Step 3: Architect (15 seconds, $0.18)</strong></p>
+    <p>Breaks into 4 stories: S1 (register), S2 (login), S3 (logout), S4 (password reset). Classifies as "Simple" complexity.</p>
+
+    <p><strong>Step 4: Developer - Story S1 (45 seconds, $4.20)</strong></p>
+    <p>Implements <code>POST /api/auth/register</code> with tests. Marks as <code>in_review</code>.</p>
+
+    <p><strong>Step 5: QA (12 seconds, $1.35)</strong></p>
+    <p>Validates code, runs tests, approves. Story marked <code>done</code>.</p>
+
+    <p><strong>Loop continues for S2, S3, S4...</strong></p>
+
+    <p><strong>Total: 4 stories, ~$23, 8 minutes</strong></p>
+
+    <p>Output:</p>
+    <ul>
+      <li>4 endpoints implemented</li>
+      <li>16 tests written and passing</li>
+      <li>Complete documentation in artifacts/</li>
+      <li>Full audit trail in summary.json</li>
+    </ul>
+
+    <h2>Why This Works</h2>
+
+    <p>Three reasons:</p>
+
+    <p><strong>1. Separation of Concerns</strong></p>
+    <p>Each role does one thing. BA doesn't write code. Dev doesn't write requirements. QA doesn't design architecture.</p>
+
+    <p><strong>2. Cost Optimization by Role</strong></p>
+    <p>Use free local models for drafts (BA, PO). Use expensive cloud models only for critical steps (Dev, QA).</p>
+
+    <p><strong>3. Trazabilidad Completa</strong></p>
+    <p>Every artifact is saved. Every decision is documented. You can see exactly what happened and why.</p>
+
+    <h2>What Can Go Wrong</h2>
+
+    <p>Let's be honest:</p>
+
+    <ul>
+      <li><strong>Models fail.</strong> About 12-18% of the time, a model will timeout, return malformed JSON, or hallucinate. That's why we have fallback (Part 4).</li>
+      <li><strong>Tests aren't perfect.</strong> Sometimes the Developer writes tests that don't actually test the acceptance criteria. QA catches most of these, but not all.</li>
+      <li><strong>Architect can over-engineer.</strong> If classified as "Corporate" complexity, you get way more detail than you need. You can force <code>FORCE_ARCHITECT_TIER=simple</code>.</li>
+    </ul>
+
+    <p>But here's the thing: when something fails, you have complete logs. You can see exactly which role failed, which model was used, what the input was, what the output was.</p>
+
+    <p>Debugging is way easier when everything is documented.</p>
+
+    <h2>Try It Yourself</h2>
+
+    <pre><code class="language-bash"># Clone and setup
+git clone https://github.com/krukmat/agnostic-ai-pipeline.git
+cd agnostic-ai-pipeline
+make setup
+
+# Run a full iteration
+make iteration CONCEPT="Todo app with user auth"
+
+# Or just run individual steps
+make ba CONCEPT="Todo app"
+make po
+make plan
+make dev STORY=S1
+make qa
+
+# Check the artifacts
+cat planning/requirements.yaml
+cat planning/stories.yaml
+tree artifacts/iterations/</code></pre>
+
+    <h2>What's Next</h2>
+
+    <p>In <strong>Part 3</strong>, I'll show you the numbers: how using local models for drafts and cloud models for production cuts costs by 89%. Plus, how the Model Recommendation system (RoRF) automatically routes to the right model based on prompt complexity.</p>
+
+    <p>In <strong>Part 4</strong>, we'll dive into the fallback system: what happens when Gemini fails, how it automatically tries Codex, then Ollama, and how all of that is tracked in metadata.</p>
+
+    <a href="https://github.com/krukmat/agnostic-ai-pipeline" class="repo-link" target="_blank">
+      ⭐ View on GitHub: krukmat/agnostic-ai-pipeline
+    </a>
+
+    <div class="footer">
+      <p><strong>Part 2 of 7:</strong> Multi-Role Pipeline + Artifacts</p>
+      <p><a href="../00-vision-ok/">← Part 1: The Vision</a> | Part 3: Cost Engineering (coming soon)</p>
+      <p>Repository: <a href="https://github.com/krukmat/agnostic-ai-pipeline">https://github.com/krukmat/agnostic-ai-pipeline</a></p>
+      <p style="margin-top: 2rem; font-style: italic;">
+        Questions? Feedback? Open an issue or reach out. This is a proof-of-concept—rough edges expected.
+      </p>
+    </div>
+  </main>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'neutral',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        curve: 'basis'
+      }
+    });
+  </script>
+</body>
+</html>
