@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Guardrails that matter: policies, validators, and safe actions</title>
-  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety/">
-  <meta name="description" content="Enough structure to prevent the common footguns">
+  <title>Cost-first orchestration: local vs cloud with guardrails</title>
+  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/02-cost-first-orchestration-v4/">
+  <meta name="description" content="Small switches that save money and time">
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; max-width: 740px; margin: 2rem auto; padding: 0 1rem; }
     h1, h2, h3 { line-height: 1.25; }
@@ -18,19 +18,19 @@
 </head>
 <body>
   <article>
-    <h1>Guardrails that matter: policies, validators, and safe actions</h1>
-    <p class="subtitle">Enough structure to prevent the common footguns</p>
-    <p># Guardrails that matter: policies, validators, and safe actions</p>
-<blockquote>Enough structure to prevent the common footguns</blockquote>
+    <h1>Cost-first orchestration: local vs cloud with guardrails</h1>
+    <p class="subtitle">Small switches that save money and time</p>
+    <p># Cost-first orchestration: local vs cloud with guardrails</p>
+<blockquote>Small switches that save money and time</blockquote>
 
 <p>**TL;DR**</p>
 <ul>
-<li>Use file/action allowlists; keep them short.</li>
-<li>Add preflight validators for inputs before the heavy work.</li>
-<li>Bound actions to safe folders; provide one admin escape hatch.</li>
+<li>Add a simple cost/latency/quality matrix and route requests accordingly.</li>
+<li>Default to local for drafts; escalate to cloud only when needed.</li>
+<li>Put hard budgets in env vars; track real latency in logs.</li>
 </ul>
 
-<p>You don’t need a fortress—just a few locks on the right doors.</p>
+<p>Costs creep in quietly: longer prompts, bigger models, extra retries. Put small guardrails in place and you’ll keep velocity without surprise bills.</p>
 
 <h2>Why now: the AI, economic, and cultural backdrop</h2>
 
@@ -58,32 +58,42 @@
 </ul>
 
 <h2>The problem</h2>
-<p>Overly broad actions and unclear file permissions cause silent damage. A prompt tries to do everything, and it does it in the wrong place.</p>
+<p>Untracked spending and inconsistent latency make planning hard. New contributors run different models; retries multiply; no one knows which call is actually expensive.</p>
 
 <h2>A simple way forward</h2>
 <ul>
-<li>**Allowlists.** Name the files and commands that are allowed, nothing more.</li>
-<li>**Preflight.** Validate inputs early: schema, size, forbidden patterns.</li>
-<li>**Bounded actions.** Confine writes to safe paths; log all changes for review.</li>
+<li>**Matrix first.** Decide acceptable latency and cost for each step (draft, review, final).</li>
+<li>**Switches.** Use env flags to prefer local models for drafts; cloud for critical steps.</li>
+<li>**Budgets.** Enforce a per-run cap, and stop work gracefully if it’s exceeded.</li>
+<li>**Logs.** Record cost and latency per request; surface outliers.</li>
 </ul>
 
 <h2>Example</h2>
 <pre><code>
-# Validate before run
-make validate &amp;&amp; make plan
+# Draft locally, escalate on demand
+export PIPELINE_STAGE=draft
+export MAX_COST_USD=5
+make plan
+
+# Force cloud for final
+export PIPELINE_STAGE=final
+export ROUTE=cloud
+make plan
 </code></pre>
 
 <h2>Key takeaways</h2>
 <ul>
-<li>Most incidents come from overly broad capabilities; reduce scope first.</li>
-<li>Preflight checks are cheap and catch 80% of mistakes.</li>
-<li>Bounded writes make reviews and rollbacks straightforward.</li>
+<li>Cost/latency choices should be explicit and versioned.</li>
+<li>Local-first makes iteration cheap; cloud is the escalator, not the default.</li>
+<li>A small budget cap catches misconfigurations early.</li>
+<li>Tracking real latency is more useful than theoretical benchmarks.</li>
 </ul>
 
 <h2>What to do next</h2>
 <ul>
-<li>Ship a default validator and improve it with real failures from your repo.</li>
-<li>Share your allowlist snippet so others can compare and adapt it.</li>
+<li>Add a matrix file to your repo and wire two routes (local/cloud).</li>
+<li>Set a MAX_COST_USD and a soft timeout for retries.</li>
+<li>Open an issue with your findings; share configs that worked for your stack.</li>
 </ul>
 
 <h2>Join the community</h2>
@@ -101,7 +111,7 @@ make validate &amp;&amp; make plan
 
 <p>Be kind, stay practical; opinions welcome—data even better.</p>
     <div class="footer">
-      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety/">https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety/</a>.</p>
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/02-cost-first-orchestration-v4/">https://krukmat.github.io/agnostic-ai-pipeline/02-cost-first-orchestration/</a>.</p>
     </div>
   </article>
 </body>

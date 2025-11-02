@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Observability that helps: telemetry, diffs, and quick rollbacks</title>
-  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks/">
-  <meta name="description" content="Know what changed and undo it in minutes">
+  <title>Wiring it together: Cline, Ollama, and provider routers</title>
+  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/04-tools-integration-cline-ollama-routers-v4/">
+  <meta name="description" content="Glue code that fails gracefully">
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; max-width: 740px; margin: 2rem auto; padding: 0 1rem; }
     h1, h2, h3 { line-height: 1.25; }
@@ -18,19 +18,19 @@
 </head>
 <body>
   <article>
-    <h1>Observability that helps: telemetry, diffs, and quick rollbacks</h1>
-    <p class="subtitle">Know what changed and undo it in minutes</p>
-    <p># Observability that helps: telemetry, diffs, and quick rollbacks</p>
-<blockquote>Know what changed and undo it in minutes</blockquote>
+    <h1>Wiring it together: Cline, Ollama, and provider routers</h1>
+    <p class="subtitle">Glue code that fails gracefully</p>
+    <p># Wiring it together: Cline, Ollama, and provider routers</p>
+<blockquote>Glue code that fails gracefully</blockquote>
 
 <p>**TL;DR**</p>
 <ul>
-<li>Capture diffs and short traces tied to each run.</li>
-<li>Keep snapshots small but useful.</li>
-<li>Script a one-command rollback for safety.</li>
+<li>Keep adapters tiny and transparent.</li>
+<li>Add circuit breakers and timeouts with a single constant.</li>
+<li>Log only what you’ll actually read during debugging.</li>
 </ul>
 
-<p>Observability is useful when it explains outcomes, not when it fills disks.</p>
+<p>Integrations fail in the same three ways: input shape, timeouts, and mismatched expectations. Plan for it and you move faster.</p>
 
 <h2>Why now: the AI, economic, and cultural backdrop</h2>
 
@@ -58,32 +58,33 @@
 </ul>
 
 <h2>The problem</h2>
-<p>Logs are noisy; snapshots are missing; rollbacks are manual and risky.</p>
+<p>Flaky calls break the chain. You waste time scrolling logs instead of fixing the one missing piece.</p>
 
 <h2>A simple way forward</h2>
 <ul>
-<li>**Diffs with context.** Focus on what changed and why.</li>
-<li>**Short traces.** Record the path taken, not every breath.</li>
-<li>**Rollback script.** Undo the last change with a single command, then investigate.</li>
+<li>**Small adapters.** Convert data at the edges; avoid clever magic in the middle.</li>
+<li>**Circuit breakers.** Short retry windows; fail early to avoid cascades.</li>
+<li>**Readable logs.** Log inputs/outputs in compact form; keep traces short but useful.</li>
 </ul>
 
 <h2>Example</h2>
 <pre><code>
-# First rollback
-make rollback LAST=1
+# Simulate a timeout to test the breaker
+export ROUTER_TIMEOUT_MS=8000
+make hello
 </code></pre>
 
 <h2>Key takeaways</h2>
 <ul>
-<li>People debug faster when diffs are clear and localized.</li>
-<li>Short traces help you reason about behavior without drowning in detail.</li>
-<li>Rollbacks buy you time to fix root causes without pressure.</li>
+<li>A thin glue layer is easier to reason about and replace.</li>
+<li>Faults should be obvious; the pipeline should stop with a helpful message.</li>
+<li>Keep logs small and purpose-built—debugging should take minutes, not hours.</li>
 </ul>
 
 <h2>What to do next</h2>
 <ul>
-<li>Turn on tracing and snapshotting for one critical path.</li>
-<li>Share a minimal rollback script that works on your repo layout.</li>
+<li>Add a breaker to your router and a test that triggers it.</li>
+<li>Document adapter behavior in a README near the code, not in a separate wiki.</li>
 </ul>
 
 <h2>Join the community</h2>
@@ -101,7 +102,7 @@ make rollback LAST=1
 
 <p>Be kind, stay practical; opinions welcome—data even better.</p>
     <div class="footer">
-      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks/">https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks/</a>.</p>
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/04-tools-integration-cline-ollama-routers-v4/">https://krukmat.github.io/agnostic-ai-pipeline/04-tools-integration-cline-ollama-routers/</a>.</p>
     </div>
   </article>
 </body>
