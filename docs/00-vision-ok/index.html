@@ -300,6 +300,79 @@ sequenceDiagram
       <strong>The key insight:</strong> Use cheap local models for drafts and ideation. Use expensive cloud models only for the critical review and code generation steps.
     </div>
 
+    <h2>What You Actually Get</h2>
+
+    <p>After running <code>make iteration</code>, you get a complete project structure:</p>
+
+    <pre><code>agnostic-ai-pipeline/
+├── planning/                    # AI-generated planning artifacts
+│   ├── requirements.yaml        # What BA understood from your concept
+│   ├── product_owner_review.yaml
+│   ├── architecture.yaml        # Technical decisions
+│   ├── epics.yaml              # High-level features
+│   ├── stories.yaml            # Detailed user stories with acceptance criteria
+│   └── tasks.csv               # Task breakdown
+│
+├── project/                     # Generated code
+│   ├── backend-fastapi/        # Actual working backend
+│   │   ├── main.py
+│   │   ├── models/
+│   │   ├── routes/
+│   │   └── tests/              # Auto-generated tests
+│   └── frontend-react/         # (if applicable)
+│
+└── artifacts/                   # Execution logs & QA reports
+    ├── iterations/
+    │   └── login-feature-20251102/
+    │       ├── summary.json    # Cost, duration, status
+    │       ├── requirements.yaml
+    │       ├── stories.yaml
+    │       └── code.zip
+    └── qa/
+        ├── report.md           # QA findings
+        └── coverage.json       # Test coverage</code></pre>
+
+    <p>Everything is tracked, versioned, and reproducible.</p>
+
+    <h2>Different Ways to Use It</h2>
+
+    <p>The pipeline is flexible. You don't always need the full cycle.</p>
+
+    <h3>1. Full Production Cycle (with QA)</h3>
+    <pre><code>make iteration CONCEPT="Todo app with user authentication"</code></pre>
+    <p>Runs: <strong>BA → PO → Architect → Dev → QA</strong> (strict TDD mode)</p>
+    <p>Use when: You want production-ready code with tests and validation.</p>
+
+    <h3>2. Spike Mode (no QA, rapid prototyping)</h3>
+    <pre><code>make spike CONCEPT="API for weather data"</code></pre>
+    <p>Runs: <strong>BA → PO → Architect → Dev</strong> (no QA validation)</p>
+    <p>Use when: You're exploring ideas and don't need tests yet. Faster and cheaper.</p>
+
+    <h3>3. Development Loop (implement all stories)</h3>
+    <pre><code>make loop MAX_LOOPS=10</code></pre>
+    <p>Runs: <strong>Dev → QA → Dev → QA...</strong> until all stories are done</p>
+    <p>Use when: Planning is done, you just want to implement all remaining stories with QA validation.</p>
+
+    <h3>4. Dev-Only Loop (no QA validation)</h3>
+    <pre><code>make loop-dev
+# or
+make loop LOOP_MODE=dev_only MAX_LOOPS=5</code></pre>
+    <p>Runs: <strong>Dev → Dev → Dev...</strong> (no QA between stories)</p>
+    <p>Use when: You want rapid iteration without waiting for QA. Review later.</p>
+
+    <h3>5. Without Architect Intervention</h3>
+    <pre><code>make loop ARCHITECT_INTERVENTION=0</code></pre>
+    <p>When QA fails, normally the Architect refines the story. This disables that behavior.</p>
+    <p>Use when: Stories are well-defined and you don't want the Architect to rewrite them on failures.</p>
+
+    <h3>6. Individual Steps (for debugging)</h3>
+    <pre><code>make ba CONCEPT="Inventory system"     # Just generate requirements
+make po                                 # Validate product vision
+make plan                               # Generate stories
+make dev STORY=S1                       # Implement specific story
+make qa QA_RUN_TESTS=1                  # Run QA with tests</code></pre>
+    <p>Use when: Debugging the pipeline or wanting granular control.</p>
+
     <h2>The 2025 Challenge: Too Many Models, Not Enough Certainty</h2>
 
     <p>Here's what the AI landscape looks like right now:</p>
@@ -328,20 +401,110 @@ sequenceDiagram
 
     <p>Sound familiar? This is the problem my pipeline solves.</p>
 
-    <h2>Automatic Fallback: When Models Fail</h2>
+    <h2>How to Configure Models</h2>
 
-    <p>Here's where it gets interesting. In my testing, models fail about <strong>12-18% of the time</strong>:</p>
+    <p>The pipeline uses a single <code>config.yaml</code> file where you map each role to a provider and model:</p>
+
+    <pre><code class="language-yaml">roles:
+  ba:
+    provider: ollama
+    model: granite4              # Free local model
+    temperature: 0.4
+
+  architect:
+    provider: vertex_sdk
+    model: gemini-2.5-pro        # Google's Gemini via Vertex AI
+    temperature: 0.2
+
+  dev:
+    provider: codex_cli
+    model: gpt-4-turbo           # OpenAI via Codex CLI
+    temperature: 0.2
+
+  qa:
+    provider: claude_cli
+    model: claude-3-5-sonnet-latest  # Anthropic's Claude
+    temperature: 0.5</code></pre>
+
+    <p>Swap providers anytime with one command:</p>
+
+    <pre><code class="language-bash">make set-role role=dev provider=ollama model="qwen2.5-coder:32b"</code></pre>
+
+    <p>No code changes. No prompt rewrites. Just change the config.</p>
+
+    <h2>Supported Providers</h2>
+
+    <p>The pipeline works with:</p>
 
     <ul>
-      <li>API timeouts or rate limits</li>
-      <li>Malformed JSON output (especially with structured generation)</li>
-      <li>Context window exceeded</li>
-      <li>Random hallucinations that break downstream tasks</li>
+      <li><strong>Ollama</strong> – Local open-source models (Llama, Mistral, Qwen, etc.)</li>
+      <li><strong>OpenAI</strong> – GPT-4, GPT-3.5 via Codex CLI</li>
+      <li><strong>Claude Code CLI</strong> – Anthropic's Claude via local CLI</li>
+      <li><strong>Vertex AI</strong> – Google's Gemini models (CLI or SDK)</li>
     </ul>
 
-    <p>Most teams handle this manually: check logs, retry with different prompt, maybe switch models, waste 2 hours debugging.</p>
+    <p>Each provider has different setup requirements:</p>
 
-    <p>The pipeline handles it automatically:</p>
+    <h3>Ollama (Local)</h3>
+    <pre><code class="language-bash">ollama serve
+ollama pull qwen2.5-coder:7b
+make set-role role=dev provider=ollama model="qwen2.5-coder:7b"</code></pre>
+
+    <h3>Claude Code CLI</h3>
+    <pre><code class="language-bash">claude login
+make set-role role=qa provider=claude_cli model="claude-3-5-sonnet-latest"</code></pre>
+
+    <h3>Vertex AI (Google Gemini)</h3>
+    <pre><code class="language-bash">gcloud auth application-default login
+gcloud services enable aiplatform.googleapis.com
+make set-role role=architect provider=vertex_sdk model="gemini-2.5-pro"</code></pre>
+
+    <h3>Codex CLI (OpenAI)</h3>
+    <pre><code class="language-bash">export OPENAI_API_KEY="sk-..."
+make set-role role=dev provider=codex_cli model="gpt-4-turbo"</code></pre>
+
+    <h2>Real Numbers from Two Weeks of Testing</h2>
+
+    <p>I ran this pipeline for 14 days straight, building various features. Here's what happened:</p>
+
+    <div class="numbers">
+      <div class="number-card">
+        <span class="big">47</span>
+        <span class="label">Total iterations run</span>
+      </div>
+      <div class="number-card">
+        <span class="big">$47.30</span>
+        <span class="label">Total cost (all models)</span>
+      </div>
+      <div class="number-card">
+        <span class="big">8</span>
+        <span class="label">Automatic fallbacks triggered</span>
+      </div>
+    </div>
+
+    <p><strong>Cost breakdown by role:</strong></p>
+    <ul>
+      <li>BA + PO (Ollama local): $0.00</li>
+      <li>Architect (Gemini): $8.20</li>
+      <li>Developer (mix of GPT-4, Codex, Ollama): $32.50</li>
+      <li>QA (Claude + local): $6.60</li>
+    </ul>
+
+    <p><strong>If I had used only GPT-4 for everything:</strong> ~$380</p>
+
+    <p>The fallback system saved my ass twice:</p>
+    <ul>
+      <li>Day 4: Vertex AI went down for 3 hours. Pipeline switched to Ollama, kept working.</li>
+      <li>Day 9: Hit Claude rate limit during QA. Fell back to local Qwen model, finished the job.</li>
+    </ul>
+
+    <p><em>(I'll explain how automatic fallback works in Part 2 of this series)</em></p>
+
+    <h2>Automatic Fallback: A Sneak Peek</h2>
+
+    <p>In my testing, models fail about <strong>12-18% of the time</strong> (API timeouts, malformed JSON, context limits, etc.). Most teams handle this manually—the pipeline handles it automatically.</p>
+
+    <p>Here's a preview of how it works:</p>
 
     <div class="mermaid">
 flowchart TD
@@ -396,40 +559,7 @@ flowchart TD
 
     <p>Everything is tracked: which models tried, when they failed, why they failed, what to try next. No manual intervention needed.</p>
 
-    <h2>Real Numbers from Two Weeks of Testing</h2>
-
-    <p>I ran this pipeline for 14 days straight, building various features. Here's what happened:</p>
-
-    <div class="numbers">
-      <div class="number-card">
-        <span class="big">47</span>
-        <span class="label">Total iterations run</span>
-      </div>
-      <div class="number-card">
-        <span class="big">$47.30</span>
-        <span class="label">Total cost (all models)</span>
-      </div>
-      <div class="number-card">
-        <span class="big">8</span>
-        <span class="label">Automatic fallbacks triggered</span>
-      </div>
-    </div>
-
-    <p><strong>Cost breakdown by role:</strong></p>
-    <ul>
-      <li>BA + PO (Ollama local): $0.00</li>
-      <li>Architect (Gemini): $8.20</li>
-      <li>Developer (mix of GPT-4, Codex, Ollama): $32.50</li>
-      <li>QA (Claude + local): $6.60</li>
-    </ul>
-
-    <p><strong>If I had used only GPT-4 for everything:</strong> ~$380</p>
-
-    <p>The fallback system saved my ass twice:</p>
-    <ul>
-      <li>Day 4: Vertex AI went down for 3 hours. Pipeline switched to Ollama, kept working.</li>
-      <li>Day 9: Hit Claude rate limit during QA. Fell back to local Qwen model, finished the job.</li>
-    </ul>
+    <p><strong>This will be covered in depth in Part 2 of the series.</strong></p>
 
     <h2>How to Try It (5 Minutes)</h2>
 
@@ -440,13 +570,16 @@ git clone https://github.com/krukmat/agnostic-ai-pipeline.git
 cd agnostic-ai-pipeline
 make setup
 
-# Run a full iteration (strict TDD mode)
+# Run a full iteration (with QA validation)
 make iteration CONCEPT="Todo app with user auth"
 
+# Or run a spike (no QA, faster)
+make spike CONCEPT="Blog with markdown posts"
+
 # Check the generated artifacts
-tree artifacts/iterations/todo-app-iteration/
+cat planning/requirements.yaml
 cat planning/stories.yaml
-cat artifacts/iterations/todo-app-iteration/summary.json</code></pre>
+cat artifacts/iterations/*/summary.json</code></pre>
 
     <p>You'll get:</p>
     <ul>
@@ -472,13 +605,13 @@ cat artifacts/iterations/todo-app-iteration/summary.json</code></pre>
 
     <h2>This Is Part 1 of a Series</h2>
 
-    <p>This article covers the vision and the problem. Over the next few weeks, I'll document the entire system in detail—how it works, why certain decisions were made, and what I learned building it.</p>
+    <p>This article covers the vision and the basic usage. Over the next few weeks, I'll document the entire system in detail—how it works, why certain decisions were made, and what I learned building it.</p>
 
     <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 2rem 0;">
       <h3 style="margin-top: 0;">The Full Series:</h3>
 
       <p><strong>Part 1: The Vision (You Are Here)</strong><br>
-      Why vendor lock-in is killing AI projects, and how a software factory approach solves it.</p>
+      Why vendor lock-in is killing AI projects, and how a software factory approach solves it. Basic usage patterns and getting started.</p>
 
       <p><strong>Part 2: Inside the Fallback System</strong><br>
       How automatic model fallback actually works: failure analysis, specialty scoring, cost optimization, and the <code>model_history</code> that tracks everything.</p>
