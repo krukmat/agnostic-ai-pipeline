@@ -76,6 +76,10 @@ async def _local_developer_handler(**payload: Any) -> Dict[str, Any]:
         retries = 3
     try:
         result = await implement_story(story_id=story_id, retries=retries)
+        # Task: fix-metadata-persistence - Handle error dict returned by implement_story
+        # If result already has status="error", return it directly to preserve model_info
+        if result.get("status") == "error":
+            return result
         return {"status": "ok", **result}
     except SystemExit as exc:
         exit_code = int(exc.code or 1)
@@ -355,8 +359,9 @@ def append_note(text: str):
         f.write(f"\n### {now}\n{text}\n")
     logger.debug(f"[loop] Appended note to {NOTES_P}")
 
-async def run_architect_for_review(story_id: str, iteration_count: int = 1) -> Dict[str, Any]:
+async def run_architect_for_review(story: Dict[str, Any], iteration_count: int = 1) -> Dict[str, Any]:
     """Run architect to adjust criteria when story is in review"""
+    story_id = story.get("id", "S?")
     logger.info(f"[loop] Architect intervening to adjust {story_id} criteria (attempt {iteration_count})")
 
     # Read concept from multiple sources
@@ -389,12 +394,27 @@ async def run_architect_for_review(story_id: str, iteration_count: int = 1) -> D
         detail_level = "maximum"
     logger.debug(f"[loop] Architect detail level for review: {detail_level}")
 
+    # Task: recovery-system - Include failure metadata for architect context
+    metadata = story.get("metadata", {})
+    failure_context = {}
+    if metadata:
+        failure_context = {
+            "recovery_attempts": metadata.get("recovery_attempts", 0),
+            "last_failure_reason": metadata.get("last_failure_reason", ""),
+            "last_dev_error": metadata.get("last_dev_error", ""),
+            "last_qa_error": metadata.get("last_qa_error", ""),
+            "model_history": metadata.get("model_history", []),
+            "timestamp": metadata.get("timestamp", "")
+        }
+        logger.info(f"[loop] Providing architect with failure context: {failure_context.get('last_failure_reason')}")
+
     payload = {
         "concept": concept,
         "architect_mode": "review_adjustment",
         "story_id": story_id,
         "detail_level": detail_level,
         "iteration_count": iteration_count,
+        "failure_context": failure_context,  # NEW: provide failure metadata
     }
 
     result = await execute_role("architect", payload)
@@ -558,14 +578,113 @@ def analyze_qa_failure_severity(qa_failure_details):
     }
 
 
+def analyze_failure_and_suggest_model(story: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any] | None:
+    """
+    Task: recovery-system - Analyze failure metadata and suggest an alternative model.
+
+    Returns a dict with suggested model override, or None if no suggestion available.
+    """
+    metadata = story.get("metadata", {})
+    model_history = metadata.get("model_history", [])
+    last_failure_reason = metadata.get("last_failure_reason", "")
+
+    # Get backup_models from config
+    dev_cfg = config.get("roles", {}).get("dev", {})
+    backup_models = dev_cfg.get("backup_models", [])
+
+    if not backup_models:
+        logger.debug("[loop] No backup_models configured for dev role")
+        return None
+
+    # Find models that haven't been tried yet
+    tried_models = {(h.get("provider"), h.get("model")) for h in model_history}
+    logger.debug(f"[loop] Tried models: {tried_models}")
+
+    # Evaluate backup models based on failure type and specialties
+    candidates = []
+    for backup in backup_models:
+        provider = backup.get("provider")
+        model = backup.get("model")
+
+        if (provider, model) in tried_models:
+            logger.debug(f"[loop] Skipping {provider}/{model} - already tried")
+            continue
+
+        # Score based on specialties matching the failure type
+        score = 0
+        specialties = backup.get("specialties", [])
+
+        if "blocked_dev" in last_failure_reason or "No valid FILES JSON block" in metadata.get("last_dev_error", ""):
+            # Prioritize structured_output specialists
+            if "structured_output" in specialties or "instruction_following" in specialties:
+                score += 10
+
+        # Prefer lower cost if allow_cost_increase is False
+        allow_cost_increase = config.get("pipeline", {}).get("model_fallback", {}).get("allow_cost_increase", False)
+        cost_tier = backup.get("cost_tier", "medium")
+
+        if not allow_cost_increase:
+            if cost_tier == "free":
+                score += 5
+            elif cost_tier == "medium":
+                score += 3
+        else:
+            if cost_tier == "high":
+                score += 2
+
+        # Prefer local models if prefer_local is True
+        prefer_local = config.get("pipeline", {}).get("model_fallback", {}).get("prefer_local", True)
+        if prefer_local and cost_tier == "free":
+            score += 3
+
+        candidates.append({
+            "provider": provider,
+            "model": model,
+            "reason": backup.get("reason", "Alternative model"),
+            "score": score,
+            "cost_tier": cost_tier,
+            "specialties": specialties
+        })
+
+    if not candidates:
+        logger.info("[loop] No untried backup models available")
+        return None
+
+    # Sort by score descending
+    candidates.sort(key=lambda c: c["score"], reverse=True)
+    best = candidates[0]
+
+    logger.info(f"[loop] Suggested model: {best['provider']}/{best['model']} (score={best['score']}, reason={best['reason']})")
+
+    return {
+        "provider": best["provider"],
+        "model": best["model"],
+        "reason": best["reason"],
+        "cost_tier": best["cost_tier"],
+        "specialties": best["specialties"]
+    }
+
+
 async def _process_story(
     story: dict[str, Any],
     *,
     allow_no_tests: bool,
     status_no_tests: str,
+    skip_qa: bool = False,
+    max_recovery_attempts: int = 2,
+    config: Dict[str, Any] | None = None,
 ) -> None:
-    """Process a single story through Dev and QA."""
+    """Process a single story through Dev and QA (or Dev only if skip_qa=True)."""
     sid = story["id"]
+
+    # Task: recovery-system - Check if recovery budget exceeded
+    current_recovery_attempts = story.get("metadata", {}).get("recovery_attempts", 0)
+    if current_recovery_attempts >= max_recovery_attempts:
+        story["status"] = "blocked_recovery_budget"
+        append_note(f"- {sid} BLOCKED: Recovery budget exceeded ({current_recovery_attempts}/{max_recovery_attempts})")
+        logger.error(f"[loop] {sid} -> blocked_recovery_budget (attempts={current_recovery_attempts}, max={max_recovery_attempts})")
+        return
+
     story_dev_attempts[sid] = story_dev_attempts.get(sid, 0) + 1
 
     append_note(f"- Dev implementando {sid} (iteración {story_dev_attempts[sid]})")
@@ -574,6 +693,23 @@ async def _process_story(
     dev_payload = {"story_id": sid, "retries": os.environ.get("DEV_RETRIES", "3")}
     dev_result = await execute_role("developer", dev_payload)
     dev_status = dev_result.get("status", "unknown")
+
+    # Task: fix-metadata-persistence - Register model_history from dev result
+    model_info = dev_result.get("model_info")
+    if model_info:
+        if "metadata" not in story:
+            story["metadata"] = {}
+        if "model_history" not in story["metadata"]:
+            story["metadata"]["model_history"] = []
+
+        story["metadata"]["model_history"].append({
+            "provider": model_info.get("provider"),
+            "model": model_info.get("model"),
+            "timestamp": model_info.get("timestamp"),
+            "attempt": len(story["metadata"]["model_history"]) + 1,
+            "status": dev_status
+        })
+        logger.debug(f"[loop] Registered model attempt in history: {model_info.get('provider')}/{model_info.get('model')}")
 
     if dev_status != "ok":
         dev_attempt_count = story_dev_attempts.get(sid, 0)
@@ -584,6 +720,33 @@ async def _process_story(
             or dev_result.get("message")
             or f"Developer status {dev_status}"
         )
+
+        # Task: recovery-system - Capture metadata on dev failure
+        if "metadata" not in story:
+            story["metadata"] = {}
+
+        story["metadata"]["recovery_attempts"] = story["metadata"].get("recovery_attempts", 0) + 1
+        story["metadata"]["last_failure_reason"] = "blocked_dev"
+        story["metadata"]["last_dev_error"] = error_details
+        story["metadata"]["timestamp"] = datetime.datetime.now().isoformat()
+
+        if dev_result.get("artifacts_dir"):
+            story["metadata"]["artifacts_snapshot"] = dev_result["artifacts_dir"]
+
+        # Task: recovery-system - Suggest alternative model for next attempt
+        if config and dev_attempt_count < DEV_RETRY_THRESHOLD:
+            model_fallback_enabled = config.get("pipeline", {}).get("model_fallback", {}).get("enabled", True)
+            if model_fallback_enabled:
+                suggested_model = analyze_failure_and_suggest_model(story, config)
+                if suggested_model:
+                    story["metadata"]["model_override"] = suggested_model
+                    logger.info(
+                        f"[loop] Model override suggested for {sid}: {suggested_model['provider']}/{suggested_model['model']} "
+                        f"(reason: {suggested_model['reason']})"
+                    )
+                else:
+                    # Clear any previous override if no more alternatives
+                    story["metadata"].pop("model_override", None)
 
         if dev_attempt_count >= DEV_RETRY_THRESHOLD:
             story["status"] = "blocked_dev"
@@ -602,6 +765,15 @@ async def _process_story(
             logger.warning(
                 f"[loop] {sid} -> in_review (Developer status={dev_status}, exit_code={exit_code}, reintentando)"
             )
+        return
+
+    # Task: recovery-system - Skip QA when LOOP_MODE=dev_only
+    if skip_qa:
+        story["status"] = "done"
+        story_dev_attempts.pop(sid, None)
+        story_arch_attempts.pop(sid, None)
+        logger.info(f"[loop] {sid} -> done (skip_qa=True, no QA execution)")
+        append_note(f"- {sid} aprobado (dev_only mode, sin QA).")
         return
 
     qa_payload = {"allow_no_tests": allow_no_tests, "story_id": sid}
@@ -641,6 +813,18 @@ async def _process_story(
 
     append_note(f"- QA FAIL {sid}: {failure_analysis.get('details', 'Sin detalle')}")
 
+    # Task: recovery-system - Capture metadata on QA failure
+    if "metadata" not in story:
+        story["metadata"] = {}
+
+    story["metadata"]["recovery_attempts"] = story["metadata"].get("recovery_attempts", 0) + 1
+    story["metadata"]["last_failure_reason"] = f"qa_fail_{severity}"
+    story["metadata"]["last_qa_error"] = failure_analysis.get("details", "Sin detalle")
+    story["metadata"]["timestamp"] = datetime.datetime.now().isoformat()
+
+    if qa_result.get("report", {}).get("artifacts_dir"):
+        story["metadata"]["qa_artifacts_snapshot"] = qa_result["report"]["artifacts_dir"]
+
     if severity == "blocked_fatal":
         story["status"] = "blocked_fatal"
     elif severity == "force_applicable":
@@ -671,6 +855,8 @@ async def _process_iteration(
     allow_no_tests: bool,
     enable_architect_intervention: bool,
     status_no_tests: str,
+    skip_qa: bool = False,
+    max_recovery_attempts: int = 2,
 ) -> bool:
     logger.info(f"[loop] Iteración {iteration_index}: processing {len(stories)} stories")
 
@@ -684,7 +870,7 @@ async def _process_iteration(
 
             logger.info(f"[loop] Architect adjusting criteria for {story_id}")
             arch_result = await run_architect_for_review(
-                story_id,
+                story,
                 story_arch_attempts[story_id],
             )
             if arch_result.get("status") == "ok":
@@ -730,11 +916,16 @@ async def _process_iteration(
     save_stories(stories)
 
     # Process batch concurrently
+    # Load config once for all stories
+    cfg = load_config()
     tasks = [
         _process_story(
             story,
             allow_no_tests=allow_no_tests,
             status_no_tests=status_no_tests,
+            skip_qa=skip_qa,
+            max_recovery_attempts=max_recovery_attempts,
+            config=cfg,
         )
         for story in story_batch
     ]
@@ -770,9 +961,18 @@ async def main():
     status_no_tests = os.environ.get("BACKFLOW_STATUS_FOR_NO_TESTS", "in_review")
     enable_architect_intervention = os.environ.get("ARCHITECT_INTERVENTION", "1") == "1"
 
+    # Task: recovery-system - Read LOOP_MODE to determine if QA should be skipped
+    loop_mode = os.environ.get("LOOP_MODE", "full").lower()
+    skip_qa = loop_mode == "dev_only"
+
+    # Task: recovery-system - Read max_recovery_attempts from config
+    config = load_config()
+    max_recovery_attempts = config.get("pipeline", {}).get("max_recovery_attempts", 2)
+
     logger.info(
         f"[loop] Starting orchestrator. Max loops: {max_loops}, Allow no tests: {allow_no_tests}, "
-        f"Architect intervention: {enable_architect_intervention}"
+        f"Architect intervention: {enable_architect_intervention}, LOOP_MODE: {loop_mode}, skip_qa: {skip_qa}, "
+        f"Max recovery attempts: {max_recovery_attempts}"
     )
 
     cleanup_artifacts()
@@ -785,6 +985,8 @@ async def main():
             allow_no_tests=allow_no_tests,
             enable_architect_intervention=enable_architect_intervention,
             status_no_tests=status_no_tests,
+            skip_qa=skip_qa,
+            max_recovery_attempts=max_recovery_attempts,
         )
         if not should_continue:
             save_metrics()

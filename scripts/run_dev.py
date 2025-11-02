@@ -252,11 +252,93 @@ def safe_write(rel_path: str, content: str) -> str:
     return rel_path
 
 
-async def llm_call(story: Dict[str, Any], files_ctx: str) -> str:
+async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str, Any]]:
     from llm import Client
-    client = Client(role="dev")
+    from common import load_config
+
+    # Task: recovery-system - Check for model_override in story metadata
+    model_override = story.get("metadata", {}).get("model_override", {})
+
+    if model_override:
+        override_provider = model_override.get("provider")
+        override_model = model_override.get("model")
+        logger.info(f"[DEV] Using model override: provider={override_provider}, model={override_model}")
+
+        # Task: fix-client-override - Load full provider config to rehydrate CLI settings
+        config = load_config()
+        providers = config.get("providers", {})
+        provider_cfg = providers.get(override_provider, {})
+
+        if not provider_cfg:
+            logger.error(f"[DEV] Provider '{override_provider}' not found in config.yaml. Cannot fallback.")
+            raise ValueError(f"Provider '{override_provider}' not configured in config.yaml providers section")
+
+        # Initialize client normally to get role config first
+        client = Client(role="dev")
+
+        # Override provider settings with full config rehydration
+        provider_type = provider_cfg.get("type", override_provider)
+        client.provider_type = provider_type
+        client.model = override_model
+        client.provider_options = provider_cfg
+
+        # Rehydrate provider-specific settings based on type
+        if provider_type in ("codex_cli", "claude_cli"):
+            default_command = ["codex", "chat"] if provider_type == "codex_cli" else ["claude", "-p", "--print"]
+            client.cli_command = provider_cfg.get("command", default_command)
+            client.cli_cwd = provider_cfg.get("cwd", ".")
+            client.cli_env = provider_cfg.get("env", {})
+            client.cli_timeout = int(provider_cfg.get("timeout", 300))
+            client.cli_input_format = provider_cfg.get("input_format", "stdin_text")
+            client.cli_output_clean = bool(provider_cfg.get("output_clean", True))
+            client.cli_extra_args = provider_cfg.get("extra_args", [])
+            client.cli_parse_json = bool(provider_cfg.get("parse_json", False))
+            client.cli_append_model_flag = bool(provider_cfg.get("append_model", True))
+            client.cli_append_system_prompt = bool(provider_cfg.get("append_system_prompt", False))
+            client.cli_append_temperature_flag = bool(provider_cfg.get("append_temperature", False))
+            client.cli_append_max_tokens_flag = bool(provider_cfg.get("append_max_tokens", False))
+
+            prompt_template_default = (
+                "{user}" if provider_type == "claude_cli" else
+                "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
+            )
+            client.cli_prompt_template = provider_cfg.get("prompt_template", prompt_template_default)
+
+            default_debug_args = ["--verbose", "--debug"] if provider_type == "claude_cli" else []
+            debug_args_cfg = provider_cfg.get("debug_args", default_debug_args)
+            if isinstance(debug_args_cfg, (list, tuple)):
+                client.cli_debug_args = [str(arg) for arg in debug_args_cfg]
+            else:
+                client.cli_debug_args = default_debug_args
+
+            client.cli_debug = bool(provider_cfg.get("debug", False))
+            client.cli_log_stderr = bool(provider_cfg.get("log_stderr", client.cli_debug))
+            logger.debug(f"[DEV] Rehydrated CLI settings for {provider_type}: command={client.cli_command}")
+        elif provider_type == "ollama":
+            base_url = provider_cfg.get("base_url", "http://localhost:11434")
+            client.ollama_base = os.environ.get("OLLAMA_BASE_URL") or base_url
+            logger.debug(f"[DEV] Rehydrated Ollama settings: base_url={client.ollama_base}")
+        elif provider_type == "openai":
+            base_url = provider_cfg.get("base_url", "http://localhost:4010/v1")
+            client.oai_base = os.environ.get("OPENAI_API_BASE") or base_url
+            client.oai_key = os.environ.get("OPENAI_API_KEY", "dummy")
+            logger.debug(f"[DEV] Rehydrated OpenAI settings: base_url={client.oai_base}")
+        elif provider_type in ("vertex_cli", "vertex_sdk"):
+            # Vertex providers are handled by PROVIDER_REGISTRY in Client.chat()
+            logger.debug(f"[DEV] Using Vertex provider: {provider_type}")
+        else:
+            logger.warning(f"[DEV] Unknown provider type '{provider_type}', may not work correctly")
+    else:
+        client = Client(role="dev")
+
     logger.debug(f"[DEV] LLM Client initialized: provider={client.provider_type}, model={client.model}")
 
+    # Task: fix-metadata-persistence - Return model info instead of mutating story
+    model_info = {
+        "provider": client.provider_type,
+        "model": client.model,
+        "timestamp": datetime.datetime.now().isoformat()
+    }
 
     # Load prompt from file like other roles
     system_prompt = ""
@@ -283,7 +365,17 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> str:
         """
     )
     logger.debug(f"[DEV] User prompt prepared ({len(user)} chars)")
-    return await client.chat(system=system_prompt, user=user)
+
+    # Task: fix-metadata-persistence - Return model_info even when client.chat() fails
+    # This ensures we can track which models were attempted even on errors
+    try:
+        response = await client.chat(system=system_prompt, user=user)
+        return response, model_info
+    except Exception as e:
+        # client.chat() failed, but we still return model_info for tracking
+        # The exception message becomes the error, model_info shows which model failed
+        logger.debug(f"[DEV] client.chat() failed: {e}")
+        return None, model_info  # Return None response but preserve model_info
 
 
 async def implement_story(story_id: str | None = None, retries: int = 3) -> dict:
@@ -302,25 +394,40 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     files_ctx = repo_tree(limit=300)
     files = None
     last_err = None
+    model_info = None
 
     for i in range(1, retries + 1):
-        try:
-            logger.info(f"[DEV] LLM intento {i}/{retries}…")
-            response = await llm_call(story, files_ctx)
-            files = extract_files_block(response or "", sid)
-            if files:
-                logger.info(f"[DEV] LLM response parsed successfully after {i} attempts.")
-                break
-            last_err = "Developer response did not include FILES JSON block."
+        logger.info(f"[DEV] LLM intento {i}/{retries}…")
+        # Task: fix-metadata-persistence - llm_call now always returns model_info
+        response, model_info = await llm_call(story, files_ctx)
+
+        # response can be None if client.chat() failed
+        if response is None:
+            last_err = "LLM call failed to return a response"
             logger.warning(f"[DEV] Attempt {i} failed: {last_err}")
-        except Exception as e:
-            last_err = str(e)
-            logger.warning(f"[DEV] Attempt {i} failed with exception: {last_err}")
+            await asyncio.sleep(0.2)
+            continue
+
+        files = extract_files_block(response or "", sid)
+        if files:
+            logger.info(f"[DEV] LLM response parsed successfully after {i} attempts.")
+            break
+        last_err = "Developer response did not include FILES JSON block."
+        logger.warning(f"[DEV] Attempt {i} failed: {last_err}")
         await asyncio.sleep(0.2)
 
     if not files:
-        logger.error(last_err or "[DEV] No FILES parsed from LLM response after all retries.")
-        sys.exit(2)
+        error_msg = last_err or "[DEV] No FILES parsed from LLM response after all retries."
+        logger.error(error_msg)
+        # Task: fix-metadata-persistence - Return error dict with model_info instead of sys.exit()
+        # This allows orchestrator to capture model_history even on failure
+        return {
+            "status": "error",
+            "error": error_msg,
+            "story_id": sid,
+            "model_info": model_info,  # Include last model_info attempt
+            "exit_code": 2
+        }
 
     written = []
     for entry in files:
@@ -347,6 +454,7 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
         "story_id": sid,
         "files_written": written,
         "artifacts_dir": str(run_dir),
+        "model_info": model_info,  # Task: fix-metadata-persistence - Return model info for orchestrator
     }
 
 
