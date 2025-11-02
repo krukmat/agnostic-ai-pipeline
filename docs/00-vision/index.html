@@ -27,12 +27,9 @@
     a { color: #0b5fff; text-decoration: none; }
     .footer { margin-top: 3rem; font-size: .9rem; color: #666; }
     .byline { margin: .25rem 0 1rem; font-size: .95rem; color: #586076; }
+    figure { margin: 1.25rem 0; }
+    figcaption { font-size: .9rem; color: #666; }
   </style>
-  <!-- Mermaid for diagrams -->
-  <script type="module">
-    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
-    mermaid.initialize({ startOnLoad: true, theme: "default" });
-  </script>
 </head>
 <body>
   <main>
@@ -67,21 +64,10 @@
     <h2>How it works</h2>
     <p>The pipeline runs <strong>BA → Architect → Dev → QA</strong> as a repeatable loop. A single command kicks an iteration, produces artifacts (requirements, stories, code, tests, QA results), and snapshots the state for audits and rollbacks.</p>
 
-    <h3>Diagram — end-to-end flow</h3>
-    <div class="mermaid">
-flowchart LR
-  Concept[Business Concept] --> BA[Business Analyst]
-  BA --> ARCH[Architect]
-  ARCH --> DEV[Developer]
-  DEV --> QA[QA]
-  QA --> Release[Snapshot & Release Artifacts]
-  classDef local fill:#d1ffe6,stroke:#0a7d53,color:#0a7d53;
-  classDef cloud fill:#e7f0ff,stroke:#0b5fff,color:#0b5fff;
-  BA:::local
-  ARCH:::local
-  DEV:::local
-  QA:::cloud
-    </div>
+    <figure>
+      <img src="../assets/flow-e2e.png" alt="End-to-end flow">
+      <figcaption>End-to-end loop: local for drafts; cloud only for sign-off.</figcaption>
+    </figure>
 
     <h2>Routing by constraints</h2>
     <p>Pick models <strong>per step</strong>, not per project. Keep drafts local; escalate review/sign-off.</p>
@@ -113,8 +99,7 @@ flowchart LR
   "qa_strict": true,
   "stories": { "done": 7, "blocked": 2, "pending": 1 },
   "blocked_ids": ["ST-008", "ST-011"]
-}
-</code></pre>
+}</code></pre>
 
     <h2>From requirements to stories</h2>
     <p>Provide a minimal <code>requirements.yaml</code> and let the loop generate stories + acceptance criteria.</p>
@@ -150,20 +135,10 @@ make loop MAX_LOOPS=1
 make set-role role=dev provider=codex_cli model="codex-local"
 </code></pre>
 
-    <h3>Diagram — escalation rule (local → cloud)</h3>
-    <div class="mermaid">
-sequenceDiagram
-  participant Dev as Dev (local)
-  participant QA  as QA (cloud)
-  Dev->>QA: propose change + tests
-  QA-->>Dev: results (pass/fail + cost/latency)
-  alt Fail or Missing AC
-    QA->>QA: escalate model (higher-quality reviewer)
-    QA-->>Dev: actionable feedback
-  else Pass
-    QA->>Repo: snapshot &amp; release artifacts
-  end
-    </div>
+    <figure>
+      <img src="../assets/sequence-escalation.png" alt="Escalation sequence">
+      <figcaption>Escalation rule: local draft → cloud review only when needed.</figcaption>
+    </figure>
 
     <h2>Common traps</h2>
     <ul>
