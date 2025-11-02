@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A small feature, shipped end-to-end with the pipeline</title>
-  <meta property="og:title" content="A small feature, shipped end-to-end with the pipeline">
-  <meta property="og:description" content="Story to design to dev to QA to demo">
-  <meta property="og:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/07-case-study-end-to-end-v4-banner.svg">
+  <title>Observability that helps: telemetry, diffs, and quick rollbacks</title>
+  <meta property="og:title" content="Observability that helps: telemetry, diffs, and quick rollbacks">
+  <meta property="og:description" content="Know what changed and undo it in minutes">
+  <meta property="og:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/06-observability-diffs-rollbacks-banner.svg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="A small feature, shipped end-to-end with the pipeline">
-  <meta name="twitter:description" content="Story to design to dev to QA to demo">
-  <meta name="twitter:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/07-case-study-end-to-end-v4-banner.svg">
-  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/">
-  <meta name="description" content="Story to design to dev to QA to demo">
+  <meta name="twitter:title" content="Observability that helps: telemetry, diffs, and quick rollbacks">
+  <meta name="twitter:description" content="Know what changed and undo it in minutes">
+  <meta name="twitter:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/06-observability-diffs-rollbacks-banner.svg">
+  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks-v5/">
+  <meta name="description" content="Know what changed and undo it in minutes">
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; max-width: 740px; margin: 2rem auto; padding: 0 1rem; }
     h1, h2, h3 { line-height: 1.25; }
@@ -25,20 +25,20 @@
 </head>
 <body>
   <article>
-    <figure class="hero"><img src="https://krukmat.github.io/agnostic-ai-pipeline/assets/07-case-study-end-to-end-v4-banner.svg" alt="A small feature, shipped end-to-end with the pipeline" style="width:100%;border-radius:12px"></figure>
-    <h1>A small feature, shipped end-to-end with the pipeline</h1>
-    <p class="subtitle">Story to design to dev to QA to demo</p>
-    <p># A small feature, shipped end-to-end with the pipeline</p>
-<blockquote>Story → design → dev → QA → demo</blockquote>
+    <figure class="hero"><img src="https://krukmat.github.io/agnostic-ai-pipeline/assets/06-observability-diffs-rollbacks-banner.svg" alt="Observability that helps: telemetry, diffs, and quick rollbacks" style="width:100%;border-radius:12px"></figure>
+    <h1>Observability that helps: telemetry, diffs, and quick rollbacks</h1>
+    <p class="subtitle">Know what changed and undo it in minutes</p>
+    <p># Observability that helps: telemetry, diffs, and quick rollbacks</p>
+<blockquote>Know what changed and undo it in minutes</blockquote>
 
 <p>**TL;DR**</p>
 <ul>
-<li>Walk through one realistic mini-feature.</li>
-<li>Keep scope tight; show artifacts at each handoff.</li>
-<li>End with a working demo and a short “what we changed” note.</li>
+<li>Capture diffs and short traces tied to each run.</li>
+<li>Keep snapshots small but useful.</li>
+<li>Script a one-command rollback for safety.</li>
 </ul>
 
-<p>Nothing beats a concrete walkthrough. Here’s a small feature, built start to finish.</p>
+<p>Observability is useful when it explains outcomes, not when it fills disks.</p>
 
 <h2>Why now: the AI, economic, and cultural backdrop</h2>
 
@@ -66,32 +66,32 @@
 </ul>
 
 <h2>The problem</h2>
-<p>It’s hard to show flow quality without a real example. Slides don’t survive first contact with the repo.</p>
+<p>Logs are noisy; snapshots are missing; rollbacks are manual and risky.</p>
 
 <h2>A simple way forward</h2>
 <ul>
-<li>Pick one user story that matters.</li>
-<li>Keep scope small and time-boxed.</li>
-<li>Record artifacts at each step; keep them in the repo.</li>
+<li>**Diffs with context.** Focus on what changed and why.</li>
+<li>**Short traces.** Record the path taken, not every breath.</li>
+<li>**Rollback script.** Undo the last change with a single command, then investigate.</li>
 </ul>
 
 <h2>Example</h2>
 <pre><code>
-# Replay the case
-make demo
+# First rollback
+make rollback LAST=1
 </code></pre>
 
 <h2>Key takeaways</h2>
 <ul>
-<li>Shipping one tiny feature end-to-end proves the value better than any doc.</li>
-<li>Artifacts make the work explainable and repeatable.</li>
-<li>Tight scope invites contributions from people new to the project.</li>
+<li>People debug faster when diffs are clear and localized.</li>
+<li>Short traces help you reason about behavior without drowning in detail.</li>
+<li>Rollbacks buy you time to fix root causes without pressure.</li>
 </ul>
 
 <h2>What to do next</h2>
 <ul>
-<li>Fork the template, replay the case in your repo, and post your results.</li>
-<li>Open a discussion with what you’d change in the flow—let’s refine it together.</li>
+<li>Turn on tracing and snapshotting for one critical path.</li>
+<li>Share a minimal rollback script that works on your repo layout.</li>
 </ul>
 
 <h2>Join the community</h2>
@@ -109,10 +109,10 @@ make demo
 
 <p>Be kind, stay practical; opinions welcome—data even better.</p>
     <div class="footer">
-      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/">https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end/</a>.</p>
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks-v5/">https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks/</a>.</p>
     </div>
     <div class="footer">
-      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/">https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/</a>.</p>
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks-v5/">https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks/</a>.</p>
     </div>
   </article>
 </body>

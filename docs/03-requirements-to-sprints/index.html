@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A small feature, shipped end-to-end with the pipeline</title>
-  <meta property="og:title" content="A small feature, shipped end-to-end with the pipeline">
-  <meta property="og:description" content="Story to design to dev to QA to demo">
-  <meta property="og:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/07-case-study-end-to-end-v4-banner.svg">
+  <title>From requirements to sprints: BA to Architect to stories</title>
+  <meta property="og:title" content="From requirements to sprints: BA to Architect to stories">
+  <meta property="og:description" content="Make the planning steps boring, in a good way">
+  <meta property="og:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/03-requirements-to-sprints-banner.svg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="A small feature, shipped end-to-end with the pipeline">
-  <meta name="twitter:description" content="Story to design to dev to QA to demo">
-  <meta name="twitter:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/07-case-study-end-to-end-v4-banner.svg">
-  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/">
-  <meta name="description" content="Story to design to dev to QA to demo">
+  <meta name="twitter:title" content="From requirements to sprints: BA to Architect to stories">
+  <meta name="twitter:description" content="Make the planning steps boring, in a good way">
+  <meta name="twitter:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/03-requirements-to-sprints-banner.svg">
+  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints/">
+  <meta name="description" content="Make the planning steps boring, in a good way">
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; max-width: 740px; margin: 2rem auto; padding: 0 1rem; }
     h1, h2, h3 { line-height: 1.25; }
@@ -25,20 +25,20 @@
 </head>
 <body>
   <article>
-    <figure class="hero"><img src="https://krukmat.github.io/agnostic-ai-pipeline/assets/07-case-study-end-to-end-v4-banner.svg" alt="A small feature, shipped end-to-end with the pipeline" style="width:100%;border-radius:12px"></figure>
-    <h1>A small feature, shipped end-to-end with the pipeline</h1>
-    <p class="subtitle">Story to design to dev to QA to demo</p>
-    <p># A small feature, shipped end-to-end with the pipeline</p>
-<blockquote>Story → design → dev → QA → demo</blockquote>
+    <figure class="hero"><img src="https://krukmat.github.io/agnostic-ai-pipeline/assets/03-requirements-to-sprints-banner.svg" alt="From requirements to sprints: BA to Architect to stories" style="width:100%;border-radius:12px"></figure>
+    <h1>From requirements to sprints: BA to Architect to stories</h1>
+    <p class="subtitle">Make the planning steps boring, in a good way</p>
+    <p># From requirements to sprints: BA → Architect → stories</p>
+<blockquote>Make the planning steps boring—in a good way</blockquote>
 
 <p>**TL;DR**</p>
 <ul>
-<li>Walk through one realistic mini-feature.</li>
-<li>Keep scope tight; show artifacts at each handoff.</li>
-<li>End with a working demo and a short “what we changed” note.</li>
+<li>Normalize requirements to a single YAML.</li>
+<li>Hand off to Architect for structure and constraints.</li>
+<li>Produce small, reviewable stories with clear acceptance.</li>
 </ul>
 
-<p>Nothing beats a concrete walkthrough. Here’s a small feature, built start to finish.</p>
+<p>Planning feels slow when it’s vague. A simple, repeatable path speeds up everything that follows.</p>
 
 <h2>Why now: the AI, economic, and cultural backdrop</h2>
 
@@ -66,32 +66,34 @@
 </ul>
 
 <h2>The problem</h2>
-<p>It’s hard to show flow quality without a real example. Slides don’t survive first contact with the repo.</p>
+<p>Ideas arrive as paragraphs and leave as confusion. The team fills gaps mid-implementation, and the backlog grows fuzzy.</p>
 
 <h2>A simple way forward</h2>
 <ul>
-<li>Pick one user story that matters.</li>
-<li>Keep scope small and time-boxed.</li>
-<li>Record artifacts at each step; keep them in the repo.</li>
+<li>**One source of truth.** `planning/requirements.yaml` is where everything starts.</li>
+<li>**BA normalizes.** Clarify scope, actors, constraints.</li>
+<li>**Architect shapes.** Split, set boundaries, name risks.</li>
+<li>**Story writer outputs.** Small, testable stories with acceptance.</li>
 </ul>
 
 <h2>Example</h2>
 <pre><code>
-# Replay the case
-make demo
+# One-two punch
+make ba &amp;&amp; make plan
+git diff planning/
 </code></pre>
 
 <h2>Key takeaways</h2>
 <ul>
-<li>Shipping one tiny feature end-to-end proves the value better than any doc.</li>
-<li>Artifacts make the work explainable and repeatable.</li>
-<li>Tight scope invites contributions from people new to the project.</li>
+<li>The planning chain is fast when each step produces a file you can review.</li>
+<li>Tiny stories reduce risk and help new contributors ramp up.</li>
+<li>Reproducibility beats memory—commit artifacts and discuss with diffs.</li>
 </ul>
 
 <h2>What to do next</h2>
 <ul>
-<li>Fork the template, replay the case in your repo, and post your results.</li>
-<li>Open a discussion with what you’d change in the flow—let’s refine it together.</li>
+<li>Try the flow on a real feature, not a toy.</li>
+<li>Share your first backlog diff in a PR and ask for blunt feedback.</li>
 </ul>
 
 <h2>Join the community</h2>
@@ -109,10 +111,10 @@ make demo
 
 <p>Be kind, stay practical; opinions welcome—data even better.</p>
     <div class="footer">
-      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/">https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end/</a>.</p>
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints/">https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints/</a>.</p>
     </div>
     <div class="footer">
-      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/">https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/</a>.</p>
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints/">https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints/</a>.</p>
     </div>
   </article>
 </body>

@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A small feature, shipped end-to-end with the pipeline</title>
-  <meta property="og:title" content="A small feature, shipped end-to-end with the pipeline">
-  <meta property="og:description" content="Story to design to dev to QA to demo">
-  <meta property="og:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/07-case-study-end-to-end-v4-banner.svg">
+  <title>Guardrails that matter: policies, validators, and safe actions</title>
+  <meta property="og:title" content="Guardrails that matter: policies, validators, and safe actions">
+  <meta property="og:description" content="Enough structure to prevent the common footguns">
+  <meta property="og:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/05-guardrails-and-safety-banner.svg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="A small feature, shipped end-to-end with the pipeline">
-  <meta name="twitter:description" content="Story to design to dev to QA to demo">
-  <meta name="twitter:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/07-case-study-end-to-end-v4-banner.svg">
-  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/">
-  <meta name="description" content="Story to design to dev to QA to demo">
+  <meta name="twitter:title" content="Guardrails that matter: policies, validators, and safe actions">
+  <meta name="twitter:description" content="Enough structure to prevent the common footguns">
+  <meta name="twitter:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/05-guardrails-and-safety-banner.svg">
+  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety-v5/">
+  <meta name="description" content="Enough structure to prevent the common footguns">
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; max-width: 740px; margin: 2rem auto; padding: 0 1rem; }
     h1, h2, h3 { line-height: 1.25; }
@@ -25,20 +25,20 @@
 </head>
 <body>
   <article>
-    <figure class="hero"><img src="https://krukmat.github.io/agnostic-ai-pipeline/assets/07-case-study-end-to-end-v4-banner.svg" alt="A small feature, shipped end-to-end with the pipeline" style="width:100%;border-radius:12px"></figure>
-    <h1>A small feature, shipped end-to-end with the pipeline</h1>
-    <p class="subtitle">Story to design to dev to QA to demo</p>
-    <p># A small feature, shipped end-to-end with the pipeline</p>
-<blockquote>Story → design → dev → QA → demo</blockquote>
+    <figure class="hero"><img src="https://krukmat.github.io/agnostic-ai-pipeline/assets/05-guardrails-and-safety-banner.svg" alt="Guardrails that matter: policies, validators, and safe actions" style="width:100%;border-radius:12px"></figure>
+    <h1>Guardrails that matter: policies, validators, and safe actions</h1>
+    <p class="subtitle">Enough structure to prevent the common footguns</p>
+    <p># Guardrails that matter: policies, validators, and safe actions</p>
+<blockquote>Enough structure to prevent the common footguns</blockquote>
 
 <p>**TL;DR**</p>
 <ul>
-<li>Walk through one realistic mini-feature.</li>
-<li>Keep scope tight; show artifacts at each handoff.</li>
-<li>End with a working demo and a short “what we changed” note.</li>
+<li>Use file/action allowlists; keep them short.</li>
+<li>Add preflight validators for inputs before the heavy work.</li>
+<li>Bound actions to safe folders; provide one admin escape hatch.</li>
 </ul>
 
-<p>Nothing beats a concrete walkthrough. Here’s a small feature, built start to finish.</p>
+<p>You don’t need a fortress—just a few locks on the right doors.</p>
 
 <h2>Why now: the AI, economic, and cultural backdrop</h2>
 
@@ -66,32 +66,32 @@
 </ul>
 
 <h2>The problem</h2>
-<p>It’s hard to show flow quality without a real example. Slides don’t survive first contact with the repo.</p>
+<p>Overly broad actions and unclear file permissions cause silent damage. A prompt tries to do everything, and it does it in the wrong place.</p>
 
 <h2>A simple way forward</h2>
 <ul>
-<li>Pick one user story that matters.</li>
-<li>Keep scope small and time-boxed.</li>
-<li>Record artifacts at each step; keep them in the repo.</li>
+<li>**Allowlists.** Name the files and commands that are allowed, nothing more.</li>
+<li>**Preflight.** Validate inputs early: schema, size, forbidden patterns.</li>
+<li>**Bounded actions.** Confine writes to safe paths; log all changes for review.</li>
 </ul>
 
 <h2>Example</h2>
 <pre><code>
-# Replay the case
-make demo
+# Validate before run
+make validate &amp;&amp; make plan
 </code></pre>
 
 <h2>Key takeaways</h2>
 <ul>
-<li>Shipping one tiny feature end-to-end proves the value better than any doc.</li>
-<li>Artifacts make the work explainable and repeatable.</li>
-<li>Tight scope invites contributions from people new to the project.</li>
+<li>Most incidents come from overly broad capabilities; reduce scope first.</li>
+<li>Preflight checks are cheap and catch 80% of mistakes.</li>
+<li>Bounded writes make reviews and rollbacks straightforward.</li>
 </ul>
 
 <h2>What to do next</h2>
 <ul>
-<li>Fork the template, replay the case in your repo, and post your results.</li>
-<li>Open a discussion with what you’d change in the flow—let’s refine it together.</li>
+<li>Ship a default validator and improve it with real failures from your repo.</li>
+<li>Share your allowlist snippet so others can compare and adapt it.</li>
 </ul>
 
 <h2>Join the community</h2>
@@ -109,10 +109,10 @@ make demo
 
 <p>Be kind, stay practical; opinions welcome—data even better.</p>
     <div class="footer">
-      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/">https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end/</a>.</p>
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety-v5/">https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety/</a>.</p>
     </div>
     <div class="footer">
-      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/">https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v4/</a>.</p>
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety-v5/">https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety/</a>.</p>
     </div>
   </article>
 </body>
