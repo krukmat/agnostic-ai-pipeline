@@ -1,0 +1,19 @@
+flowchart TD
+    A[Story S6: PATCH /api/tasks] --> B{Try Primary Model<br/>Gemini 2.5-pro}
+    B -->|Success| C[Done]
+    B -->|Failed 3 times| D[Analyze Failure Type]
+    D --> E{Error: No structured output}
+    E --> F[Score Backup Models]
+    F --> G[Codex CLI: +10 points<br/>specialty: structured_output]
+    F --> H[Ollama Qwen: +8 points<br/>specialty: code_generation]
+    G --> I{Try Codex CLI}
+    I -->|Failed| J[Try Ollama Qwen]
+    J -->|Success| C
+    J -->|Failed| K[Mark as blocked<br/>recovery_attempts: 2]
+
+    style B fill:#fff4e1
+    style D fill:#ffe1e1
+    style F fill:#e1f5ff
+    style I fill:#ffe1f5
+    style C fill:#e1ffe1
+    style K fill:#ff9999

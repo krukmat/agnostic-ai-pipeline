@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant User
+    participant BA as Business Analyst<br/>(Ollama - Free)
+    participant PO as Product Owner<br/>(Ollama - Free)
+    participant Arch as Architect<br/>(Gemini - $0.20)
+    participant Dev as Developer<br/>(GPT-4 - $5.00)
+    participant QA as QA Engineer<br/>(Claude - $1.50)
+
+    User->>BA: "Login with email/password"
+    BA->>PO: requirements.yaml
+    PO->>Arch: product_review.yaml
+    Arch->>Dev: stories.yaml + architecture.yaml
+    Dev->>QA: Generated code + tests
+    QA->>User: QA report + artifacts
+
+    Note over BA,PO: Draft phase: Local models (free)
+    Note over Arch,QA: Review phase: Cloud models (paid)
