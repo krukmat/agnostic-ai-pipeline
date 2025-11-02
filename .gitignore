@@ -222,3 +222,6 @@ model_backup_test.md
 
 # Documentación interna y análisis
 docs/analysis/
+docs/agent_prompt.md
+docs/analysis_backup/recommender_vs_fallback.md
+.gitignore

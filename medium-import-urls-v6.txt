@@ -1,0 +1,8 @@
+https://krukmat.github.io/agnostic-ai-pipeline/04-tools-integration-cline-ollama-routers-v6/
+https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints-v6/
+https://krukmat.github.io/agnostic-ai-pipeline/00-vision-v6/
+https://krukmat.github.io/agnostic-ai-pipeline/06-observability-diffs-rollbacks-v6/
+https://krukmat.github.io/agnostic-ai-pipeline/07-case-study-end-to-end-v6/
+https://krukmat.github.io/agnostic-ai-pipeline/01-roles-to-agents-v6/
+https://krukmat.github.io/agnostic-ai-pipeline/02-cost-first-orchestration-v6/
+https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety-v6/
