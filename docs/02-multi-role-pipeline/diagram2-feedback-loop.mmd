@@ -1,17 +1,27 @@
-flowchart TD
-    A[Developer implements Story S1] --> B[QA validates code + tests]
-    B -->|Approve| C[Story marked 'done']
-    B -->|Reject| D{ARCHITECT_INTERVENTION=1?}
-    D -->|Yes| E[Architect refines story<br/>based on QA feedback]
-    D -->|No| F[Story back to 'todo'<br/>no changes]
-    E --> G[Developer tries again<br/>with refined criteria]
-    F --> G
-    G --> B
+sequenceDiagram
+    participant Dev as Developer
+    participant QA as QA Engineer
+    participant Arch as Architect
 
-    style A fill:#bbdefb,stroke:#1976d2,stroke-width:2px
-    style B fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
-    style C fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
-    style D fill:#fff9c4,stroke:#f57f17,stroke-width:2px
-    style E fill:#ffe0b2,stroke:#e64a19,stroke-width:2px
-    style F fill:#ffccbc,stroke:#d84315,stroke-width:2px
-    style G fill:#bbdefb,stroke:#1976d2,stroke-width:2px
+    Note over Dev: Implements Story S1<br/>(based on acceptance criteria)
+    Dev->>QA: Submit code + tests (status: in_review)
+
+    Note over QA: Validates implementation<br/>against acceptance criteria
+
+    alt QA Approves
+        QA->>Dev: ✓ Approved
+        Note over Dev: Story marked 'done'
+    else QA Rejects (ARCHITECT_INTERVENTION=1)
+        QA->>Arch: ✗ Rejected with feedback
+        Note over Arch: Reads QA feedback<br/>Refines story criteria
+        Arch->>Dev: Updated story with refined criteria
+        Note over Dev: Implements again<br/>(retry with better spec)
+        Dev->>QA: Resubmit code + tests
+        Note over QA: Validates again
+        QA->>Dev: ✓ Approved (2nd attempt)
+    else QA Rejects (ARCHITECT_INTERVENTION=0)
+        QA->>Dev: ✗ Rejected (no refinement)
+        Note over Dev: Story back to 'todo'<br/>(same criteria)
+        Dev->>QA: Resubmit code + tests
+        QA->>Dev: ✓ Approved (2nd attempt)
+    end
