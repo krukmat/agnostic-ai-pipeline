@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Right Model, Right Moment — Ship Faster with a Model-Agnostic Software Factory Pipeline</title>
+  <meta name="description" content="Ship faster with a model-agnostic pipeline: local drafts for speed/cost, cloud sign-off for quality. Guardrails, routing, and auditable artifacts.">
+  <meta property="og:title" content="Right Model, Right Moment — Ship Faster with a Model-Agnostic Software Factory Pipeline">
+  <meta property="og:description" content="Ship faster with a model-agnostic pipeline: local drafts for speed/cost, cloud sign-off for quality. Guardrails, routing, and auditable artifacts.">
+  <meta property="og:image" content="../assets/hero-right-model.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Right Model, Right Moment — Ship Faster with a Model-Agnostic Software Factory Pipeline">
+  <meta name="twitter:description" content="Ship faster with a model-agnostic pipeline: local drafts for speed/cost, cloud sign-off for quality. Guardrails, routing, and auditable artifacts.">
+  <meta name="twitter:image" content="../assets/hero-right-model.png">
+  <style>
+    :root { --maxw: 760px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.65; color: #0b0f19; }
+    main { max-width: var(--maxw); margin: 2rem auto; padding: 0 1rem; }
+    h1, h2, h3 { line-height: 1.25; }
+    .subtitle { color: #444; margin-top: -0.5rem; }
+    .hero img { width: 100%; border-radius: 12px; }
+    pre { overflow: auto; background: #f6f8fa; padding: 1rem; border-radius: 8px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .callout { background: #fff7cc; border: 1px solid #ffe58f; padding: 0.75rem 1rem; border-radius: 8px; }
+    .muted { color: #666; }
+    hr { border: none; border-top: 1px solid #eee; margin: 2rem 0; }
+    a { color: #0b5fff; text-decoration: none; }
+    .footer { margin-top: 3rem; font-size: .9rem; color: #666; }
+    .byline { margin: .25rem 0 1rem; font-size: .95rem; color: #586076; }
+  </style>
+  <!-- Mermaid for diagrams -->
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "default" });
+  </script>
+</head>
+<body>
+  <main>
+    <figure class="hero"><img src="../assets/hero-right-model.png" alt="Right Model, Right Moment"></figure>
+    <h1>Right Model, Right Moment — Ship Faster with a Model-Agnostic Software Factory Pipeline</h1>
+    <p class="byline muted">Agnostic-AI Pipeline • Open PoC</p>
+    <p class="subtitle">How to ship real value while models change every week.</p>
+
+    <p class="callout"><strong>Core idea:</strong> use the right model for the right instance — draft locally for speed/cost, and escalate to cloud only for high-stakes steps (quality, safety, approvals).</p>
+
+    <h3>Who should read this</h3>
+    <ul>
+      <li>Engineers who want <strong>predictable cost &amp; latency</strong> instead of vendor roulette.</li>
+      <li>Teams that need <strong>auditable artifacts</strong> (diff-able prompts, stories, architecture notes).</li>
+      <li>Builders who prefer <strong>shipping</strong> over debating the “one perfect model.”</li>
+    </ul>
+
+    <h2>Background &amp; Motivation</h2>
+    <p>Over the last 18 months, teams learned a hard truth: you can’t plan around a single “perfect” model. Capabilities shift weekly, APIs change, pricing moves, context windows expand and then break something downstream. Meanwhile, budgets and latency targets get stricter, and legal asks for clear answers on data boundaries and audit trails. That’s not a research problem—it's a <strong>software delivery</strong> problem.</p>
+    <p>Most projects stall the same way: a great demo lands, excitement peaks, and shipping slows. Costs are unpredictable, prompts live in someone’s notes, outputs aren’t reproducible, and every model change feels like a rewrite. The result is decision paralysis—more vendor debates, fewer working features.</p>
+    <p>This pipeline is built on a simpler premise: <strong>right model, right moment</strong>. Draft locally for speed and cost; escalate to cloud only for high-stakes steps. Treat AI like a <strong>software factory</strong>: clear roles → agents, contracts you can diff, and guardrails by default. Route by <strong>constraints</strong> (cost/quality/latency/context) rather than brand.</p>
+
+    <h2>The playbook (small, durable, dev-friendly)</h2>
+    <ol>
+      <li><strong>Roles → Agents</strong> with clear contracts (inputs/outputs you can diff in PRs).</li>
+      <li><strong>Routing by constraints</strong>: cost / quality / latency / context (not hype).</li>
+      <li><strong>Guardrails by default</strong>: validators, allow-lists, bounded tools.</li>
+      <li><strong>Observability</strong>: logs, budgets, diffs, and failure modes you can reason about.</li>
+      <li><strong>Escalation</strong>: local models for drafts → cloud for sign-off only.</li>
+    </ol>
+
+    <h2>How it works</h2>
+    <p>The pipeline runs <strong>BA → Architect → Dev → QA</strong> as a repeatable loop. A single command kicks an iteration, produces artifacts (requirements, stories, code, tests, QA results), and snapshots the state for audits and rollbacks.</p>
+
+    <h3>Diagram — end-to-end flow</h3>
+    <div class="mermaid">
+flowchart LR
+  Concept[Business Concept] --> BA[Business Analyst]
+  BA --> ARCH[Architect]
+  ARCH --> DEV[Developer]
+  DEV --> QA[QA]
+  QA --> Release[Snapshot & Release Artifacts]
+  classDef local fill:#d1ffe6,stroke:#0a7d53,color:#0a7d53;
+  classDef cloud fill:#e7f0ff,stroke:#0b5fff,color:#0b5fff;
+  BA:::local
+  ARCH:::local
+  DEV:::local
+  QA:::cloud
+    </div>
+
+    <h2>Routing by constraints</h2>
+    <p>Pick models <strong>per step</strong>, not per project. Keep drafts local; escalate review/sign-off.</p>
+    <pre><code class="language-json">{
+  "BA":   { "provider": "local", "model": "qwen2.5-coder:14b", "max_cost": 0.50 },
+  "ARCH": { "provider": "local", "model": "qwen2.5:7b",        "max_cost": 0.40 },
+  "REVIEW": { "provider": "cloud", "model": "gpt-4o-mini", "max_cost": 1.50, "when": "final_signoff" }
+}</code></pre>
+
+    <h2>Artifacts &amp; snapshots (auditable by design)</h2>
+    <p>Each iteration writes a <strong>snapshot</strong> with planning, code, and a machine-readable summary. Typical shape:</p>
+    <pre><code>artifacts/iterations/&lt;iteration-name&gt;/
+├─ planning/
+│  ├─ requirements.yaml
+│  ├─ prd.yaml
+│  ├─ architecture.yaml
+│  ├─ epics.yaml
+│  ├─ stories.yaml
+│  └─ tasks.csv
+├─ project/
+│  ├─ backend-fastapi/
+│  └─ web-express/
+└─ summary.json
+</code></pre>
+
+    <pre><code class="language-json">{
+  "concept": "Login MVP",
+  "loops": 2,
+  "qa_strict": true,
+  "stories": { "done": 7, "blocked": 2, "pending": 1 },
+  "blocked_ids": ["ST-008", "ST-011"]
+}
+</code></pre>
+
+    <h2>From requirements to stories</h2>
+    <p>Provide a minimal <code>requirements.yaml</code> and let the loop generate stories + acceptance criteria.</p>
+    <pre><code class="language-yaml">product: Agnostic-AI Pipeline
+goals:
+  - Generate user stories from plain requirements
+  - Keep costs under €3 per planning run
+constraints:
+  - No secret data leaves the local machine
+  - Cloud escalation only for final review
+acceptance:
+  - Stories include AC in Gherkin
+  - Each story has a test target
+</code></pre>
+
+    <pre><code class="language-yaml">- id: ST-001
+  title: "As a user, I can sign in with email and password"
+  acceptance:
+    - "Given a registered user, when credentials are valid, then 200 and session cookie"
+    - "Given invalid credentials, then 401 and no session cookie"
+  status: "pending"
+  test_target: "backend-fastapi/tests/test_auth_login.py::test_login_success"
+</code></pre>
+
+    <h2>Quick start (5 minutes)</h2>
+    <pre><code class="language-bash"># 1) Kick an iteration (strict QA)
+make iteration CONCEPT="Login MVP" LOOPS=1 ALLOW_NO_TESTS=0
+
+# 2) If QA blocks some stories, re-loop only those:
+make loop MAX_LOOPS=1
+
+# 3) Swap model just for Dev role (no refactor):
+make set-role role=dev provider=codex_cli model="codex-local"
+</code></pre>
+
+    <h3>Diagram — escalation rule (local → cloud)</h3>
+    <div class="mermaid">
+sequenceDiagram
+  participant Dev as Dev (local)
+  participant QA  as QA (cloud)
+  Dev->>QA: propose change + tests
+  QA-->>Dev: results (pass/fail + cost/latency)
+  alt Fail or Missing AC
+    QA->>QA: escalate model (higher-quality reviewer)
+    QA-->>Dev: actionable feedback
+  else Pass
+    QA->>Repo: snapshot &amp; release artifacts
+  end
+    </div>
+
+    <h2>Common traps</h2>
+    <ul>
+      <li><strong>One-model monolith.</strong> When it breaks, everything breaks → <em>Route per step.</em></li>
+      <li><strong>Hidden prompts.</strong> If they aren’t diff-able, they don’t improve → <em>Put artifacts in git.</em></li>
+      <li><strong>No guardrails.</strong> Surprises in prod → <em>Budgets, allow-lists, bounded tools.</em></li>
+      <li><strong>Meetings over artifacts.</strong> → <em>Promote reproducible outputs, not vibes.</em></li>
+    </ul>
+
+    <h2>What “good” looks like (30-day horizon)</h2>
+    <ul>
+      <li>Draft steps run locally with hard budget/latency caps.</li>
+      <li>One cloud model is used <strong>only</strong> for final review/sign-off.</li>
+      <li>Artifacts (stories, arch notes, logs) are diff-able in PRs.</li>
+      <li>Swapping a model is a routing change, not a refactor.</li>
+      <li>Teams can explain cost and decisions on one page.</li>
+    </ul>
+
+    <h2>FAQ</h2>
+    <ul>
+      <li><strong>Can I keep my stack?</strong> Yes—this is glue, not a rewrite.</li>
+      <li><strong>What if our model changes?</strong> Update routing for that step only.</li>
+      <li><strong>PII/compliance?</strong> Keep drafts local; escalate only sign-off steps.</li>
+      <li><strong>How do we track cost?</strong> Logs include cost/latency per step; set caps and fail fast.</li>
+    </ul>
+
+    <h2>Join the build</h2>
+    <p>Fork it. Run the quickstart. Share your stack and results. PRs welcome (validators, adapters, cost hooks, docs). <strong>Benchmarks are gold—please share them.</strong></p>
+
+    <div class="footer">© Agnostic-AI Pipeline • Open PoC</div>
+  </main>
+</body>
+</html>
