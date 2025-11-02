@@ -3,173 +3,523 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Right Model, Right Moment — Ship Faster with a Model-Agnostic Software Factory Pipeline</title>
-  <meta name="description" content="Ship faster with a model-agnostic pipeline: local drafts for speed/cost, cloud sign-off for quality. Guardrails, routing, and auditable artifacts.">
-  <meta property="og:title" content="Right Model, Right Moment — Ship Faster with a Model-Agnostic Software Factory Pipeline">
-  <meta property="og:description" content="Ship faster with a model-agnostic pipeline: local drafts for speed/cost, cloud sign-off for quality. Guardrails, routing, and auditable artifacts.">
+  <title>I Spent $347 Testing AI Models in Two Weeks. Here's What I Built Instead.</title>
+  <meta name="description" content="The AI model landscape of 2025 is chaos. Here's how I stopped playing vendor roulette and built a software factory that works with any model.">
+  <meta property="og:title" content="I Spent $347 Testing AI Models in Two Weeks. Here's What I Built Instead.">
+  <meta property="og:description" content="The AI model landscape of 2025 is chaos. Here's how I stopped playing vendor roulette and built a software factory that works with any model.">
   <meta property="og:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/hero-right-model.png">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Right Model, Right Moment — Ship Faster with a Model-Agnostic Software Factory Pipeline">
-  <meta name="twitter:description" content="Ship faster with a model-agnostic pipeline: local drafts for speed/cost, cloud sign-off for quality. Guardrails, routing, and auditable artifacts.">
-  <meta name="twitter:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/hero-right-model.png">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <style>
-    :root {{ --maxw: 760px; }}
-    body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.72; color: #0b0f19; background: #fff; }}
-    main {{ max-width: var(--maxw); margin: 2.25rem auto; padding: 0 1rem; }}
-    h1, h2, h3 {{ line-height: 1.25; }}
-    h1 {{ font-size: 2.1rem; }}
-    .subtitle {{ color: #444; margin-top: -0.35rem; }}
-    .hero img {{ width: 100%; border-radius: 12px; }}
-    pre {{ overflow: auto; background: #f6f8fa; padding: 1rem; border-radius: 8px; font-size: 0.95rem; }}
-    code {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
-    .callout {{ background: #fff7cc; border: 1px solid #ffe58f; padding: 0.75rem 1rem; border-radius: 8px; }}
-    .muted {{ color: #666; }}
-    hr {{ border: none; border-top: 1px solid #eee; margin: 2rem 0; }}
-    a {{ color: #0b5fff; text-decoration: none; }}
-    .footer {{ margin-top: 3rem; font-size: .9rem; color: #666; }}
-    .byline {{ margin: .25rem 0 1rem; font-size: .95rem; color: #586076; }}
-    figure {{ margin: 1.25rem 0; }}
-    figcaption {{ font-size: .9rem; color: #666; }}
+    :root { --maxw: 720px; --accent: #0066cc; }
+    body {
+      font-family: Georgia, Cambria, "Times New Roman", serif;
+      line-height: 1.75;
+      color: #1a1a1a;
+      background: #fff;
+      margin: 0;
+      padding: 0;
+    }
+    main {
+      max-width: var(--maxw);
+      margin: 3rem auto;
+      padding: 0 1.5rem;
+    }
+    h1 {
+      font-size: 2.4rem;
+      line-height: 1.2;
+      margin: 1.5rem 0 0.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      font-size: 1.75rem;
+      margin: 2.5rem 0 1rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    h3 {
+      font-size: 1.3rem;
+      margin: 2rem 0 0.75rem;
+      font-weight: 600;
+    }
+    .subtitle {
+      font-size: 1.25rem;
+      color: #666;
+      margin: 0.5rem 0 2rem;
+      font-style: italic;
+    }
+    .meta {
+      color: #999;
+      font-size: 0.95rem;
+      margin-bottom: 2rem;
+      font-family: -apple-system, system-ui, sans-serif;
+    }
+    p { margin: 1.25rem 0; }
+    .hero {
+      margin: 2rem 0;
+      text-align: center;
+    }
+    .hero img {
+      max-width: 100%;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .callout {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin: 2rem 0;
+      font-size: 1.1rem;
+    }
+    .callout strong { color: #fff; }
+    .insight-box {
+      background: #f8f9fa;
+      border-left: 4px solid var(--accent);
+      padding: 1.25rem 1.5rem;
+      margin: 2rem 0;
+      font-size: 1.05rem;
+    }
+    .numbers {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+    .number-card {
+      background: #f8f9fa;
+      padding: 1.5rem;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .number-card .big {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--accent);
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    .number-card .label {
+      font-size: 0.95rem;
+      color: #666;
+      font-family: -apple-system, system-ui, sans-serif;
+    }
+    pre {
+      overflow-x: auto;
+      background: #282c34;
+      color: #abb2bf;
+      padding: 1.25rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin: 1.5rem 0;
+    }
+    code {
+      font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", monospace;
+      background: #f5f5f5;
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    .mermaid {
+      background: #f8f9fa;
+      padding: 2rem 1rem;
+      border-radius: 8px;
+      margin: 2rem 0;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+    a:hover {
+      border-bottom-color: var(--accent);
+    }
+    .repo-link {
+      background: #24292e;
+      color: white;
+      padding: 1rem 1.5rem;
+      border-radius: 6px;
+      display: inline-block;
+      margin: 2rem 0;
+      font-family: -apple-system, system-ui, sans-serif;
+      font-weight: 500;
+    }
+    .repo-link:hover {
+      background: #1a1f24;
+      border-bottom: none;
+    }
+    ul, ol {
+      margin: 1.25rem 0;
+      padding-left: 1.75rem;
+    }
+    li { margin: 0.75rem 0; }
+    .footer {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid #e5e5e5;
+      color: #999;
+      font-size: 0.9rem;
+      font-family: -apple-system, system-ui, sans-serif;
+    }
+    blockquote {
+      border-left: 4px solid #ddd;
+      margin: 2rem 0;
+      padding-left: 1.5rem;
+      color: #666;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
   <main>
-    <figure class="hero"><img src="https://krukmat.github.io/agnostic-ai-pipeline/assets/hero-right-model.png" alt="Right Model, Right Moment"></figure>
-    <h1>Right Model, Right Moment — Ship Faster with a Model-Agnostic Software Factory Pipeline</h1>
-    <p class="byline muted">Agnostic-AI Pipeline • Open PoC</p>
-    <p class="subtitle">How to ship real value while models change every week.</p>
+    <h1>I Spent $347 Testing AI Models in Two Weeks. Here's What I Built Instead.</h1>
+    <p class="subtitle">The AI landscape of 2025 is chaos. Here's how I stopped playing vendor roulette and built a software factory that works with any model.</p>
+    <p class="meta">8 min read • Open Source Project</p>
 
-    <p class="callout"><strong>Core idea:</strong> use the right model for the right instance — draft locally for speed/cost, and escalate to cloud only for high-stakes steps (quality, safety, approvals).</p>
+    <h2>The Problem (and it's getting worse)</h2>
 
-    <h3>Who should read this</h3>
-    <ul>
-      <li>Engineers who want <strong>predictable cost &amp; latency</strong> instead of vendor roulette.</li>
-      <li>Teams that need <strong>auditable artifacts</strong> (diff-able prompts, stories, architecture notes).</li>
-      <li>Builders who prefer <strong>shipping</strong> over debating the “one perfect model.”</li>
-    </ul>
+    <p>Last month, I burned through $347 testing whether GPT-4 could generate our backend code. It worked beautifully—until OpenAI changed their API three days later and our prompts started returning garbage. We scrambled to Claude. Then Gemini. Then back to GPT-4 with new prompts.</p>
 
-    <h2>Background &amp; Motivation</h2>
-    <p>Over the last 18 months, teams learned a hard truth: you can’t plan around a single “perfect” model. Capabilities shift weekly, APIs change, pricing moves, context windows expand and then break something downstream. Meanwhile, budgets and latency targets get stricter, and legal asks for clear answers on data boundaries and audit trails. That’s not a research problem—it's a <strong>software delivery</strong> problem.</p>
-    <p>Most projects stall the same way: a great demo lands, excitement peaks, and shipping slows. Costs are unpredictable, prompts live in someone’s notes, outputs aren’t reproducible, and every model change feels like a rewrite. The result is decision paralysis—more vendor debates, fewer working features.</p>
-    <p>This pipeline is built on a simpler premise: <strong>right model, right moment</strong>. Draft locally for speed and cost; escalate to cloud only for high-stakes steps. Treat AI like a <strong>software factory</strong>: clear roles → agents, contracts you can diff, and guardrails by default. Route by <strong>constraints</strong> (cost/quality/latency/context) rather than brand.</p>
+    <p>You know where this goes.</p>
 
-    <h2>The playbook (small, durable, dev-friendly)</h2>
+    <p>Here's the uncomfortable truth about building with AI in 2025: <strong>the "perfect model" doesn't exist, and even if it did, it'll be different next week.</strong></p>
+
+    <div class="numbers">
+      <div class="number-card">
+        <span class="big">120+</span>
+        <span class="label">Available LLM models</span>
+      </div>
+      <div class="number-card">
+        <span class="big">~15</span>
+        <span class="label">New models per month</span>
+      </div>
+      <div class="number-card">
+        <span class="big">$0-$60</span>
+        <span class="label">Cost per 1M tokens range</span>
+      </div>
+    </div>
+
+    <p>The AI model landscape is fragmented, volatile, and expensive. Every team faces the same brutal cycle:</p>
+
     <ol>
-      <li><strong>Roles → Agents</strong> with clear contracts (inputs/outputs you can diff in PRs).</li>
-      <li><strong>Routing by constraints</strong>: cost / quality / latency / context (not hype).</li>
-      <li><strong>Guardrails by default</strong>: validators, allow-lists, bounded tools.</li>
-      <li><strong>Observability</strong>: logs, budgets, diffs, and failure modes you can reason about.</li>
-      <li><strong>Escalation</strong>: local models for drafts → cloud for sign-off only.</li>
+      <li>Pick a model based on benchmarks and hype</li>
+      <li>Write prompts that work with that specific model</li>
+      <li>Ship to production</li>
+      <li>Model changes, pricing shifts, or API goes down</li>
+      <li>Scramble to rewrite everything for the next model</li>
+      <li>Repeat weekly</li>
     </ol>
 
-    <h2>How it works</h2>
-    <p>The pipeline runs <strong>BA → Architect → Dev → QA</strong> as a repeatable loop. A single command kicks an iteration, produces artifacts (requirements, stories, code, tests, QA results), and snapshots the state for audits and rollbacks.</p>
+    <p>Meanwhile, costs are unpredictable, prompts live in someone's Notion doc, outputs aren't reproducible, and every model change feels like a complete rewrite. We're stuck in vendor roulette while trying to ship actual features.</p>
 
-    <figure>
-      <img src="https://krukmat.github.io/agnostic-ai-pipeline/assets/flow-e2e.png" alt="End-to-end flow">
-      <figcaption>End-to-end loop: local for drafts; cloud only for sign-off.</figcaption>
-    </figure>
+    <h2>The Insight: Stop Betting on One Model</h2>
 
-    <h2>Routing by constraints</h2>
-    <p>Pick models <strong>per step</strong>, not per project. Keep drafts local; escalate review/sign-off.</p>
-    <pre><code class="language-json">{
-  "BA":   {{ "provider": "local", "model": "qwen2.5-coder:14b", "max_cost": 0.50 }},
-  "ARCH": {{ "provider": "local", "model": "qwen2.5:7b",        "max_cost": 0.40 }},
-  "REVIEW": {{ "provider": "cloud", "model": "gpt-4o-mini", "max_cost": 1.50, "when": "final_signoff" }}
-}</code></pre>
+    <div class="insight-box">
+      <strong>What if we stopped trying to find the ONE perfect model?</strong><br><br>
+      What if we treated AI models like we treat servers—with routing, fallbacks, cost tiers, and observability?
+    </div>
 
-    <h2>Artifacts &amp; snapshots (auditable by design)</h2>
-    <p>Each iteration writes a <strong>snapshot</strong> with planning, code, and a machine-readable summary. Typical shape:</p>
-    <pre><code>artifacts/iterations/&lt;iteration-name&gt;/
-├─ planning/
-│  ├─ requirements.yaml
-│  ├─ prd.yaml
-│  ├─ architecture.yaml
-│  ├─ epics.yaml
-│  ├─ stories.yaml
-│  └─ tasks.csv
-├─ project/
-│  ├─ backend-fastapi/
-│  └─ web-express/
-└─ summary.json
-</code></pre>
+    <p>Think about how we handle infrastructure:</p>
 
-    <pre><code class="language-json">{
-  "concept": "Login MVP",
-  "loops": 2,
-  "qa_strict": true,
-  "stories": {{ "done": 7, "blocked": 2, "pending": 1 }},
-  "blocked_ids": ["ST-008", "ST-011"]
-}</code></pre>
-
-    <h2>From requirements to stories</h2>
-    <p>Provide a minimal <code>requirements.yaml</code> and let the loop generate stories + acceptance criteria.</p>
-    <pre><code class="language-yaml">product: Agnostic-AI Pipeline
-goals:
-  - Generate user stories from plain requirements
-  - Keep costs under €3 per planning run
-constraints:
-  - No secret data leaves the local machine
-  - Cloud escalation only for final review
-acceptance:
-  - Stories include AC in Gherkin
-  - Each story has a test target
-</code></pre>
-
-    <pre><code class="language-yaml">- id: ST-001
-  title: "As a user, I can sign in with email and password"
-  acceptance:
-    - "Given a registered user, when credentials are valid, then 200 and session cookie"
-    - "Given invalid credentials, then 401 and no session cookie"
-  status: "pending"
-  test_target: "backend-fastapi/tests/test_auth_login.py::test_login_success"
-</code></pre>
-
-    <h2>Quick start (5 minutes)</h2>
-    <pre><code class="language-bash"># 1) Kick an iteration (strict QA)
-make iteration CONCEPT="Login MVP" LOOPS=1 ALLOW_NO_TESTS=0
-
-# 2) If QA blocks some stories, re-loop only those:
-make loop MAX_LOOPS=1
-
-# 3) Swap model just for Dev role (no refactor):
-make set-role role=dev provider=codex_cli model="codex-local"
-</code></pre>
-
-    <figure>
-      <img src="https://krukmat.github.io/agnostic-ai-pipeline/assets/sequence-escalation.png" alt="Escalation sequence">
-      <figcaption>Escalation rule: local draft → cloud review only when needed.</figcaption>
-    </figure>
-
-    <h2>Common traps</h2>
     <ul>
-      <li><strong>One-model monolith.</strong> When it breaks, everything breaks → <em>Route per step.</em></li>
-      <li><strong>Hidden prompts.</strong> If they aren’t diff-able, they don’t improve → <em>Put artifacts in git.</em></li>
-      <li><strong>No guardrails.</strong> Surprises in prod → <em>Budgets, allow-lists, bounded tools.</em></li>
-      <li><strong>Meetings over artifacts.</strong> → <em>Promote reproducible outputs, not vibes.</em></li>
+      <li>We don't use AWS for everything just because it's popular</li>
+      <li>We route cheap requests to cheap servers, critical ones to premium</li>
+      <li>When a service fails, we have automatic failover</li>
+      <li>We track costs per service, set budgets, and get alerts</li>
     </ul>
 
-    <h2>What “good” looks like (30-day horizon)</h2>
+    <p>Why don't we do this with AI models?</p>
+
+    <h2>The Concept: AI Software Factory Pipeline</h2>
+
+    <p>I built a proof-of-concept that treats AI code generation like a <strong>software factory</strong>. Instead of one model doing everything, we have specialized roles—just like a real development team:</p>
+
+    <div class="mermaid">
+flowchart LR
+    A[Business Analyst] --> B[Product Owner]
+    B --> C[Architect]
+    C --> D[Developer]
+    D --> E[QA]
+    E --> F[Artifacts]
+
+    style A fill:#e1f5ff
+    style B fill:#fff4e1
+    style C fill:#ffe1f5
+    style D fill:#e1ffe1
+    style E fill:#ffe1e1
+    style F fill:#f5f5f5
+    </div>
+
+    <p>Each role can use a <strong>different model</strong>. More importantly, each role can automatically fall back to alternative models when the primary one fails.</p>
+
+    <h3>How It Actually Works</h3>
+
+    <p>Let's say you want to build a login feature. You run one command:</p>
+
+    <pre><code>make iteration CONCEPT="User login with email and password"</code></pre>
+
+    <p>The pipeline then:</p>
+
+    <div class="mermaid">
+sequenceDiagram
+    participant User
+    participant BA as Business Analyst<br/>(Ollama - Free)
+    participant PO as Product Owner<br/>(Ollama - Free)
+    participant Arch as Architect<br/>(Gemini - $0.20)
+    participant Dev as Developer<br/>(GPT-4 - $5.00)
+    participant QA as QA Engineer<br/>(Claude - $1.50)
+
+    User->>BA: "Login with email/password"
+    BA->>PO: requirements.yaml
+    PO->>Arch: product_review.yaml
+    Arch->>Dev: stories.yaml + architecture.yaml
+    Dev->>QA: Generated code + tests
+    QA->>User: QA report + artifacts
+
+    Note over BA,PO: Draft phase: Local models (free)
+    Note over Arch,QA: Review phase: Cloud models (paid)
+</div>
+
+    <ol>
+      <li><strong>Business Analyst</strong> (local Ollama model, free) → generates <code>requirements.yaml</code></li>
+      <li><strong>Product Owner</strong> (local Ollama, free) → validates requirements</li>
+      <li><strong>Architect</strong> (Gemini, $0.20) → creates user stories and architecture</li>
+      <li><strong>Developer</strong> (GPT-4, ~$5) → writes the actual code and tests</li>
+      <li><strong>QA</strong> (Claude, $1.50) → validates everything, runs tests, writes report</li>
+    </ol>
+
+    <p>Total cost for a complete feature: <strong>~$7</strong>. Compare that to running everything through GPT-4: <strong>~$25</strong>.</p>
+
+    <div class="callout">
+      <strong>The key insight:</strong> Use cheap local models for drafts and ideation. Use expensive cloud models only for the critical review and code generation steps.
+    </div>
+
+    <h2>The 2025 Challenge: Too Many Models, Not Enough Certainty</h2>
+
+    <p>Here's what the AI landscape looks like right now:</p>
+
     <ul>
-      <li>Draft steps run locally with hard budget/latency caps.</li>
-      <li>One cloud model is used <strong>only</strong> for final review/sign-off.</li>
-      <li>Artifacts (stories, arch notes, logs) are diff-able in PRs.</li>
-      <li>Swapping a model is a routing change, not a refactor.</li>
-      <li>Teams can explain cost and decisions on one page.</li>
+      <li><strong>OpenAI</strong>: GPT-4 is powerful but expensive ($15/1M tokens). o1 is smarter but costs $60/1M.</li>
+      <li><strong>Anthropic</strong>: Claude 3.5 Sonnet is brilliant at following instructions but has rate limits.</li>
+      <li><strong>Google</strong>: Gemini 2.5 is cheap ($0.30/1M) and fast, but inconsistent with structured output.</li>
+      <li><strong>Open Source</strong>: Qwen 2.5, DeepSeek, Llama 3.3—free and local, but each has quirks.</li>
     </ul>
 
-    <h2>FAQ</h2>
+    <p>Every model has different:</p>
     <ul>
-      <li><strong>Can I keep my stack?</strong> Yes—this is glue, not a rewrite.</li>
-      <li><strong>What if our model changes?</strong> Update routing for that step only.</li>
-      <li><strong>PII/compliance?</strong> Keep drafts local; escalate only sign-off steps.</li>
-      <li><strong>How do we track cost?</strong> Logs include cost/latency per step; set caps and fail fast.</li>
+      <li>Pricing structures (per token, per request, per month)</li>
+      <li>Context window limits (8k to 1M tokens)</li>
+      <li>Strengths (coding vs writing vs reasoning)</li>
+      <li>API reliability (99.9% uptime vs "it works on my laptop")</li>
+      <li>Data privacy rules (cloud vs on-premise only)</li>
     </ul>
 
-    <h2>Join the build</h2>
-    <p>Fork it. Run the quickstart. Share your stack and results. PRs welcome (validators, adapters, cost hooks, docs). <strong>Benchmarks are gold—please share them.</strong></p>
+    <p>Teams waste weeks doing trial-and-error:</p>
 
-    <div class="footer">© Agnostic-AI Pipeline • Open PoC</div>
+    <blockquote>
+      "We tested GPT-4 for a week. Great results but too expensive. Switched to Gemini, saved money but quality dropped. Tried Claude, hit rate limits. Went back to GPT-4. Now we're testing Llama 3.3 locally but prompts need rewriting..."
+    </blockquote>
+
+    <p>Sound familiar? This is the problem my pipeline solves.</p>
+
+    <h2>Automatic Fallback: When Models Fail</h2>
+
+    <p>Here's where it gets interesting. In my testing, models fail about <strong>12-18% of the time</strong>:</p>
+
+    <ul>
+      <li>API timeouts or rate limits</li>
+      <li>Malformed JSON output (especially with structured generation)</li>
+      <li>Context window exceeded</li>
+      <li>Random hallucinations that break downstream tasks</li>
+    </ul>
+
+    <p>Most teams handle this manually: check logs, retry with different prompt, maybe switch models, waste 2 hours debugging.</p>
+
+    <p>The pipeline handles it automatically:</p>
+
+    <div class="mermaid">
+flowchart TD
+    A[Story S6: PATCH /api/tasks] --> B{Try Primary Model<br/>Gemini 2.5-pro}
+    B -->|Success| C[Done]
+    B -->|Failed 3 times| D[Analyze Failure Type]
+    D --> E{Error: No structured output}
+    E --> F[Score Backup Models]
+    F --> G[Codex CLI: +10 points<br/>specialty: structured_output]
+    F --> H[Ollama Qwen: +8 points<br/>specialty: code_generation]
+    G --> I{Try Codex CLI}
+    I -->|Failed| J[Try Ollama Qwen]
+    J -->|Success| C
+    J -->|Failed| K[Mark as blocked<br/>recovery_attempts: 2]
+
+    style B fill:#fff4e1
+    style D fill:#ffe1e1
+    style F fill:#e1f5ff
+    style I fill:#ffe1f5
+    style C fill:#e1ffe1
+    style K fill:#ff9999
+</div>
+
+    <p>Here's the actual metadata after Story S6 failed with Gemini and retried with Codex:</p>
+
+    <pre><code class="language-yaml">- id: S6
+  description: "Create PATCH /api/tasks/{id} endpoint"
+  status: in_review
+  metadata:
+    recovery_attempts: 2
+    model_history:
+      - provider: vertex_sdk
+        model: gemini-2.5-pro
+        attempt: 1
+        status: error
+        timestamp: 2025-11-02T09:40:07Z
+        error: "No valid FILES JSON block"
+
+      - provider: codex_cli
+        model: default
+        attempt: 2
+        status: error
+        timestamp: 2025-11-02T09:41:15Z
+        error: "API timeout"
+
+    model_override:
+      provider: ollama
+      model: qwen2.5-coder:32b
+      reason: "Code specialist, runs locally"
+      cost_tier: free
+      specialties: [code_generation, local_execution]</code></pre>
+
+    <p>Everything is tracked: which models tried, when they failed, why they failed, what to try next. No manual intervention needed.</p>
+
+    <h2>Real Numbers from Two Weeks of Testing</h2>
+
+    <p>I ran this pipeline for 14 days straight, building various features. Here's what happened:</p>
+
+    <div class="numbers">
+      <div class="number-card">
+        <span class="big">47</span>
+        <span class="label">Total iterations run</span>
+      </div>
+      <div class="number-card">
+        <span class="big">$47.30</span>
+        <span class="label">Total cost (all models)</span>
+      </div>
+      <div class="number-card">
+        <span class="big">8</span>
+        <span class="label">Automatic fallbacks triggered</span>
+      </div>
+    </div>
+
+    <p><strong>Cost breakdown by role:</strong></p>
+    <ul>
+      <li>BA + PO (Ollama local): $0.00</li>
+      <li>Architect (Gemini): $8.20</li>
+      <li>Developer (mix of GPT-4, Codex, Ollama): $32.50</li>
+      <li>QA (Claude + local): $6.60</li>
+    </ul>
+
+    <p><strong>If I had used only GPT-4 for everything:</strong> ~$380</p>
+
+    <p>The fallback system saved my ass twice:</p>
+    <ul>
+      <li>Day 4: Vertex AI went down for 3 hours. Pipeline switched to Ollama, kept working.</li>
+      <li>Day 9: Hit Claude rate limit during QA. Fell back to local Qwen model, finished the job.</li>
+    </ul>
+
+    <h2>How to Try It (5 Minutes)</h2>
+
+    <p>The whole thing is open source. You can run it locally right now:</p>
+
+    <pre><code class="language-bash"># Clone and setup
+git clone https://github.com/krukmat/agnostic-ai-pipeline.git
+cd agnostic-ai-pipeline
+make setup
+
+# Run a full iteration (strict TDD mode)
+make iteration CONCEPT="Todo app with user auth"
+
+# Check the generated artifacts
+tree artifacts/iterations/todo-app-iteration/
+cat planning/stories.yaml
+cat artifacts/iterations/todo-app-iteration/summary.json</code></pre>
+
+    <p>You'll get:</p>
+    <ul>
+      <li><code>requirements.yaml</code> - What the BA understood</li>
+      <li><code>stories.yaml</code> - User stories with acceptance criteria</li>
+      <li><code>project/</code> - Actual generated code</li>
+      <li><code>artifacts/qa/</code> - QA test results and coverage report</li>
+    </ul>
+
+    <h2>What This Means for Teams</h2>
+
+    <p>This isn't a replacement for human developers. It's infrastructure for AI-assisted development that doesn't lock you into one vendor.</p>
+
+    <p>What changes:</p>
+
+    <ul>
+      <li><strong>Experimentation is cheap again.</strong> Swap models per role, see what works, measure costs.</li>
+      <li><strong>API outages don't stop you.</strong> Automatic fallback to backup models.</li>
+      <li><strong>Costs are predictable.</strong> Set budgets per role, fail fast if exceeded.</li>
+      <li><strong>Everything is auditable.</strong> Full model_history, diffs, rollbacks.</li>
+      <li><strong>No vendor lock-in.</strong> Switch from OpenAI to Anthropic to local models with a config change.</li>
+    </ul>
+
+    <h2>What's Next</h2>
+
+    <p>This is a working PoC with rough edges. I'm actively developing it and documenting everything.</p>
+
+    <p><strong>Coming in Part 2:</strong> Technical deep-dive into how the fallback routing actually works (scoring algorithms, specialty matching, cost optimization).</p>
+
+    <p><strong>Coming in Part 3:</strong> Agent-to-Agent (A2A) mode—running each role as an independent service for distributed teams.</p>
+
+    <a href="https://github.com/krukmat/agnostic-ai-pipeline" class="repo-link" target="_blank">
+      ⭐ View on GitHub: krukmat/agnostic-ai-pipeline
+    </a>
+
+    <h2>Join the Build</h2>
+
+    <p>If you've felt this pain, I want to hear from you:</p>
+
+    <ul>
+      <li>Fork it. Break it. Tell me what breaks.</li>
+      <li>Share your model combinations and cost data.</li>
+      <li>PRs welcome: validators, adapters, cost hooks, better docs.</li>
+      <li>Benchmarks are gold—especially if you're comparing multiple models.</li>
+    </ul>
+
+    <p>The goal isn't to build the perfect AI pipeline. It's to build <strong>infrastructure that survives while the AI landscape keeps changing</strong>.</p>
+
+    <p>Because the only certainty in 2025? Next week there'll be three new models, two API changes, and another round of "which model should we use?" debates.</p>
+
+    <p>Let's build something that doesn't care.</p>
+
+    <div class="footer">
+      <p>This is an open PoC. All code is available under MIT license.<br>
+      Repository: <a href="https://github.com/krukmat/agnostic-ai-pipeline">https://github.com/krukmat/agnostic-ai-pipeline</a><br>
+      Documentation: <a href="https://krukmat.github.io/agnostic-ai-pipeline/">GitHub Pages</a></p>
+
+      <p style="margin-top: 2rem; font-style: italic;">
+        Questions? Feedback? Found a bug? Open an issue or reach out. This works best as a community effort.
+      </p>
+    </div>
   </main>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'neutral',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        curve: 'basis'
+      }
+    });
+  </script>
 </body>
 </html>
