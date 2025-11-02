@@ -470,13 +470,38 @@ cat artifacts/iterations/todo-app-iteration/summary.json</code></pre>
       <li><strong>No vendor lock-in.</strong> Switch from OpenAI to Anthropic to local models with a config change.</li>
     </ul>
 
-    <h2>What's Next</h2>
+    <h2>This Is Part 1 of a Series</h2>
 
-    <p>This is a working PoC with rough edges. I'm actively developing it and documenting everything.</p>
+    <p>This article covers the vision and the problem. Over the next few weeks, I'll document the entire system in detail—how it works, why certain decisions were made, and what I learned building it.</p>
 
-    <p><strong>Coming in Part 2:</strong> Technical deep-dive into how the fallback routing actually works (scoring algorithms, specialty matching, cost optimization).</p>
+    <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 2rem 0;">
+      <h3 style="margin-top: 0;">The Full Series:</h3>
 
-    <p><strong>Coming in Part 3:</strong> Agent-to-Agent (A2A) mode—running each role as an independent service for distributed teams.</p>
+      <p><strong>Part 1: The Vision (You Are Here)</strong><br>
+      Why vendor lock-in is killing AI projects, and how a software factory approach solves it.</p>
+
+      <p><strong>Part 2: Inside the Fallback System</strong><br>
+      How automatic model fallback actually works: failure analysis, specialty scoring, cost optimization, and the <code>model_history</code> that tracks everything.</p>
+
+      <p><strong>Part 3: The Multi-Role Pipeline Deep-Dive</strong><br>
+      Business Analyst → Architect → Developer → QA. How each role works, what prompts they use, and how they hand off artifacts to each other.</p>
+
+      <p><strong>Part 4: Cost Engineering at Scale</strong><br>
+      Real numbers from running 200+ iterations. When to use local vs cloud, how to set budgets per role, and where most teams overspend.</p>
+
+      <p><strong>Part 5: Agent-to-Agent (A2A) Mode</strong><br>
+      Running each role as an independent HTTP service. Distributed teams, remote execution, and why this matters for real companies.</p>
+
+      <p><strong>Part 6: Building Your Own Adapters</strong><br>
+      How to add new model providers, write validators, hook into CI/CD, and extend the pipeline for your stack.</p>
+
+      <p><strong>Part 7: Lessons from Production</strong><br>
+      What broke, what surprised me, and what I'd do differently. The uncomfortable truths about AI-generated code in 2025.</p>
+    </div>
+
+    <p>Each article will include working code examples, actual cost breakdowns, and things that failed. This isn't vendor documentation—it's a build log.</p>
+
+    <p><strong>Follow along:</strong> Star the repo to get notified when new articles drop, or check the <a href="https://github.com/krukmat/agnostic-ai-pipeline/discussions">Discussions</a> for early drafts and questions.</p>
 
     <a href="https://github.com/krukmat/agnostic-ai-pipeline" class="repo-link" target="_blank">
       ⭐ View on GitHub: krukmat/agnostic-ai-pipeline
