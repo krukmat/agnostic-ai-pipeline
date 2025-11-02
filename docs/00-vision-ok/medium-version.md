@@ -81,6 +81,113 @@ Total cost for a complete feature: **~$7**. Compare that to running everything t
 
 ---
 
+## What You Actually Get
+
+After running `make iteration`, you get a complete project structure:
+
+```
+agnostic-ai-pipeline/
+├── planning/                    # AI-generated planning artifacts
+│   ├── requirements.yaml        # What BA understood from your concept
+│   ├── product_owner_review.yaml
+│   ├── architecture.yaml        # Technical decisions
+│   ├── epics.yaml              # High-level features
+│   ├── stories.yaml            # Detailed user stories with acceptance criteria
+│   └── tasks.csv               # Task breakdown
+│
+├── project/                     # Generated code
+│   ├── backend-fastapi/        # Actual working backend
+│   │   ├── main.py
+│   │   ├── models/
+│   │   ├── routes/
+│   │   └── tests/              # Auto-generated tests
+│   └── frontend-react/         # (if applicable)
+│
+└── artifacts/                   # Execution logs & QA reports
+    ├── iterations/
+    │   └── login-feature-20251102/
+    │       ├── summary.json    # Cost, duration, status
+    │       ├── requirements.yaml
+    │       ├── stories.yaml
+    │       └── code.zip
+    └── qa/
+        ├── report.md           # QA findings
+        └── coverage.json       # Test coverage
+```
+
+Everything is tracked, versioned, and reproducible.
+
+---
+
+## Different Ways to Use It
+
+The pipeline is flexible. You don't always need the full cycle.
+
+### 1. Full Production Cycle (with QA)
+```bash
+make iteration CONCEPT="Todo app with user authentication"
+```
+Runs: **BA → PO → Architect → Dev → QA** (strict TDD mode)
+
+Use when: You want production-ready code with tests and validation.
+
+---
+
+### 2. Spike Mode (no QA, rapid prototyping)
+```bash
+make spike CONCEPT="API for weather data"
+```
+Runs: **BA → PO → Architect → Dev** (no QA validation)
+
+Use when: You're exploring ideas and don't need tests yet. Faster and cheaper.
+
+---
+
+### 3. Development Loop (implement all stories)
+```bash
+make loop MAX_LOOPS=10
+```
+Runs: **Dev → QA → Dev → QA...** until all stories are done
+
+Use when: Planning is done, you just want to implement all remaining stories with QA validation.
+
+---
+
+### 4. Dev-Only Loop (no QA validation)
+```bash
+make loop-dev
+# or
+make loop LOOP_MODE=dev_only MAX_LOOPS=5
+```
+Runs: **Dev → Dev → Dev...** (no QA between stories)
+
+Use when: You want rapid iteration without waiting for QA. Review later.
+
+---
+
+### 5. Without Architect Intervention
+```bash
+make loop ARCHITECT_INTERVENTION=0
+```
+When QA fails, normally the Architect refines the story. This disables that behavior.
+
+Use when: Stories are well-defined and you don't want the Architect to rewrite them on failures.
+
+---
+
+### 6. Individual Steps (for debugging)
+```bash
+make ba CONCEPT="Inventory system"     # Just generate requirements
+make po                                 # Validate product vision
+make plan                               # Generate stories
+make dev STORY=S1                       # Implement specific story
+make qa QA_RUN_TESTS=1                  # Run QA with tests
+```
+
+Use when: Debugging the pipeline or wanting granular control.
+
+---
+
 ## The 2025 Challenge: Too Many Models, Not Enough Certainty
 
 Here's what the AI landscape looks like right now:
@@ -105,54 +212,79 @@ Sound familiar? This is the problem my pipeline solves.
 
 ---
 
-## Automatic Fallback: When Models Fail
+## How to Configure Models
 
-Here's where it gets interesting. In my testing, models fail about **12-18% of the time**:
-
-- API timeouts or rate limits
-- Malformed JSON output (especially with structured generation)
-- Context window exceeded
-- Random hallucinations that break downstream tasks
-
-Most teams handle this manually: check logs, retry with different prompt, maybe switch models, waste 2 hours debugging.
-
-The pipeline handles it automatically:
-
-**[IMAGE 3: Fallback Flow Diagram]**
-*Shows Story S6 failing with Gemini → Analyzing failure → Scoring backup models → Trying Codex CLI → Fallback to Ollama*
-
-Here's the actual metadata after Story S6 failed with Gemini and retried with Codex:
+The pipeline uses a single `config.yaml` file where you map each role to a provider and model:
 
 ```yaml
-- id: S6
-  description: "Create PATCH /api/tasks/{id} endpoint"
-  status: in_review
-  metadata:
-    recovery_attempts: 2
-    model_history:
-      - provider: vertex_sdk
-        model: gemini-2.5-pro
-        attempt: 1
-        status: error
-        timestamp: 2025-11-02T09:40:07Z
-        error: "No valid FILES JSON block"
+roles:
+  ba:
+    provider: ollama
+    model: granite4              # Free local model
+    temperature: 0.4
 
-      - provider: codex_cli
-        model: default
-        attempt: 2
-        status: error
-        timestamp: 2025-11-02T09:41:15Z
-        error: "API timeout"
+  architect:
+    provider: vertex_sdk
+    model: gemini-2.5-pro        # Google's Gemini via Vertex AI
+    temperature: 0.2
 
-    model_override:
-      provider: ollama
-      model: qwen2.5-coder:32b
-      reason: "Code specialist, runs locally"
-      cost_tier: free
-      specialties: [code_generation, local_execution]
+  dev:
+    provider: codex_cli
+    model: gpt-4-turbo           # OpenAI via Codex CLI
+    temperature: 0.2
+
+  qa:
+    provider: claude_cli
+    model: claude-3-5-sonnet-latest  # Anthropic's Claude
+    temperature: 0.5
 ```
 
-Everything is tracked: which models tried, when they failed, why they failed, what to try next. No manual intervention needed.
+Swap providers anytime with one command:
+
+```bash
+make set-role role=dev provider=ollama model="qwen2.5-coder:32b"
+```
+
+No code changes. No prompt rewrites. Just change the config.
+
+---
+
+## Supported Providers
+
+The pipeline works with:
+
+- **Ollama** – Local open-source models (Llama, Mistral, Qwen, etc.)
+- **OpenAI** – GPT-4, GPT-3.5 via Codex CLI
+- **Claude Code CLI** – Anthropic's Claude via local CLI
+- **Vertex AI** – Google's Gemini models (CLI or SDK)
+
+Each provider has different setup requirements:
+
+**Ollama (Local)**
+```bash
+ollama serve
+ollama pull qwen2.5-coder:7b
+make set-role role=dev provider=ollama model="qwen2.5-coder:7b"
+```
+
+**Claude Code CLI**
+```bash
+claude login
+make set-role role=qa provider=claude_cli model="claude-3-5-sonnet-latest"
+```
+
+**Vertex AI (Google Gemini)**
+```bash
+gcloud auth application-default login
+gcloud services enable aiplatform.googleapis.com
+make set-role role=architect provider=vertex_sdk model="gemini-2.5-pro"
+```
+
+**Codex CLI (OpenAI)**
+```bash
+export OPENAI_API_KEY="sk-..."
+make set-role role=dev provider=codex_cli model="gpt-4-turbo"
+```
 
 ---
 
@@ -177,6 +309,8 @@ The fallback system saved my ass twice:
 - Day 4: Vertex AI went down for 3 hours. Pipeline switched to Ollama, kept working.
 - Day 9: Hit Claude rate limit during QA. Fell back to local Qwen model, finished the job.
 
+*(I'll explain how automatic fallback works in Part 2 of this series)*
+
 ---
 
 ## How to Try It (5 Minutes)
@@ -189,13 +323,16 @@ git clone https://github.com/krukmat/agnostic-ai-pipeline.git
 cd agnostic-ai-pipeline
 make setup
 
-# Run a full iteration (strict TDD mode)
+# Run a full iteration (with QA validation)
 make iteration CONCEPT="Todo app with user auth"
 
+# Or run a spike (no QA, faster)
+make spike CONCEPT="Blog with markdown posts"
+
 # Check the generated artifacts
-tree artifacts/iterations/todo-app-iteration/
+cat planning/requirements.yaml
 cat planning/stories.yaml
-cat artifacts/iterations/todo-app-iteration/summary.json
+cat artifacts/iterations/*/summary.json
 ```
 
 You'll get:
@@ -222,12 +359,12 @@ What changes:
 
 ## This Is Part 1 of a Series
 
-This article covers the vision and the problem. Over the next few weeks, I'll document the entire system in detail—how it works, why certain decisions were made, and what I learned building it.
+This article covers the vision and the basic usage. Over the next few weeks, I'll document the entire system in detail—how it works, why certain decisions were made, and what I learned building it.
 
 ### The Full Series:
 
 **Part 1: The Vision (You Are Here)**
-Why vendor lock-in is killing AI projects, and how a software factory approach solves it.
+Why vendor lock-in is killing AI projects, and how a software factory approach solves it. Basic usage patterns and getting started.
 
 **Part 2: Inside the Fallback System**
 How automatic model fallback actually works: failure analysis, specialty scoring, cost optimization, and the `model_history` that tracks everything.
