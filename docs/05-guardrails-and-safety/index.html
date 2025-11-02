@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guardrails that matter: policies, validators, and safe actions</title>
+  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety/">
+  <meta name="description" content="Enough structure to prevent the common footguns">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; max-width: 740px; margin: 2rem auto; padding: 0 1rem; }
+    h1, h2, h3 { line-height: 1.25; }
+    pre { overflow: auto; background: #f6f8fa; padding: 1rem; border-radius: 8px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .subtitle { color: #555; margin-top: -0.5rem; }
+    .footer { margin-top: 3rem; font-size: 0.9rem; color: #666; }
+    a { color: #0b5fff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1>Guardrails that matter: policies, validators, and safe actions</h1>
+    <p class="subtitle">Enough structure to prevent the common footguns</p>
+    <p># Guardrails that matter: policies, validators, and safe actions</p>
+<blockquote>Enough structure to prevent the common footguns</blockquote>
+
+<p>**TL;DR**</p>
+<ul>
+<li>Use file/action allowlists; keep them short.</li>
+<li>Add preflight validators for inputs before the heavy work.</li>
+<li>Bound actions to safe folders; provide one admin escape hatch.</li>
+</ul>
+
+<p>You don’t need a fortress—just a few locks on the right doors.</p>
+
+<h2>The problem</h2>
+<p>Overly broad actions and unclear file permissions cause silent damage. A prompt tries to do everything, and it does it in the wrong place.</p>
+
+<h2>A simple way forward</h2>
+<ul>
+<li>**Allowlists.** Name the files and commands that are allowed, nothing more.</li>
+<li>**Preflight.** Validate inputs early: schema, size, forbidden patterns.</li>
+<li>**Bounded actions.** Confine writes to safe paths; log all changes for review.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>
+# Validate before run
+make validate &amp;&amp; make plan
+</code></pre>
+
+<h2>Key takeaways</h2>
+<ul>
+<li>Most incidents come from overly broad capabilities; reduce scope first.</li>
+<li>Preflight checks are cheap and catch 80% of mistakes.</li>
+<li>Bounded writes make reviews and rollbacks straightforward.</li>
+</ul>
+
+<h2>What to do next</h2>
+<ul>
+<li>Ship a default validator and improve it with real failures from your repo.</li>
+<li>Share your allowlist snippet so others can compare and adapt it.</li>
+</ul>
+    <div class="footer">
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety/">https://krukmat.github.io/agnostic-ai-pipeline/05-guardrails-and-safety/</a>.</p>
+    </div>
+  </article>
+</body>
+</html>

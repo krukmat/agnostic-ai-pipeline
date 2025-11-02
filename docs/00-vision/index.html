@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Why an agentic, model-agnostic pipeline beats a pile of scripts</title>
+  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/00-vision/">
+  <meta name="description" content="A pragmatic setup that stays flexible when your tools change">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; max-width: 740px; margin: 2rem auto; padding: 0 1rem; }
+    h1, h2, h3 { line-height: 1.25; }
+    pre { overflow: auto; background: #f6f8fa; padding: 1rem; border-radius: 8px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .subtitle { color: #555; margin-top: -0.5rem; }
+    .footer { margin-top: 3rem; font-size: 0.9rem; color: #666; }
+    a { color: #0b5fff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1>Why an agentic, model-agnostic pipeline beats a pile of scripts</h1>
+    <p class="subtitle">A pragmatic setup that stays flexible when your tools change</p>
+    <p># Why an agentic, model-agnostic pipeline beats a pile of scripts</p>
+<blockquote>A pragmatic setup that stays flexible when your tools change</blockquote>
+
+<p>**TL;DR**</p>
+<ul>
+<li>A lightweight, agentic, model-agnostic PoC you can try in ~30 minutes.</li>
+<li>Roles as contracts (BA/Architect/Dev/QA), small guardrails, reproducible outputs.</li>
+<li>Start small: run a demo, see where it helps your team, then refine it in your stack.</li>
+</ul>
+
+<p>Most teams start with a folder of scripts. It’s fine—until the day it isn’t. The model changes, a prompt grows, a retry loop appears, and the “quick fix” eats a week. This post shows a small, honest proof-of-concept you can run today and evolve next week, without betting the farm.</p>
+
+<h2>The problem</h2>
+<p>When automation starts as a pile of scripts, a few things happen over time:</p>
+<p>1) **Script sprawl.** Every change becomes a patch. Ownership blurs and onboarding slows.</p>
+<p>2) **Hidden lock-in.** You tailor logic to specific providers; swapping models or APIs becomes a mini-project.</p>
+<p>3) **Inconsistent results.** Without budgets, contracts, or traces, a working run is hard to repeat.</p>
+
+<p>Developers don’t need a heavy framework; they need a small, adaptable baseline that can survive model churn and keep the team moving.</p>
+
+<h2>A simple way forward</h2>
+<p>This PoC treats roles as small agents with contracts (clear inputs/outputs), adds budget/latency guardrails so costs don’t creep, and favors plain files + make targets so you can inspect artifacts and version them.</p>
+
+<p>It’s intentionally pragmatic:</p>
+<ul>
+<li>**Model-agnostic.** Start local (e.g., Ollama) and only escalate when needed.</li>
+<li>**Reproducible.** The same prompt + inputs should yield consistent artifacts.</li>
+<li>**Hackable.** It’s a starting point, not a “sealed product”. Fork it, tweak it, make it yours.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>
+# 1) Run a tiny planning flow
+make ba &amp;&amp; make plan
+
+# 2) Inspect what changed
+git status &amp;&amp; git diff planning/
+
+# 3) Try a guardrail (budget or latency)
+export MAX_COST_USD=5
+make plan
+</code></pre>
+
+<h2>Key takeaways</h2>
+<ul>
+<li>Start with a PoC that runs in your repo today, not a platform migration.</li>
+<li>Treat roles as contracts; keep agents small and observable.</li>
+<li>Add budget/latency controls early; they pay back fast.</li>
+<li>Make results versionable (YAML/markdown), so the team can review diffs.</li>
+<li>The goal is adoption and refinement: run → learn → tweak → repeat.</li>
+</ul>
+
+<h2>What to do next</h2>
+<ul>
+<li>⭐ Star the repo and run the demo on a real ticket from your backlog.</li>
+<li>Open an issue or discussion with what worked and what didn’t.</li>
+<li>Propose a small improvement (e.g., a validator or a provider adapter).</li>
+<li>If it helps your team, write a short note about it—others can build on your idea.</li>
+</ul>
+    <div class="footer">
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/00-vision/">https://krukmat.github.io/agnostic-ai-pipeline/00-vision/</a>.</p>
+    </div>
+  </article>
+</body>
+</html>

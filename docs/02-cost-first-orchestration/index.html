@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cost-first orchestration: local vs cloud with guardrails</title>
+  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/02-cost-first-orchestration/">
+  <meta name="description" content="Small switches that save money and time">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; max-width: 740px; margin: 2rem auto; padding: 0 1rem; }
+    h1, h2, h3 { line-height: 1.25; }
+    pre { overflow: auto; background: #f6f8fa; padding: 1rem; border-radius: 8px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .subtitle { color: #555; margin-top: -0.5rem; }
+    .footer { margin-top: 3rem; font-size: 0.9rem; color: #666; }
+    a { color: #0b5fff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1>Cost-first orchestration: local vs cloud with guardrails</h1>
+    <p class="subtitle">Small switches that save money and time</p>
+    <p># Cost-first orchestration: local vs cloud with guardrails</p>
+<blockquote>Small switches that save money and time</blockquote>
+
+<p>**TL;DR**</p>
+<ul>
+<li>Add a simple cost/latency/quality matrix and route requests accordingly.</li>
+<li>Default to local for drafts; escalate to cloud only when needed.</li>
+<li>Put hard budgets in env vars; track real latency in logs.</li>
+</ul>
+
+<p>Costs creep in quietly: longer prompts, bigger models, extra retries. Put small guardrails in place and you’ll keep velocity without surprise bills.</p>
+
+<h2>The problem</h2>
+<p>Untracked spending and inconsistent latency make planning hard. New contributors run different models; retries multiply; no one knows which call is actually expensive.</p>
+
+<h2>A simple way forward</h2>
+<ul>
+<li>**Matrix first.** Decide acceptable latency and cost for each step (draft, review, final).</li>
+<li>**Switches.** Use env flags to prefer local models for drafts; cloud for critical steps.</li>
+<li>**Budgets.** Enforce a per-run cap, and stop work gracefully if it’s exceeded.</li>
+<li>**Logs.** Record cost and latency per request; surface outliers.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>
+# Draft locally, escalate on demand
+export PIPELINE_STAGE=draft
+export MAX_COST_USD=5
+make plan
+
+# Force cloud for final
+export PIPELINE_STAGE=final
+export ROUTE=cloud
+make plan
+</code></pre>
+
+<h2>Key takeaways</h2>
+<ul>
+<li>Cost/latency choices should be explicit and versioned.</li>
+<li>Local-first makes iteration cheap; cloud is the escalator, not the default.</li>
+<li>A small budget cap catches misconfigurations early.</li>
+<li>Tracking real latency is more useful than theoretical benchmarks.</li>
+</ul>
+
+<h2>What to do next</h2>
+<ul>
+<li>Add a matrix file to your repo and wire two routes (local/cloud).</li>
+<li>Set a MAX_COST_USD and a soft timeout for retries.</li>
+<li>Open an issue with your findings; share configs that worked for your stack.</li>
+</ul>
+    <div class="footer">
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/02-cost-first-orchestration/">https://krukmat.github.io/agnostic-ai-pipeline/02-cost-first-orchestration/</a>.</p>
+    </div>
+  </article>
+</body>
+</html>

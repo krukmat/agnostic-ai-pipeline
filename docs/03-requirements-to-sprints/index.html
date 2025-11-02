@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>From requirements to sprints: BA to Architect to stories</title>
+  <link rel="canonical" href="https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints/">
+  <meta name="description" content="Make the planning steps boring, in a good way">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; max-width: 740px; margin: 2rem auto; padding: 0 1rem; }
+    h1, h2, h3 { line-height: 1.25; }
+    pre { overflow: auto; background: #f6f8fa; padding: 1rem; border-radius: 8px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .subtitle { color: #555; margin-top: -0.5rem; }
+    .footer { margin-top: 3rem; font-size: 0.9rem; color: #666; }
+    a { color: #0b5fff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1>From requirements to sprints: BA to Architect to stories</h1>
+    <p class="subtitle">Make the planning steps boring, in a good way</p>
+    <p># From requirements to sprints: BA → Architect → stories</p>
+<blockquote>Make the planning steps boring—in a good way</blockquote>
+
+<p>**TL;DR**</p>
+<ul>
+<li>Normalize requirements to a single YAML.</li>
+<li>Hand off to Architect for structure and constraints.</li>
+<li>Produce small, reviewable stories with clear acceptance.</li>
+</ul>
+
+<p>Planning feels slow when it’s vague. A simple, repeatable path speeds up everything that follows.</p>
+
+<h2>The problem</h2>
+<p>Ideas arrive as paragraphs and leave as confusion. The team fills gaps mid-implementation, and the backlog grows fuzzy.</p>
+
+<h2>A simple way forward</h2>
+<ul>
+<li>**One source of truth.** `planning/requirements.yaml` is where everything starts.</li>
+<li>**BA normalizes.** Clarify scope, actors, constraints.</li>
+<li>**Architect shapes.** Split, set boundaries, name risks.</li>
+<li>**Story writer outputs.** Small, testable stories with acceptance.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>
+# One-two punch
+make ba &amp;&amp; make plan
+git diff planning/
+</code></pre>
+
+<h2>Key takeaways</h2>
+<ul>
+<li>The planning chain is fast when each step produces a file you can review.</li>
+<li>Tiny stories reduce risk and help new contributors ramp up.</li>
+<li>Reproducibility beats memory—commit artifacts and discuss with diffs.</li>
+</ul>
+
+<h2>What to do next</h2>
+<ul>
+<li>Try the flow on a real feature, not a toy.</li>
+<li>Share your first backlog diff in a PR and ask for blunt feedback.</li>
+</ul>
+    <div class="footer">
+      <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints/">https://krukmat.github.io/agnostic-ai-pipeline/03-requirements-to-sprints/</a>.</p>
+    </div>
+  </article>
+</body>
+</html>
