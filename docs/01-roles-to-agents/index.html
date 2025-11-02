@@ -32,6 +32,31 @@
 
 <p>Clear handoffs beat clever prompts. Once each role has a tiny contract—inputs, outputs, and limits—the whole pipeline gets easier to reason about. This post shows how to write those contracts so developers can use them, extend them, and keep them honest.</p>
 
+<h2>Why now: the AI, economic, and cultural backdrop</h2>
+
+<ul>
+<li>**Models change weekly.** Capabilities, context windows, and tool APIs keep shifting. Designing **model‑agnostic** flows protects your team from churn.</li>
+<li>**Budgets are tight.** You need fast **proof‑of‑value** and early **cost controls** (caps, routing, and latency targets).</li>
+<li>**Distributed teams are the norm.** Clear artifacts and handoffs reduce onboarding time and unblock async work.</li>
+<li>**Regulatory pressure is rising.** Keep data boundaries, simple audit trails, and reproducible outputs.</li>
+</ul>
+
+<h3>Working in a strengths/weaknesses model landscape</h3>
+<ul>
+<li>**Trade‑offs**: cost vs. quality vs. latency vs. context length vs. safety filters.</li>
+<li>**IP &amp; privacy**: understand usage terms; prefer local for drafts, escalate to cloud when justified.</li>
+<li>**API volatility**: adapters and circuit breakers keep the pipeline stable while providers evolve.</li>
+</ul>
+
+<h3>What a software‑factory pipeline buys you</h3>
+<ul>
+<li>**Repeatability**: the same inputs produce inspectable artifacts (YAML, markdown).</li>
+<li>**Modularity**: roles as contracts; swap an agent or model without a rewrite.</li>
+<li>**Measurement**: budget/latency tracked per step; outliers are obvious.</li>
+<li>**Governance**: allowlists, validators, and bounded actions by default.</li>
+<li>**Community**: a shared, open PoC others can fork, improve, and reuse.</li>
+</ul>
+
 <h2>The problem</h2>
 <p>Without clear contracts, people guess. Context gets duplicated across prompts, decisions are implicit, and quality checks drift. The result is rework: someone interprets a paragraph differently and the chain breaks.</p>
 
@@ -77,6 +102,21 @@ acceptance:
 <li>Open an issue with your edge cases; propose improvements to the templates.</li>
 <li>Share a short before/after; other teams can fork and refine it with you.</li>
 </ul>
+
+<h2>Join the community</h2>
+
+<p>This is a working proof-of-concept, open by design. If you try it, please leave a trace—we’ll improve it together.</p>
+
+<ul>
+<li>⭐ Star the repo and watch releases.</li>
+<li>Open a **Discussion** to share how you’re using it (stack, models, budget, team size).</li>
+<li>File an **Issue** with a minimal repro (logs, config, expected behavior).</li>
+<li>Send a **PR**: small validators, provider adapters, cost/latency hooks, better docs.</li>
+<li>Share **benchmarks** (local vs cloud, draft vs final) and your routing matrix.</li>
+<li>Propose a **template** (role contract, CI check, rollback script) that helped your team.</li>
+</ul>
+
+<p>Be kind, stay practical; opinions welcome—data even better.</p>
     <div class="footer">
       <p>Originally published at <a href="https://krukmat.github.io/agnostic-ai-pipeline/01-roles-to-agents/">https://krukmat.github.io/agnostic-ai-pipeline/01-roles-to-agents/</a>.</p>
     </div>
