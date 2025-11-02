@@ -18,8 +18,7 @@ Think of it like a real development team. You wouldn't ask your QA engineer to w
 
 ## The Five Roles (and What They Actually Do)
 
-**[IMAGE 1: Pipeline Flow Diagram]**
-*BA → PO → Architect → Developer → QA → Done (with feedback loop from QA back to Architect)*
+![Pipeline Flow Diagram - BA → PO → Architect → Developer → QA with costs per role](diagram1-pipeline-flow.png)
 
 Let me walk you through what happens when you run `make iteration CONCEPT="User login with email"`.
 
@@ -225,8 +224,7 @@ Here's where it gets interesting.
 
 If QA rejects a story, the Architect gets involved again. It reads the QA feedback and refines the story based on what went wrong.
 
-**[IMAGE 2: Feedback Loop Diagram]**
-*Developer → QA → (if fail) → Architect → Developer → QA*
+![Feedback Loop Diagram - Developer → QA → Architect intervention on failure](diagram2-feedback-loop.png)
 
 This is controlled by `ARCHITECT_INTERVENTION=1` (default).
 
