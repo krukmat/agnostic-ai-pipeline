@@ -112,6 +112,21 @@ The system can dynamically select the most suitable model (cost-efficient vs. hi
 - **Activation**: Controlled from `config/model_recommender.yaml`.
 - **How it works**: It uses a pre-trained router to analyze the prompt and choose between a `weak` model (fast and cheap) or a `strong` model (powerful and expensive).
 
+### Developer Fallback Models
+
+If the primary model fails, the developer role can automatically requeue the story using a fallback provider.
+- **Configuration**: define a `backup_models` list under `roles.dev` in `config.yaml`, for example:
+  ```yaml
+  backup_models:
+    - provider: claude_cli
+      model: claude-3-5-sonnet-20241022
+    - provider: ollama
+      model: qwen2.5-coder:32b
+  ```
+- **How it works**: when `run_dev` exhausts its retries, the orchestrator logs the failure and writes `metadata.model_override` back to `planning/stories.yaml`. The next `make loop` run picks that override and launches the alternate provider with the correct settings.
+- **Observability**: check `planning/stories.yaml` for `recovery_attempts`, `last_failure_reason`, `model_history`, and any active overrides.
+- **Limits**: cap the number of recovery attempts via `pipeline.max_recovery_attempts` in `config.yaml` (default: `2`). Stories exceeding the budget move to `status: blocked_recovery_budget`.
+
 ### Architect Complexity Tiers
 
 The Architect agent analyzes the requirements and adjusts the level of detail in the user stories.
