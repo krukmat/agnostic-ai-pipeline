@@ -160,6 +160,8 @@ jspm_packages/
 # Optional REPL history
 .node_repl_history
 
+docs/*.zip
+
 # Output of 'npm pack'
 *.tgz
 
