@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How My AI Pipeline Automatically Recovered from 8 Model Failures</title>
+  <meta name="description" content="A deep dive into the fallback engine behind the agnostic AI pipeline—how it scores backups, enforces budgets, and logs every recovery attempt.">
+  <meta property="og:title" content="How My AI Pipeline Automatically Recovered from 8 Model Failures">
+  <meta property="og:description" content="A deep dive into the fallback engine behind the agnostic AI pipeline—how it scores backups, enforces budgets, and logs every recovery attempt.">
+  <meta property="og:image" content="https://krukmat.github.io/agnostic-ai-pipeline/assets/hero-right-model.png">
+  <style>
+    :root { --maxw: 760px; --accent: #0b7285; }
+    body {
+      font-family: Georgia, Cambria, "Times New Roman", serif;
+      line-height: 1.75;
+      color: #1c1c1c;
+      background: #fff;
+      margin: 0;
+      padding: 0;
+    }
+    main {
+      max-width: var(--maxw);
+      margin: 3rem auto;
+      padding: 0 1.5rem 4rem;
+    }
+    h1 {
+      font-size: 2.5rem;
+      line-height: 1.2;
+      margin: 1.5rem 0 0.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      font-size: 1.9rem;
+      margin: 2.75rem 0 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    h3 {
+      font-size: 1.35rem;
+      margin: 2rem 0 0.75rem;
+      font-weight: 600;
+    }
+    .subtitle {
+      font-size: 1.25rem;
+      color: #5c677d;
+      margin: 0.5rem 0 1.5rem;
+      font-style: italic;
+    }
+    .meta {
+      color: #8a8f9c;
+      font-size: 0.95rem;
+      margin-bottom: 2rem;
+      font-family: -apple-system, system-ui, sans-serif;
+    }
+    p { margin: 1.25rem 0; }
+    .callout {
+      background: linear-gradient(135deg, #0b7285 0%, #3bc9db 100%);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 10px;
+      margin: 2rem 0;
+      font-size: 1.05rem;
+    }
+    .callout strong { color: #fff; }
+    .insight-box {
+      background: #f8fbff;
+      border-left: 4px solid var(--accent);
+      padding: 1.3rem 1.6rem;
+      margin: 2rem 0;
+      font-size: 1.03rem;
+    }
+    .numbers {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1.5rem;
+      margin: 2rem 0 2.5rem;
+    }
+    .number-card {
+      background: #f6f8fa;
+      padding: 1.4rem;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+    }
+    .number-card .big {
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: var(--accent);
+      display: block;
+      margin-bottom: 0.35rem;
+    }
+    .number-card .label {
+      font-size: 0.95rem;
+      color: #6c757d;
+      font-family: -apple-system, system-ui, sans-serif;
+    }
+    figure {
+      margin: 2.5rem 0;
+      text-align: center;
+    }
+    figure img {
+      max-width: 100%;
+      border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+    }
+    figure figcaption {
+      font-size: 0.92rem;
+      color: #6c757d;
+      margin-top: 0.75rem;
+      font-family: -apple-system, system-ui, sans-serif;
+    }
+    pre {
+      overflow-x: auto;
+      background: #1f2933;
+      color: #e5eff5;
+      padding: 1.35rem;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      line-height: 1.55;
+      margin: 1.75rem 0;
+    }
+    code {
+      font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", monospace;
+      background: #f1f3f5;
+      padding: 0.18rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    ul, ol {
+      margin: 1.25rem 0;
+      padding-left: 1.75rem;
+    }
+    li + li { margin-top: 0.5rem; }
+    .next-part {
+      margin-top: 3.5rem;
+      padding-top: 2.5rem;
+      border-top: 1px solid #e1e5eb;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+    a:hover { border-bottom-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>How My AI Pipeline Automatically Recovered from 8 Model Failures</h1>
+    <p class="subtitle">Inside the scoring, budgeting, and metadata that keep the factory running when models misbehave.</p>
+    <p class="meta">Series · Part 2 — Last updated Nov 2, 2025</p>
+
+    <div class="callout">
+      <p>Day 4 of the two-week experiment the Vertex AI endpoint started spitting 502s right in the middle of <code>make loop</code>. Instead of paging me, the pipeline calmly wrote a note in the story metadata, scored a backup, and relaunched the developer role with Codex. Codex timed out. The system tried again, this time with a local Qwen 32B model, and the story shipped. That was the moment I stopped worrying about vendor roulette.</p>
+    </div>
+
+    <p>Across 47 iterations the pipeline hit eight real failures—timeouts, malformed JSON, rate limits. Every one of them recovered automatically because the orchestrator keeps a diary of what went wrong, understands which models are good at which tasks, and never blows past the retry budget.</p>
+
+    <div class="numbers">
+      <div class="number-card">
+        <span class="big">8</span>
+        <span class="label">stories rescued automatically</span>
+      </div>
+      <div class="number-card">
+        <span class="big">2</span>
+        <span class="label">retry slots per story</span>
+      </div>
+      <div class="number-card">
+        <span class="big">$0</span>
+        <span class="label">extra spend from fallbacks</span>
+      </div>
+    </div>
+
+    <p><strong>Fast recap</strong></p>
+    <ul>
+      <li>Each failure appends a <code>model_history</code> entry, a plain-English reason, and a timestamp directly onto the story.</li>
+      <li>Backup models earn points for matching the failure type, staying under budget, and running locally when possible.</li>
+      <li>The developer agent swaps providers without hand-editing configs because <code>model_override</code> carries the hint into <code>run_dev.py</code>.</li>
+    </ul>
+
+    <h2>When the Primary Model Stumbles</h2>
+    <p>The recovery routine kicks in the moment <code>execute_role("developer")</code> returns anything other than <code>ok</code>. First the orchestrator logs the miss inside the story—incrementing <code>recovery_attempts</code>, noting <code>last_failure_reason</code>, and appending a fresh record in <code>metadata.model_history</code>. Only then does it decide whether the story deserves another try.</p>
+
+    <figure>
+      <img src="diagram1-fallback-signals.png" alt="Flowchart that shows how the orchestrator captures failures, updates model history, and decides whether to suggest a new model override">
+      <figcaption>Failures update the story in-place. Only after metadata lands safely does the orchestrator suggest a new model.</figcaption>
+    </figure>
+
+    <p>Here is the heart of <code>scripts/orchestrate.py</code> (<code>_process_story</code>), trimmed for readability. Every failure writes a fresh line into the story before we even think about another model.</p>
+    <pre><code class="language-python">story["metadata"]["recovery_attempts"] = story["metadata"].get("recovery_attempts", 0) + 1
+story["metadata"]["last_failure_reason"] = "blocked_dev"
+story["metadata"]["last_dev_error"] = error_details
+story["metadata"]["model_history"].append({
+    "provider": model_info.get("provider"),
+    "model": model_info.get("model"),
+    "timestamp": model_info.get("timestamp"),
+    "attempt": len(story["metadata"]["model_history"]) + 1,
+    "status": dev_status,
+})</code></pre>
+
+    <div class="insight-box">
+      <p><strong>Safety brake:</strong> before scoring backups the orchestrator checks <code>max_recovery_attempts</code>. If the story already spent its two chances, we flip it to <code>blocked_recovery_budget</code> and stop the loop. No infinite retries, no surprise bills.</p>
+    </div>
+
+    <h2>Scoring Specialists Instead of Blind Retries</h2>
+    <p>Favorites are declared in <code>config.yaml</code>. Each backup model lists a <code>reason</code>, a <code>cost_tier</code>, and one or more <code>specialties</code> such as <code>structured_output</code>, <code>code_generation</code>, or <code>local_execution</code>. When a failure lands, the orchestrator compares the error to those specialties and builds a score. Highest score gets the next attempt.</p>
+
+    <figure>
+      <img src="diagram2-scoring-matrix.png" alt="Diagram explaining how specialty matches, cost preferences, and local-first rules accumulate a score before picking the best fallback model">
+      <figcaption>Specialty points + budget rules = deterministic picks. No more “try random model X” loops.</figcaption>
+    </figure>
+
+    <p>The scoring rules live around <code>scripts/orchestrate.py:603-665</code>:</p>
+    <pre><code class="language-python">for backup in backup_models:
+    score = 0
+    specialties = backup.get("specialties", [])
+    if requires_structure and "structured_output" in specialties:
+        score += 10
+    if not allow_cost_increase:
+        score += {"free": 5, "medium": 3}.get(cost_tier, 0)
+    if prefer_local and cost_tier == "free":
+        score += 3
+}</code></pre>
+
+    <p>I keep the scoring intentionally simple. Structured-output specialists get the nod when the developer agent fails to emit a FILES block. Local Qwen models receive a gentle bias so the system prefers free retries over expensive cloud calls. And if no untried candidate survives, <code>model_override</code> is cleared and the next loop sticks with the primary configuration.</p>
+
+    <p>When an override does exist, <code>scripts/run_dev.py:259-331</code> rehydrates a client that matches the provider: CLI flags for Codex and Claude, REST endpoints for Vertex, even the Ollama base URL. No midnight env-var spelunking.</p>
+
+    <h2>Guardrails for Token Spend</h2>
+    <p>The fallback engine only works if it respects the budget. Three settings keep it honest:</p>
+    <ol>
+      <li><strong>Cost ceilings.</strong> With <code>allow_cost_increase: false</code> we refuse to jump from Gemini to a pricier model during recovery.</li>
+      <li><strong>Local-first bias.</strong> <code>prefer_local: true</code> awards bonus points to free Ollama models when quality allows.</li>
+      <li><strong>Budgeted retries.</strong> <code>max_recovery_attempts: 2</code> stops the loop after two misses so QA can take a look.</li>
+    </ol>
+
+    <p>Those knobs meant the eight recoveries that happened last month added <strong>$0</strong> to the bill. When Codex hesitated, the system immediately pivoted to a local Qwen 32B run without touching the cloud wallet.</p>
+
+    <h2>Case File: Story S6 (PATCH /api/tasks)</h2>
+    <p>Story S6 is my favorite failure report. Gemini 2.5-pro never produced a valid FILES block. Codex timed out. Qwen delivered the patch. The orchestrator left a breadcrumb trail the whole way:</p>
+
+    <figure>
+      <img src="diagram3-model-history-timeline.png" alt="Flowchart that shows three attempts: Gemini fails, Codex fails, Ollama succeeds while metadata entries accumulate">
+      <figcaption>Every attempt leaves breadcrumbs: model, timestamp, reason. The highest-scoring backup gets the next shot.</figcaption>
+    </figure>
+
+    <p>The story metadata after that run (trimmed for clarity):</p>
+    <pre><code class="language-yaml">- id: S6
+  description: "Create PATCH /api/tasks/{id} endpoint"
+  status: in_review
+  metadata:
+    recovery_attempts: 2
+    model_history:
+      - provider: vertex_sdk
+        model: gemini-2.5-pro
+        attempt: 1
+        status: error
+        timestamp: 2025-11-02T09:40:07Z
+        error: "No valid FILES JSON block"
+      - provider: codex_cli
+        model: default
+        attempt: 2
+        status: error
+        timestamp: 2025-11-02T09:41:15Z
+        error: "API timeout"
+      - provider: ollama
+        model: qwen2.5-coder:32b
+        attempt: 3
+        status: ok
+        timestamp: 2025-11-02T09:43:11Z
+    model_override:
+      provider: ollama
+      model: qwen2.5-coder:32b
+      reason: "Code specialist, runs locally"
+      cost_tier: free
+      specialties: [code_generation, local_execution]</code></pre>
+
+    <p>Because the winning model writes itself back into <code>model_override</code>, the next <code>make loop</code> run will start with Qwen immediately. No guesswork, no manual edits.</p>
+
+    <h2>Config Quick Reference</h2>
+    <p>Everything lives in <code>config.yaml</code>. The developer role currently looks like this:</p>
+    <pre><code class="language-yaml">roles:
+  dev:
+    provider: vertex_sdk
+    model: gemini-2.5-pro
+    backup_models:
+      - provider: codex_cli
+        model: default
+        reason: "Codex CLI for structured output fallback"
+        cost_tier: high
+        specialties: [structured_output, code_generation]
+      - provider: ollama
+        model: qwen2.5-coder:32b
+        reason: "Code specialist, runs locally"
+        cost_tier: free
+        specialties: [code_generation, local_execution]
+      - provider: vertex_cli
+        model: gemini-2.5-pro
+        reason: "Alternative Gemini access method"
+        cost_tier: medium
+        specialties: [general_purpose]
+
+pipeline:
+  max_recovery_attempts: 2
+  model_fallback:
+    enabled: true
+    auto_suggest: true
+    allow_cost_increase: false
+    prefer_local: true</code></pre>
+
+    <p>Tailor the specialties to the failures you see most often—strict JSON, long-context reasoning, noisy integration tests. The orchestrator will do the rest.</p>
+
+    <h2>How I Keep Myself Honest</h2>
+    <ul>
+      <li><strong>planning/stories.yaml</strong> is the source of truth. If a story is stuck, I inspect <code>metadata.model_history</code> before rerunning anything.</li>
+      <li><strong>artifacts/iterations/*/summary.json</strong> logs how many recoveries triggered in a loop and which model saved the day.</li>
+      <li><strong>artifacts/auto-dev</strong> stores the raw responses from every failed attempt so I can diff what each model tried.</li>
+      <li><strong>logs/orchestrate.log</strong> (when enabled) records the full scoring breakdown, including candidates that were skipped.</li>
+    </ul>
+
+    <div class="next-part">
+      <p><strong>Up next (Part 3):</strong> we zoom out to the full multi-role pipeline &mdash; how BA, PO, Architect, Dev, and QA hand off artifacts and prompts. Stay tuned.</p>
+      <p><a href="../00-vision-ok/index.html">Need the vision again? Revisit Part 1.</a></p>
+    </div>
+  </main>
+</body>
+</html>

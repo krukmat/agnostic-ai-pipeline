@@ -1,0 +1,17 @@
+flowchart LR
+    A[Attempt 1\nGemini 2.5-pro] -->|status: error\nreason: no FILES block| B[Metadata updated\nmodel history entries: 1]
+    B --> C{Fallback suggestion}
+    C -->|Top score| D[Override -> codex_cli]
+    D --> E[Attempt 2\nCodex CLI]
+    E -->|status: error\nreason: API timeout| F[Metadata updated\nmodel history entries: 2]
+    F --> G{Fallback suggestion}
+    G -->|Next score| H[Override -> ollama qwen]
+    H --> I[Attempt 3\nOllama Qwen]
+    I -->|status: ok| J[Story done\nmodel history entries: 3]
+
+    style A fill:#ede7f6
+    style E fill:#fff4e1
+    style I fill:#e8f5e9
+    style B fill:#e3f2fd
+    style F fill:#e3f2fd
+    style J fill:#e8f5e9

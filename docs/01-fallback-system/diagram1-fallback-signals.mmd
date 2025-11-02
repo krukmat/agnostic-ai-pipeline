@@ -1,0 +1,22 @@
+flowchart TD
+    A[Developer failure detected] --> B{Recovery budget exhausted?}
+    B -->|Yes| C[Mark story as blocked_recovery_budget]
+    B -->|No| D["Append to model_history"]
+    D --> E["Persist recovery_attempts + failure reason"]
+    E --> F{Fallback enabled in config?}
+    F -->|No| G["Clear any model_override"]
+    F -->|Yes| H["analyze_failure_and_suggest_model()"]
+    H --> I{Candidate found?}
+    I -->|No| G
+    I -->|Yes| J["Write model_override with provider/model/specialties"]
+    J --> K["Next loop run rehydrates provider in run_dev"]
+    G --> L["Retry with primary config"]
+    K --> M["run_dev llm_call() uses override"]
+    L --> N["execute_role('developer')"]
+    M --> N
+
+    style A fill:#fef6e4
+    style D fill:#e3f2fd
+    style J fill:#e8f5e9
+    style C fill:#ffccbc
+    style M fill:#f1f8e9

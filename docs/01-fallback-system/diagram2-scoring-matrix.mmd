@@ -1,0 +1,25 @@
+graph TD
+    A[Backup model candidate] --> B{Specialties match failure?}
+    B -->|structured_output needed| C["+10 points"]
+    B -->|code_generation or local_execution| D["+8 or +5 points"]
+    A --> E{allow_cost_increase = false?}
+    E -->|Yes| F{cost_tier}
+    F -->|free| G["+5"]
+    F -->|medium| H["+3"]
+    F -->|high| I["+0"]
+    E -->|No| J["High-tier bonus +2"]
+    A --> K{prefer_local = true?}
+    K -->|Yes & free candidate| L["+3"]
+    K -->|No| M["+0"]
+    G --> N["Total score"]
+    H --> N
+    I --> N
+    C --> N
+    D --> N
+    J --> N
+    L --> N
+    N --> O["Highest score wins"]
+
+    style A fill:#ede7f6
+    style N fill:#fffde7
+    style O fill:#e8f5e9
