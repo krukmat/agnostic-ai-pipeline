@@ -40,6 +40,12 @@ ba:
 	CONCEPT="$$CONCEPT" $(PY) scripts/run_ba.py
 	@echo "==> planning/requirements.yaml generado"
 
+.PHONY: dspy-ba
+dspy-ba:
+	@if [ -z "$$CONCEPT" ]; then echo 'Set CONCEPT="..."'; exit 1; fi
+	@echo "Running DSPy BA module..."
+	$(PY) dspy_baseline/scripts/run_ba.py --concept "$$CONCEPT" --verbose
+
 po:
 	CONCEPT="$$CONCEPT" $(PY) scripts/run_product_owner.py
 	@echo "==> planning/product_owner_review.yaml"
