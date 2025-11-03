@@ -1,0 +1,63 @@
+cases:
+  - story_id: S001
+    description: "Registration form must surface validation errors for blank and malformed inputs."
+    required_mentions:
+      - "error message"
+      - "invalid email"
+      - "already registered"
+  - story_id: S002
+    description: "Check-in flow should confirm success and warn on duplicate attempts."
+    required_mentions:
+      - "confirmation"
+      - "already checked in"
+      - "unable to process"
+  - story_id: S003
+    description: "Push notification service must respect opt-in and surface delivery errors."
+    required_mentions:
+      - "opt"
+      - "trigger"
+      - "delivery failure"
+      - "retry"
+  - story_id: S004
+    description: "Event catalogue should handle search/filter errors and empty states."
+    required_mentions:
+      - "filter"
+      - "no events"
+      - "error message"
+  - story_id: S005
+    description: "Admin CRUD actions require audit logging and permissions enforcement."
+    required_mentions:
+      - "validation error"
+      - "rolled back"
+      - "access denied"
+  - story_id: S006
+    description: "Analytics exports must degrade gracefully when data is missing."
+    required_mentions:
+      - "export"
+      - "insufficient data"
+      - "error"
+  - story_id: S007
+    description: "Responsive layout needs accessibility validation and keyboard navigation."
+    required_mentions:
+      - "responsive"
+      - "navigation"
+      - "error"
+  - story_id: S008
+    description: "Security story must mention OAuth2 flows and encryption failures."
+    required_mentions:
+      - "oauth"
+      - "encrypted"
+      - "unavailable"
+  - story_id: S009
+    description: "Mobile push notifications require telemetry for token errors and throttling."
+    required_mentions:
+      - "opt-in"
+      - "throttling"
+      - "unauthorized"
+  - story_id: S010
+    description: "Email notifications must report failures when the provider is down or address is invalid."
+    required_mentions:
+      - "invalid"
+      - "unavailable"
+      - "retry"
+      - "logging"

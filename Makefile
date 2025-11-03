@@ -67,6 +67,8 @@ dev:
 	STORY="$$STORY" DEV_RETRIES="$${DEV_RETRIES:-3}" $(PY) scripts/run_dev.py
 
 qa:
+	DSPY_QA_SKIP_IF_MISSING="$${DSPY_QA_SKIP_IF_MISSING:-0}" $(PY) scripts/generate_dspy_testcases.py
+	DSPY_QA_SKIP_IF_MISSING="$${DSPY_QA_SKIP_IF_MISSING:-0}" $(PY) scripts/lint_dspy_testcases.py
 	QA_RUN_TESTS="$${QA_RUN_TESTS:-0}" $(PY) scripts/run_qa.py
 
 clean:
@@ -114,6 +116,10 @@ warmup:
 .PHONY: dspy-qa
 dspy-qa:
 	@$(PY) scripts/generate_dspy_testcases.py
+
+.PHONY: dspy-qa-lint
+dspy-qa-lint:
+	@$(PY) scripts/lint_dspy_testcases.py
 
 .PHONY: reco-demo reco-on reco-off gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
 

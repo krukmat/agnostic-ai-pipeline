@@ -3,6 +3,18 @@
 **Objetivo**  
 Construir un módulo DSPy que genere casos de prueba (Markdown numerado) para cada historia, cubriendo al menos un escenario “Happy Path” y uno “Unhappy Path”, utilizando la signature `QATestCases` descrita en `dspy_prompts/04-qa-module.md`.
 
+- **Diagrama de estado**
+
+```mermaid
+graph TD
+    A[Fase 6 - QA DSPy] --> B[Diseño de módulo QATestCases\n(Completado)]
+    A --> C[Heurística de cobertura + Retry guidance\n(Completado)]
+    A --> D[Dataset qa_eval.yaml + lint automático\n(Completado)]
+    A --> E[Integración make qa con flag DSPY_QA_SKIP_IF_MISSING\n(Completado)]
+    A --> F[Automatizar ejecución DSPy en sandbox o proveedor alterno\nPendiente]
+    A --> G[Ampliar dataset según nuevos arquetipos\nEn curso continuo]
+```
+
 - **Duración estimada**: 4 días  
 **Owner**: Equipo QA / DSPy  
 **Prerequisitos**:
@@ -80,5 +92,9 @@ Construir un módulo DSPy que genere casos de prueba (Markdown numerado) para ca
   - Se reforzó la verificación heurística (`dspy_baseline/config/metrics.py`) para detectar encabezados “Happy Path/Unhappy Path”, expected result y numeración. `generate_testcases` ahora reintenta automáticamente con guías adicionales si la cobertura cae por debajo de 0.75 y anota un warning si sigue incompleta.  
   - Se añadieron guías base en el módulo (`BASE_GUIDANCE`, `EMAIL_GUIDANCE`) que obligan a generar secciones numeradas y a cubrir caídas del servicio de email, direcciones inválidas, rebotes y telemetría.  
   - `make dspy-qa` (ejecutado en host) generó 10 archivos (`artifacts/dspy/testcases/S001.md` … `S010.md`). Tras aplicar el nuevo guidance, `S010.md` ahora incluye secciones Happy/Unhappy con numeración y escenarios negativos para email inválido, servicio SMTP caído y retrasos por throttling, sin necesidad de advertencias adicionales.
+  - Se agregó el validador automático `make dspy-qa-lint`, que revisa cada Markdown generado asegurando encabezados Happy/Unhappy, numeración y menciones a fallos. El smoke test `tests/smoke/test_dspy_qa_validation.py` ejecuta esta verificación cuando existen artefactos recientes. Las expectativas específicas se mantienen en `dspy_baseline/data/qa_eval.yaml` (ej. S001 debe incluir “invalid email” y “already registered”; S010 debe cubrir “unavailable” y “retry”).
+  - El dataset `qa_eval.yaml` cubre todos los arquetipos actuales (registros, check-in, notificaciones push/email, catálogos, dashboards, accesibilidad, seguridad). Cada entrada fuerza vocabulario clave para validar escenarios negativos específicos (p.ej., S004 exige “no events” y “error message”; S009 requiere “throttling” y “unauthorized”).
+  - Se añadió la bandera `DSPY_QA_SKIP_IF_MISSING=1` para entornos CI donde no se pueda generar DSPy on‑the‑fly: con esa variable, `make qa` omite la generación y el lint solo valida si ya existen artefactos (o pasa limpio si faltan). Recomendación: versionar un snapshot bajo `artifacts/dspy/testcases/` o ejecutarlo previamente en host antes de llamar a `make qa` en pipelines.
+  - Nuevo modo stub (`DSPY_QA_STUB=1`) genera casos deterministas sin depender del modelo (usa `qa_eval.yaml` para poblar escenarios negativos). Útil en el sandbox donde no hay acceso a Ollama; las salidas cumplen el lint y sirven para smoke tests mínimos, aunque no sustituyen la revisión con DSPy real.
 - **Siguientes pasos**: Ajustar prompts o heurística para aumentar cobertura en historias complejas (p.ej., front-end).  
   - Volver a ejecutar `make dspy-qa` (preferentemente en el host hasta que el sandbox pueda acceder al modelo) y confirmar que `S010.md` incorpora escenarios de fallo de notificación sin necesidad de la nota de advertencia.
