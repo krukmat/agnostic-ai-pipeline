@@ -6,7 +6,7 @@
 **Output**: Informe técnico con decisión Go/No-Go
 
 ---
-
+ 
 ## 1. Análisis de Dependencias (90 min)
 
 ### 1.1 Inventario Completo de Dependencias

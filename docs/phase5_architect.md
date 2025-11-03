@@ -4,7 +4,7 @@
 Adaptar el flujo del rol Architect (`scripts/run_architect.py` / `make plan`) para consumir `planning/requirements.yaml` generado por DSPy y seguir entregando historias/epics consistentes con la visión.
 
 **Duración estimada**: 4 días  
-**Owner**: Equipo DSPy / Architect  
+**Owner**: Equipo DSPy / Architect   
 **Prerequisitos**:  
 - `dspy-integration` actualizado con la salida DSPy (BA decomisado).  
 - QA puntual de Product Owner completado.  

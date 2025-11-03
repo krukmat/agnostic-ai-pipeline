@@ -236,9 +236,4 @@ docs/assets/ghpages-article-00-static-v2.zip
 dspy_prompts/
 scripts/generate_phase0_report.py
 scripts/run_phase0_audit.sh
-docs/phase0_technical_audit.md
-DSPY_COMPARISON_PLAN.md
-DSPY_INTEGRATION_PLAN.md
-docs/phase2_implementation_guide.md
-docs/python310_migration_audit.md
 scripts/check_py311_compat.py

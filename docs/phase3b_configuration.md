@@ -39,7 +39,7 @@ Introducir en `config.yaml` un flag (`features.use_dspy_ba`) que permita activar
    - Verificar que `planning/requirements.yaml` tenga la estructura correcta en ambos casos.
 6. **Documentación** (½ día):  
    - Actualizar README, `DSPY_INTEGRATION_PLAN.md`, y notas.
-   - Registrar hallazgos en este documento.
+   - Registrar hallazgos en este documento. 
 
 ---
 

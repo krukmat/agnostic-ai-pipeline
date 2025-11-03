@@ -44,6 +44,13 @@ Este documento analiza la viabilidad y el plan de integración de DSPy (Declarat
 - `07-metrics-common.md` fija el contenido inicial de `dspy_baseline/config/metrics.py` y `dspy_baseline/modules/common.py` (trainsets diminutos, métrica heurística, TODO para validador YAML).
 - `08-makefile.md` y `09-readme.md` piden exponer los scripts vía `make` y documentar la capa DSPy con dependencias y flujo de ejecución.
 
+### Plan Optimizer (MIPROv2 Wrapper)
+1. Crear paquete `dspy_baseline/optimizers/` (con `__init__.py`) y el módulo `mipro.py`.
+2. Implementar la función `optimize_program(program, trainset, metric, *, num_candidates=8, max_iters=8, seed=0)` que envuelve `dspy.MIPROv2` y retorna el programa compilado. Añadir docstring indicando uso por CLI para BA/QA.
+3. Exponer el helper en `dspy_baseline/optimizers/__init__.py` (`__all__ = ["optimize_program"]`).
+4. Preparar pruebas ligeras (mock de `dspy.MIPROv2`) para asegurar firma y llamada (`tests/dspy/test_optimizer.py`).
+5. Documentar el uso en futuros scripts `tune.py` y en el README cuando se active la optimización (Fase 1/Fase 2).
+
 ## Impacto en la arquitectura actual
 - La automatización actual vive en `scripts/*.py` y se ejecuta vía `make`; no existe paquete `dspy_baseline/`, por lo que la nueva carpeta no colisiona pero sí implica actualizar rutas relativas y entorno (usa `PYTHONPATH` raíz).
 - `scripts/run_ba.py` y `scripts/run_qa.py` ya generan artefactos YAML/Markdown con clientes LLM propios (`common.Client`, `logger`); la capa DSPy deberá convivir con ellos. Se planea introducir scripts `dspy_baseline/scripts/run_ba.py` y `run_qa.py` que puedan reutilizar artefactos existentes (p.ej. `planning/requirements.yaml`) sin romper los flujos actuales.
@@ -435,3 +442,13 @@ DSPy es un framework maduro y bien soportado (Stanford/Databricks, 28k+ stars), 
 > **Estado**: Pendiente aprobación de decisiones críticas (Python upgrade, budget, scope)
 
 > Acciones siguientes: revisar con el equipo si la integración debe reemplazar a los agentes actuales o convivir como experimento; confirmar la política de dependencias antes de agregar `dspy-ai`/`mlflow`; definir ubicación final de artefactos DSPy para no pisar la automatización vigente.
+
+### Fase 7: Optimización DSPy → BA/QA (5 días)
+- **Objetivo**: Compilar los módulos DSPy de BA y QA con `dspy.MIPROv2` usando datasets curados, para incrementar consistencia y cobertura negativa.
+- **Tareas**:
+  1. Crear wrapper reutilizable `dspy_baseline/optimizers/mipro.py` con `optimize_program(...)` y exponerlo en el paquete.
+  2. Ampliar datasets (`dspy_baseline/data/ba_train.json`, `qa_train.json`) con ≥50 ejemplos verificados cada uno.
+  3. Implementar script `scripts/tune_dspy.py` (CLI) que acepte parámetros (`--role`, `--trainset`, `--metric`, `--num-candidates`, `--max-iters`, `--seed`) y guarde artefactos compilados en `artifacts/dspy/optimizer/`.
+  4. Ejecutar pilotos (BA y QA) con configuración base (`num_candidates=8`, `max_iters=8`, `seed=0`) y registrar métricas (completitud YAML, cobertura negativa, latencia).
+  5. Documentar resultados en `docs/phase7_optimizer_tuning.md` y `artifacts/dspy/optimizer/report.md`; decidir Go/No-Go para integrar programas optimizados en el pipeline.
+  6. Preparar plan de rollout (Fase 8) si la mejora supera el umbral (≥20% cobertura negativa o reducción de retrabajo manual).

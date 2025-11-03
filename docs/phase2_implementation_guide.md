@@ -13,7 +13,7 @@
 - ✅ Provider: Ollama local (granite4) funcionando correctamente
 - ✅ Mejoras aplicadas vs documentación original (bugs corregidos, validaciones agregadas)
 - ⬜ Warning DSPy menor (cosmético, no blocker)
-
+ 
 ---
 
 ## Scope

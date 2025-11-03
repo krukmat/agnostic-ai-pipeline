@@ -97,4 +97,15 @@ graph TD
   - Se añadió la bandera `DSPY_QA_SKIP_IF_MISSING=1` para entornos CI donde no se pueda generar DSPy on‑the‑fly: con esa variable, `make qa` omite la generación y el lint solo valida si ya existen artefactos (o pasa limpio si faltan). Recomendación: versionar un snapshot bajo `artifacts/dspy/testcases/` o ejecutarlo previamente en host antes de llamar a `make qa` en pipelines.
   - Nuevo modo stub (`DSPY_QA_STUB=1`) genera casos deterministas sin depender del modelo (usa `qa_eval.yaml` para poblar escenarios negativos). Útil en el sandbox donde no hay acceso a Ollama; las salidas cumplen el lint y sirven para smoke tests mínimos, aunque no sustituyen la revisión con DSPy real.
 - **Siguientes pasos**: Ajustar prompts o heurística para aumentar cobertura en historias complejas (p.ej., front-end).  
-  - Volver a ejecutar `make dspy-qa` (preferentemente en el host hasta que el sandbox pueda acceder al modelo) y confirmar que `S010.md` incorpora escenarios de fallo de notificación sin necesidad de la nota de advertencia.
+- Volver a ejecutar `make dspy-qa` (preferentemente en el host hasta que el sandbox pueda acceder al modelo) y confirmar que `S010.md` incorpora escenarios de fallo de notificación sin necesidad de la nota de advertencia.
+
+---
+
+## 6. Roadmap de mejora
+
+- [ ] **Referencias historia ↔ Markdown**: anotar en `planning/stories.yaml` (o `tasks.csv`) la ruta `artifacts/dspy/testcases/Sxxx.md` para que Dev/QA lleguen directo al checklist DSPy.
+- [ ] **Subtareas para Unhappy Paths**: parsear `artifacts/dspy/testcases/*.md` y generar subtareas/notas en `planning/tasks.csv` que enumeren cada escenario negativo pendiente.
+- [ ] **Gating opcional en Dev**: permitir `STRICT_ACCEPTANCE=1 make dev` para ejecutar `dspy-qa-lint` y bloquear historias sin cobertura negativa documentada.
+- [ ] **Cross-check con tests reales**: script que valide que cada historia tiene al menos un test pytest/Jest relacionado (IDs o keywords DSPy) y reporte huecos.
+- [ ] **Retroalimentación QA → DSPy**: si `make qa` detecta fallos reales, añadir los términos faltantes a `qa_eval.yaml` y regenerar Markdown para capturar el escenario.
+- [ ] **Informe UAT**: target `make uat-review` que compile stories + Markdown DSPy en un único reporte (PDF/HTML/Markdown) para demos y aprobación de stakeholders.

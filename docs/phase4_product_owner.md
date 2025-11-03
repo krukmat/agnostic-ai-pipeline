@@ -8,7 +8,7 @@ Alinear `scripts/run_product_owner.py` con `planning/requirements.yaml` generado
 **Prerequisitos**:  
 - Rama funcional `dspy-integration` (contiene `dspy_baseline/` y el target `dspy-ba`).  
 - Servidor LLM (Ollama u otro) accesible con el mismo modelo utilizado en Fase 3.  
-- `planning/requirements.yaml` actualizado con salida DSPy (incluye `meta.original_request`).
+- `planning/requirements.yaml` actualizado con salida DSPy (incluye `meta.original_request`). 
 
 ---
 
