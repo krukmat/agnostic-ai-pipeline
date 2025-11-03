@@ -121,12 +121,13 @@ El repositorio incluye `scripts/run_comparison.sh`. Acciones principales:
 2. Crea directorios `artifacts/comparison/{master,dspy,logs}`.
 3. Define el arreglo `CONCEPTS` y lo guarda en `concepts.txt`.
 4. Ejecuta, para cada concepto:
-   - Cambia de branch (`main` → `dspy-integration`).
-   - Llama `make ba` o `make dspy-ba`.
+   - Llama `make ba` y `make dspy-ba` desde la rama actual.
    - Copia la salida (`planning/requirements.yaml` o `artifacts/dspy/requirements_dspy.yaml`).
    - Registra métricas en `execution_log.jsonl`.
 5. Respeta `RATE_LIMIT_SECONDS` entre conceptos.
 6. Restaura el branch original y presenta un resumen.
+
+> Nota: corre el script desde una rama que ya contenga ambos targets (por ejemplo `dspy-integration` después de fusionar los cambios de `main`).
 
 Ejemplo de uso:
 
