@@ -29,12 +29,6 @@ git status --porcelain
 
 # Si hay cambios, stashear antes del experimento
 git stash push -m "WIP before Phase 3 experiment"
-
-# 1.2 Branches requeridos
-git branch --list main dspy-integration
-
-# Crear branch DSPy si falta
-git checkout -b dspy-integration main
 ```
 
 ### 2. Herramientas necesarias
@@ -121,12 +115,13 @@ El repositorio incluye `scripts/run_comparison.sh`. Acciones principales:
 2. Crea directorios `artifacts/comparison/{master,dspy,logs}`.
 3. Define el arreglo `CONCEPTS` y lo guarda en `concepts.txt`.
 4. Ejecuta, para cada concepto:
-   - Cambia de branch (`main` → `dspy-integration`).
-   - Llama `make ba` o `make dspy-ba`.
+   - Llama `make ba` y `make dspy-ba` desde la rama actual.
    - Copia la salida (`planning/requirements.yaml` o `artifacts/dspy/requirements_dspy.yaml`).
    - Registra métricas en `execution_log.jsonl`.
 5. Respeta `RATE_LIMIT_SECONDS` entre conceptos.
-6. Restaura el branch original y presenta un resumen.
+6. Presenta un resumen final.
+
+> Nota: ejecuta el script en una rama que contenga ambos targets (por ejemplo `dspy-integration` tras fusionar los cambios de `main`).
 
 Ejemplo de uso:
 
