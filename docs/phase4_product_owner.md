@@ -87,7 +87,8 @@ Alinear `scripts/run_product_owner.py` con `planning/requirements.yaml` generado
   - Demo concept (comprobación rápida post-refactor)
 - **Observaciones**:
   - `planning/requirements.yaml` ahora incluye `meta.original_request` después del nuevo target `make ba`.
-  - `make po` genera visión sin errores; en algunos prompts el bloque REVIEW no se incluye (seguir ajustando prompt).
+  - `make po` genera visiones coherentes para los conceptos probados.
+  - Se añadió un retry automático; ahora el bloque `REVIEW` se genera tras reclamarlo explícitamente.
 - **Próximos pasos**:
   - Afinar prompt del PO para garantizar siempre REVIEW.
   - Pasar a Fase 5 (Architect) usando los mismos conceptos para continuidad.

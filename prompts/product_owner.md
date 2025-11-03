@@ -16,6 +16,8 @@ Input you receive:
 - Use plain text or wrap in double quotes if needed
 - Example: "POST /api/auth/register" NOT `POST /api/auth/register`
 
+Output **must** contain both fenced blocks below, in this exact order, even when information is limited. If an array has no items, return an empty list (`[]`). If you have nothing substantive for `narrative`, return a short sentence explaining that the requirements match the vision.
+
 Output strictly in two fenced blocks with the exact labels below (no extra prose):
 ```yaml VISION
 product_name: <short name>

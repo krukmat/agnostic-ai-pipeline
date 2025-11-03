@@ -15,7 +15,7 @@ providers:
     output_clean: true
     extra_args:
     - -c
-    - 'sandbox_permissions=["disk-full-access"]'
+    - sandbox_permissions=["disk-full-access"]
     append_temperature: false
     append_max_tokens: false
   claude_cli:
@@ -60,8 +60,8 @@ roles:
     max_tokens: 8192
     top_p: 0.95
   architect:
-    provider: vertex_sdk
-    model: gemini-2.5-pro
+    provider: ollama
+    model: granite4
     temperature: 0.2
     max_tokens: 4096
     top_p: 0.95
@@ -72,21 +72,26 @@ roles:
     max_tokens: 8192
     top_p: 0.5
     backup_models:
-      - provider: codex_cli
-        model: default
-        reason: "Codex CLI for structured output fallback"
-        cost_tier: high
-        specialties: [structured_output, code_generation]
-      - provider: ollama
-        model: qwen2.5-coder:32b
-        reason: "Code specialist, runs locally"
-        cost_tier: free
-        specialties: [code_generation, local_execution]
-      - provider: vertex_cli
-        model: gemini-2.5-pro
-        reason: "Alternative Gemini access method"
-        cost_tier: medium
-        specialties: [general_purpose]
+    - provider: codex_cli
+      model: default
+      reason: Codex CLI for structured output fallback
+      cost_tier: high
+      specialties:
+      - structured_output
+      - code_generation
+    - provider: ollama
+      model: qwen2.5-coder:32b
+      reason: Code specialist, runs locally
+      cost_tier: free
+      specialties:
+      - code_generation
+      - local_execution
+    - provider: vertex_cli
+      model: gemini-2.5-pro
+      reason: Alternative Gemini access method
+      cost_tier: medium
+      specialties:
+      - general_purpose
   qa:
     provider: vertex_cli
     model: gemini-2.5-pro

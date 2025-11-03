@@ -242,8 +242,9 @@ Este documento analiza la viabilidad y el plan de integración de DSPy (Declarat
 - **Tareas**:
   1. Revisar dependencias del prompt (`prompts/product_owner.md`) y decidir si se amplía el YAML DSPy (overview, stakeholders, personas) o si se infieren dentro del rol PO.
   2. Ejecutar `make dspy-ba` + `make po` con al menos dos conceptos (simple y medium) para validar la cadena `concept → visión → review`.
-  3. Ajustar `dspy_baseline/modules/ba_requirements.py` o el prompt del PO según gaps detectados (por ejemplo, agregar secciones faltantes, enriquecer meta).
+  3. Ajustar `dspy_baseline/modules/ba_requirements.py` o el prompt del PO según gaps detectados (por ejemplo, agregar secciones faltantes, enriquecer meta). *(Durante la validación inicial se detectó que el bloque REVIEW no se genera; queda pendiente reforzar el prompt o agregar validaciones adicionales).* 
   4. Documentar hallazgos y outputs en `docs/phase4_product_owner.md` (crear) e incluir checklist de QA puntual.
+  5. _(Nice-to-have)_ Evaluar un módulo DSPy que genere borradores de visión y review cuando exista dataset suficiente (requirements ↔ feedback) para automatizar aún más este rol.
 
 ### Fase 5: Integración DSPy → Architect (4 días)
 - **Objetivo**: Garantizar que el flujo de Architect (planificación de historias) funciona con la salida DSPy enriquecida.
@@ -252,6 +253,8 @@ Este documento analiza la viabilidad y el plan de integración de DSPy (Declarat
   2. Ejecutar `make dspy-ba`, `make po` y `make plan` con los mismos conceptos de Fase 4; evaluar `planning/stories.yaml` (historias, acceptance, riesgos).
   3. Ajustar prompts (`prompts/architect*.md`) o la generación DSPy para cubrir información que antes venía del BA tradicional.
   4. Registrar resultados en `docs/phase5_architect.md` y preparar recomendaciones para la decisión final (`merge / iterate`).
+  5. _(Nice-to-have)_ Evaluar un módulo DSPy dedicado para Architect (firmas específicas de historias) si se dispone de dataset suficiente.
+  6. _(Estado actual)_ QA puntual ejecutado con conceptos “Plataforma de eventos…” y “ERP manufactura”; se identificó necesidad de ampliar prompts para generar historias UI/UX.
 
 > Tras las Fases 4 y 5, re-ejecutar QA puntual (PO + Architect) para confirmar que la cadena completa CONCEPT → Requirements → Vision/Stories sigue operativa.
 
