@@ -6,7 +6,7 @@ PY    := ./.venv/bin/python -u
 help:
 	@echo "Targets:"
 	@echo "  setup        -> venv + deps base"
-	@echo "  ba           -> Business Analyst (genera requirements.yaml)"
+	@echo "  ba           -> Business Analyst (DSPy, genera planning/requirements.yaml)"
 	@echo "  po           -> Product Owner (valida visión vs requirements)"
 	@echo "  plan         -> Arquitecto + normaliza historias"
 	@echo "  dev          -> Developer (toma siguiente 'todo')"
@@ -37,8 +37,15 @@ setup:
 
 ba:
 	@if [ -z "$$CONCEPT" ]; then echo 'Set CONCEPT="..."'; exit 1; fi
-	CONCEPT="$$CONCEPT" $(PY) scripts/run_ba.py
-	@echo "==> planning/requirements.yaml generado"
+	@echo "==> Ejecutando BA vía DSPy"
+	$(MAKE) dspy-ba CONCEPT="$$CONCEPT"
+	@mkdir -p planning
+	@cp artifacts/dspy/requirements_dspy.yaml planning/requirements.yaml
+	@$(PY) -c "import os,yaml,pathlib; concept=os.environ.get('CONCEPT','').strip(); path=pathlib.Path('planning/requirements.yaml'); data=yaml.safe_load(path.read_text(encoding='utf-8'));\
+meta={'meta':{'original_request':concept}} if concept else {'meta':{}};\
+result={**meta, **(data if isinstance(data,dict) else {})};\
+path.write_text(yaml.safe_dump(result,sort_keys=False,allow_unicode=True,default_flow_style=False),encoding='utf-8')"
+	@echo "==> planning/requirements.yaml actualizado (DSPy)"
 
 .PHONY: dspy-ba
 dspy-ba:

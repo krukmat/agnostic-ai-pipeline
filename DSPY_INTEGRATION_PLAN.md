@@ -230,9 +230,30 @@ Este documento analiza la viabilidad y el plan de integración de DSPy (Declarat
 - Dataset: requirements → test cases (200+ ejemplos)
 - Integración con `make qa`
 
-### Fase 4: Architect/Dev (futuro, TBD)
-- Evaluar viabilidad (complejidad mayor)
-- Requiere datasets mucho más grandes
+### Fase 3b: Decomiso BA Tradicional (2-3 días)
+- Inventario de entry points (`Makefile`, scripts, docs) que apuntan a `scripts/run_ba.py`.
+- Redefinir `make ba` como alias de `make dspy-ba` y ajustar orquestadores (`loop`, `iteration`, `run_orchestrator.py`).
+- Deprecar/eliminar `scripts/run_ba.py` y referencias asociadas.
+- Ejecutar QA puntual (`make ba → po → plan`) asegurando que Product Owner y Architect consumen DSPy.
+- Actualizar documentación (`README`, `DSPY_INTEGRATION_PLAN`, changelog) anunciando el cambio.
+
+### Fase 4: Integración DSPy → Product Owner (3 días)
+- **Objetivo**: Ajustar el rol Product Owner para consumir `planning/requirements.yaml` generado por DSPy y seguir produciendo `product_vision.yaml` y `product_owner_review.yaml` útiles.
+- **Tareas**:
+  1. Revisar dependencias del prompt (`prompts/product_owner.md`) y decidir si se amplía el YAML DSPy (overview, stakeholders, personas) o si se infieren dentro del rol PO.
+  2. Ejecutar `make dspy-ba` + `make po` con al menos dos conceptos (simple y medium) para validar la cadena `concept → visión → review`.
+  3. Ajustar `dspy_baseline/modules/ba_requirements.py` o el prompt del PO según gaps detectados (por ejemplo, agregar secciones faltantes, enriquecer meta).
+  4. Documentar hallazgos y outputs en `docs/phase4_product_owner.md` (crear) e incluir checklist de QA puntual.
+
+### Fase 5: Integración DSPy → Architect (4 días)
+- **Objetivo**: Garantizar que el flujo de Architect (planificación de historias) funciona con la salida DSPy enriquecida.
+- **Tareas**:
+  1. Validar el clasificador de complejidad (`classify_complexity_with_llm`); si el YAML DSPy es corto, inyectar resúmenes o reutilizar el concepto original para evitar clasificaciones sesgadas a “simple”.
+  2. Ejecutar `make dspy-ba`, `make po` y `make plan` con los mismos conceptos de Fase 4; evaluar `planning/stories.yaml` (historias, acceptance, riesgos).
+  3. Ajustar prompts (`prompts/architect*.md`) o la generación DSPy para cubrir información que antes venía del BA tradicional.
+  4. Registrar resultados en `docs/phase5_architect.md` y preparar recomendaciones para la decisión final (`merge / iterate`).
+
+> Tras las Fases 4 y 5, re-ejecutar QA puntual (PO + Architect) para confirmar que la cadena completa CONCEPT → Requirements → Vision/Stories sigue operativa.
 
 ---
 
