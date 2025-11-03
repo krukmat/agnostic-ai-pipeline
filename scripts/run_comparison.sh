@@ -3,10 +3,10 @@
 # Usage: bash scripts/run_comparison.sh [--dry-run]
 #
 # Prerequisites:
-#   - jq installed (brew install jq)
-#   - git working tree clean (or user confirmation to proceed)
-#   - make ba and make dspy-ba targets available
-#   - LLM credentials configured
+#   - jq installed
+#   - git working tree clean (or user confirms continuation)
+#   - make ba / make dspy-ba targets available
+#   - LLM credentials and providers configurados
 
 set -e
 
@@ -24,7 +24,7 @@ fi
 echo "🔍 Running prerequisite checks..."
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo "❌ ERROR: jq not found. Install it (brew install jq / apt-get install jq)."
+  echo "❌ ERROR: jq not found. Install with 'brew install jq' or 'apt-get install jq'."
   exit 1
 fi
 
@@ -34,7 +34,7 @@ if [[ -n $(git status --porcelain) ]]; then
   read -p "Continue anyway? (y/N): " -n 1 -r
   echo
   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborting. Please stash/commit changes first."
+    echo "Aborting. Stash or commit changes first."
     exit 1
   fi
 fi
@@ -45,7 +45,7 @@ if ! git rev-parse --verify main >/dev/null 2>&1; then
 fi
 
 if ! git rev-parse --verify dspy-integration >/dev/null 2>&1; then
-  echo "❌ ERROR: Branch 'dspy-integration' not found. Create it with: git checkout -b dspy-integration main"
+  echo "❌ ERROR: Branch 'dspy-integration' not found. Create it with 'git checkout -b dspy-integration main'"
   exit 1
 fi
 
@@ -115,8 +115,8 @@ run_ba() {
 
   if [[ "$branch" == "master" ]]; then
     if make ba CONCEPT="$concept" \
-        1>"$COMPARISON_DIR/logs/${index}_master_stdout.log" \
-        2>"$COMPARISON_DIR/logs/${index}_master_stderr.log"; then
+      1>"$COMPARISON_DIR/logs/${index}_master_stdout.log" \
+      2>"$COMPARISON_DIR/logs/${index}_master_stderr.log"; then
       if [[ -f "planning/requirements.yaml" ]]; then
         cp planning/requirements.yaml "$output_file" || error="Copy failed"
       else
@@ -127,8 +127,8 @@ run_ba() {
     fi
   else
     if make dspy-ba CONCEPT="$concept" \
-        1>"$COMPARISON_DIR/logs/${index}_dspy_stdout.log" \
-        2>"$COMPARISON_DIR/logs/${index}_dspy_stderr.log"; then
+      1>"$COMPARISON_DIR/logs/${index}_dspy_stdout.log" \
+      2>"$COMPARISON_DIR/logs/${index}_dspy_stderr.log"; then
       if [[ -f "artifacts/dspy/requirements_dspy.yaml" ]]; then
         cp artifacts/dspy/requirements_dspy.yaml "$output_file" || error="Copy failed"
       else
@@ -233,5 +233,5 @@ fi
 echo ""
 echo "Next steps:"
 echo "  1. Review outputs manually: ls -lh $COMPARISON_DIR/{master,dspy}/*.yaml"
-echo "  2. Run Fase 4 analysis script (cuando exista)."
-echo "  3. Document findings en docs/phase3_comparison_experiment.md."
+echo "  2. Ejecutar análisis de Fase 4 (cuando esté disponible)."
+echo "  3. Documentar resultados en docs/phase3_comparison_experiment.md."
