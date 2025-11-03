@@ -111,6 +111,10 @@ warmup:
 	@echo "--- Warming up remote services ---"
 	@$(PY) -c "from a2a.runtime import warmup; warmup()"
 
+.PHONY: dspy-qa
+dspy-qa:
+	@$(PY) scripts/generate_dspy_testcases.py
+
 .PHONY: reco-demo reco-on reco-off gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
 
 reco-demo:

@@ -78,6 +78,8 @@ Adaptar el flujo del rol Architect (`scripts/run_architect.py` / `make plan`) pa
   - El clasificador asignó tier `medium` en ambos casos; generó historias detalladas aunque aún centradas en endpoints/backend.
   - Historias (`planning/stories.yaml`) y epics (`planning/epics.yaml`) se generaron sin errores; acceptance contiene escenarios “Happy Path / Edge Case”.
   - `make po` mantiene visiones coherentes tras el reintento automático del bloque REVIEW.
+  - Se reforzó el prompt `prompts/architect.md` con instrucciones explícitas para reservar ~30% de historias UI/UX (layout, estados vacíos, accesibilidad, telemetría) y se validó con una nueva ejecución de `make plan` (realizada fuera del sandbox). El backlog resultante contiene 10 historias, de las cuales 4 abordan UI/UX y accesibilidad (S001, S004, S007, S010), cumpliendo la directriz.
 - **Siguientes pasos**:
   - Ajustar prompts/entrada para cubrir áreas UI/UX (historias actuales se enfocan en testing/backend).
   - Considerar enriquecer el YAML DSPy (overview, stakeholders) para mayor variedad.
+  - Automatizar la validación UI/UX (p.ej., script que verifique porcentaje de historias etiquetadas como front/UX) antes de mover la fase a estado “DONE”.

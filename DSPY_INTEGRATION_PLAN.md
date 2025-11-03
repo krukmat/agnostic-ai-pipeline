@@ -255,7 +255,7 @@ Este documento analiza la viabilidad y el plan de integración de DSPy (Declarat
   3. Ajustar prompts (`prompts/architect*.md`) o la generación DSPy para cubrir información que antes venía del BA tradicional.
   4. Registrar resultados en `docs/phase5_architect.md` y preparar recomendaciones para la decisión final (`merge / iterate`).
   5. _(Nice-to-have)_ Evaluar un módulo DSPy dedicado para Architect (firmas específicas de historias) si se dispone de dataset suficiente.
-  6. _(Estado actual)_ QA puntual ejecutado con conceptos “Plataforma de eventos…” y “ERP manufactura”; se identificó necesidad de ampliar prompts para generar historias UI/UX.
+  6. _(Estado actualizado)_ Prompt `prompts/architect.md` reforzado para exigir ~30% de historias UI/UX (layout, estados vacíos, accesibilidad, telemetría) y verificado con `make plan` ejecutado en host: 4 de 10 historias enfocan UI/UX/accesibilidad (S001, S004, S007, S010). En sandbox sigue bloqueado el acceso a Ollama, por lo que las validaciones automáticas deben correrse localmente hasta contar con un proveedor accesible.
 
 > Tras las Fases 4 y 5, re-ejecutar QA puntual (PO + Architect) para confirmar que la cadena completa CONCEPT → Requirements → Vision/Stories sigue operativa.
 
@@ -412,9 +412,19 @@ DSPy es un framework maduro y bien soportado (Stanford/Databricks, 28k+ stars), 
    - Mantener agentes tradicionales como fallback (feature flag)
 
 3. **Long term** (6+ meses):
-   - Si DSPy demuestra valor en BA/QA, evaluar Architect/Dev roles
-   - Considerar contribuciones upstream (Issue #8273: A2A protocol layer)
-   - Posible talk/blog post compartiendo learnings
+- Si DSPy demuestra valor en BA/QA, evaluar Architect/Dev roles
+- Considerar contribuciones upstream (Issue #8273: A2A protocol layer)
+- Posible talk/blog post compartiendo learnings
+
+### Fase 6: Integración DSPy → QA Testcases (4 días)
+- **Objetivo**: Generar casos de prueba en Markdown para cada historia usando el módulo DSPy `ChainOfThought` propuesto en `dspy_prompts/04-qa-module.md`.
+- **Tareas iniciales**:
+  1. Implementar `dspy_baseline/modules/qa_testcases.py` con la signature `QATestCases` y el programa `QA_PROGRAM = dspy.ChainOfThought(...)`.
+  2. Crear la función `generate_testcases(story)` que produce markdown numerado con al menos un happy path y un unhappy path.
+  3. Añadir métrica heurística en `dspy/config/metrics.py` para validar cobertura.
+  4. Integrar con el pipeline (`make qa`) como opción experimental.
+  5. Documentar la fase en `docs/phase6_qa_testcases.md` (ver plan detallado).
+  6. _(Estado actualizado)_ Métrica heurística extendida para detectar encabezados “Happy/Unhappy Path”, expected result y numeración; el módulo reintenta automáticamente con guías adicionales si la cobertura <0.75 y registra warning si sigue incompleta. Se añadieron `BASE_GUIDANCE` y `EMAIL_GUIDANCE` para obligar cobertura de rebotes, caídas SMTP y numeración consistente. `make dspy-qa` (ejecutado en host) generó 10 casos; tras el rerun, `S010.md` cubre escenarios felices y fallidos (email inválido, servicio caído, throttling, telemetría) sin advertencias. En sandbox sigue bloqueado el acceso a Ollama, por lo que los reruns deben realizarse en host hasta habilitar un provider alterno.
 
 **Siguiente paso inmediato**: Reunión de decisión con stakeholders para aprobar/rechazar upgrade Python y presupuesto PoC.
 
