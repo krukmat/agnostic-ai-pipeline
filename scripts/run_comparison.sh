@@ -178,17 +178,13 @@ for i in "${!CONCEPTS[@]}"; do
   echo "📝 Concept $INDEX/$TOTAL_CONCEPTS: ${CONCEPT:0:70}..."
   echo ""
 
-  git checkout main >/dev/null 2>&1
   if ! run_ba "master" "$CONCEPT" "$INDEX" "$COMPARISON_DIR/master/${PADDED_INDEX}_requirements.yaml"; then
     FAILED_MASTER=$((FAILED_MASTER + 1))
   fi
 
-  git checkout dspy-integration >/dev/null 2>&1
   if ! run_ba "dspy" "$CONCEPT" "$INDEX" "$COMPARISON_DIR/dspy/${PADDED_INDEX}_requirements.yaml"; then
     FAILED_DSPY=$((FAILED_DSPY + 1))
   fi
-
-  git checkout main >/dev/null 2>&1
 
   if [[ "$INDEX" -lt "$TOTAL_CONCEPTS" ]]; then
     echo "  💤 Sleeping ${RATE_LIMIT_SECONDS}s to avoid rate limits..."
@@ -197,10 +193,6 @@ for i in "${!CONCEPTS[@]}"; do
     fi
   fi
 done
-
-if [[ "$DRY_RUN" != "true" ]]; then
-  git checkout "$CURRENT_BRANCH" >/dev/null 2>&1
-fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
