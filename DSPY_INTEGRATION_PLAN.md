@@ -236,6 +236,7 @@ Este documento analiza la viabilidad y el plan de integración de DSPy (Declarat
 - Deprecar/eliminar `scripts/run_ba.py` y referencias asociadas.
 - Ejecutar QA puntual (`make ba → po → plan`) asegurando que Product Owner y Architect consumen DSPy.
 - Actualizar documentación (`README`, `DSPY_INTEGRATION_PLAN`, changelog) anunciando el cambio.
+- _(Siguiente)_ Añadir flag configurable `features.use_dspy_ba` en `config.yaml` para permitir fallback legacy. Documentar la fase en `docs/phase3b_configuration.md`.
 
 ### Fase 4: Integración DSPy → Product Owner (3 días)
 - **Objetivo**: Ajustar el rol Product Owner para consumir `planning/requirements.yaml` generado por DSPy y seguir produciendo `product_vision.yaml` y `product_owner_review.yaml` útiles.

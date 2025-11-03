@@ -154,3 +154,5 @@ a2a:
       strategy: auto
   authentication:
     mode: none
+features:
+  use_dspy_ba: true

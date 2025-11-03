@@ -79,5 +79,5 @@ Adaptar el flujo del rol Architect (`scripts/run_architect.py` / `make plan`) pa
   - Historias (`planning/stories.yaml`) y epics (`planning/epics.yaml`) se generaron sin errores; acceptance contiene escenarios “Happy Path / Edge Case”.
   - `make po` mantiene visiones coherentes tras el reintento automático del bloque REVIEW.
 - **Siguientes pasos**:
-  - Ajustar prompts para incluir historias front-end/UX cuando sea necesario.
-  - Evaluar enriquecimiento del YAML DSPy (overview, stakeholders) para mejorar variedad de historias.
+  - Ajustar prompts/entrada para cubrir áreas UI/UX (historias actuales se enfocan en testing/backend).
+  - Considerar enriquecer el YAML DSPy (overview, stakeholders) para mayor variedad.

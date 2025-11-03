@@ -12,8 +12,13 @@ from typing import Optional
 import typer
 import yaml
 
+BASE_DIR = Path(__file__).resolve().parents[1]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
 from common import ensure_dirs, PLANNING
 from logger import logger
+import importlib.util
 
 from dspy_baseline.modules.ba_requirements import (
     generate_requirements as dsp_generate,
@@ -21,10 +26,27 @@ from dspy_baseline.modules.ba_requirements import (
 from dspy_baseline.scripts.run_ba import load_llm_config
 
 
-def _run_dspy(concept: str) -> dict[str, str]:
-    """Generate requirements via DSPy and persist them under planning/."""
-    ensure_dirs()
+def _load_legacy_module():
+    spec = importlib.util.spec_from_file_location(
+        "ba_legacy", Path(__file__).with_name("ba_legacy.py")
+    )
+    if spec and spec.loader:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    raise ImportError("Unable to load ba_legacy module.")
 
+
+def _use_dspy() -> bool:
+    from pathlib import Path
+    import yaml
+
+    config = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
+    return config.get("features", {}).get("use_dspy_ba", True)
+
+
+def _run_dspy(concept: str) -> dict[str, str]:
+    ensure_dirs()
     lm = load_llm_config()
     payload = dsp_generate(concept=concept, lm=lm)
 
@@ -47,11 +69,14 @@ def _run_dspy(concept: str) -> dict[str, str]:
 
 
 async def generate_requirements(concept: str) -> dict[str, str]:
-    """Async wrapper retained for orchestrators awaiting this function."""
-    return await asyncio.to_thread(_run_dspy, concept)
+    if _use_dspy():
+        return await asyncio.to_thread(_run_dspy, concept)
+    logger.info("[BA] DSPy disabled; using legacy implementation.")
+    legacy_module = _load_legacy_module()
+    return await legacy_module.generate_requirements(concept)
 
 
-app = typer.Typer(help="Business Analyst agent CLI (delegates to DSPy)")
+app = typer.Typer(help="Business Analyst agent CLI (DSPy or legacy)")
 
 
 @app.command()
