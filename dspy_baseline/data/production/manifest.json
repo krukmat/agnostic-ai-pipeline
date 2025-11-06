@@ -1,0 +1,36 @@
+{
+  "datasets": [
+    {
+      "name": "ba_train",
+      "path": "ba_train.jsonl",
+      "sha256": "d83170041b4c5c325b12cbc61941da613301fb0161e2723a7b1c038e87400e8d",
+      "size": "4403",
+      "created_at": "2025-11-06",
+      "curator": "team.dspy"
+    },
+    {
+      "name": "ba_eval",
+      "path": "ba_eval.jsonl",
+      "sha256": "1aa0f6764d077efd788170912ebd2d7b5b44ad50492924647a19919015d6519b",
+      "size": "1454",
+      "created_at": "2025-11-06",
+      "curator": "team.dspy"
+    },
+    {
+      "name": "qa_train",
+      "path": "qa_train.jsonl",
+      "sha256": "85c0d8a5a6d1aff5bc6a0388cbd6f5f1b263955a3e8960241ba38da027871176",
+      "size": "2581",
+      "created_at": "2025-11-06",
+      "curator": "team.dspy"
+    },
+    {
+      "name": "qa_eval",
+      "path": "qa_eval.jsonl",
+      "sha256": "7dc7be1a6937ca433768170c0c29abe97e015f594c42d792f2882748c04e143f",
+      "size": "919",
+      "created_at": "2025-11-06",
+      "curator": "team.dspy"
+    }
+  ]
+}

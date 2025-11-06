@@ -173,6 +173,11 @@ Key Files
 - Scripts: `scripts/generate_dspy_testcases.py`, `scripts/lint_dspy_testcases.py`
 - Artifacts: `planning/*.yaml`, `artifacts/dspy/testcases/*.md`
 
+Datasets & Tuning
+- Curated datasets viven en `dspy_baseline/data/production/` (JSONL + `manifest.json` con hashes).
+- Optimización opcional vía `dspy_baseline/optimizers/mipro.py` y el CLI `scripts/tune_dspy.py` (`--role`, `--trainset`, `--metric`, `--num-candidates`, `--max-iters`, `--seed`).
+- Los programas compilados y metadatos se guardan bajo `artifacts/dspy/optimizer/<role>/`.
+
 BA (Requirements) with DSPy
 - Module: `dspy_baseline/modules/ba_requirements.py` (signature + `Predict` module)
 - CLI: `dspy_baseline/scripts/run_ba.py` (reads provider/model from `config.yaml`)

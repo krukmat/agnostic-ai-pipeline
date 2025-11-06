@@ -1,96 +1,121 @@
-# Fase 7 – Optimización DSPy (MIPROv2 para BA/QA)
+# Fase 7 – Optimización DSPy y Escalado de Dataset
 
-**Objetivo**  
-Compilar las firmas DSPy de Business Analyst y QA Testcases con `dspy.MIPROv2`, usando datasets curados para mejorar consistencia, cobertura de escenarios negativos y reducir iteraciones manuales.
+**Objetivo general**  
+Escalar DSPy más allá del prototipo: alimentar datasets curados, optimizar programas BA/QA con `dspy.MIPROv2` y anclar QA negativa como política reproducible.
 
-- **Duración estimada**: 5 días  
-- **Owner**: Equipo DSPy / Optimización  
+- **Duración estimada**: 4 semanas (iteraciones semanales)
+- **Owner**: Equipo DSPy + QA + Datos
 - **Prerequisitos**:
-  - Fases 3–6 completadas (BA/PO/Architect/QA integrados al flujo DSPy).
-  - Datasets iniciales disponibles (`dspy_baseline/data/ba_demo.json`, `qa_eval.yaml`).
-  - Paquete DSPy 3.x instalado y proveedor LLM accesible para compilaciones prolongadas.
+  - Fases 3 a 6 operativas (BA/PO/Architect/QA DSPy)
+  - Repositorio versionado de datasets (`dspy_baseline/data/`)
+  - DSPy 3.x disponible y proveedor LLM confiable para tuning
 
 ---
 
-## 1. Alcance y entregables
-
-- Wrapper MIPROv2 reutilizable (`dspy_baseline/optimizers/mipro.py`) y exportado en `__init__.py`.
-- Script `scripts/tune.py` (o equivalente) que permita optimizar BA y QA con parámetros configurables (trainset, metric, max_iters, num_candidates, seed).
-- Datasets ampliados para entrenamiento/evaluación (mínimo 50 ejemplos para PoC).
-- Métricas de comparación (baseline vs optimizado) documentadas en `artifacts/dspy/optimizer/`.
-- Documentación de resultados y conclusiones Go/No-Go para producción.
-
----
-
-## 2. Plan paso a paso
-
-1. **Preparar infraestructura (½ día)**
-   - Crear directorio `dspy_baseline/optimizers/` con `__init__.py`.
-   - Añadir módulo `mipro.py` con función `optimize_program(...)` (firma definida en `05-optimizer.md`).
-
-2. **Ampliar datasets (1 día)**
-   - BA: recopilar ≥50 pares concepto→requirements verificados (`dspy_baseline/data/ba_train.json`, `ba_eval.json`).
-   - QA: sintetizar ≥50 historias con casos esperados (`dspy_baseline/data/qa_train.json`, `qa_eval.json`), alineado con `qa_eval.yaml`.
-   - Normalizar formato (JSONL o YAML) y documentar criterios de aceptación.
-
-3. **Implementar script de tuning (1 día)**
-   - Archivo: `scripts/tune_dspy.py` (o similar).
-   - Parámetros: `--role {ba,qa}`, `--trainset`, `--metric`, `--num-candidates`, `--max-iters`, `--seed`.
-   - Salidas: programa compilado (`artifacts/dspy/optimizer/<role>/<timestamp>/program.pkl`), métricas (`metrics.json`), log (`stdout.log`).
-
-4. **Ejecutar optimización piloto (1 día)**
-   - Configuración sugerida: `num_candidates=8`, `max_iters=8`, `seed=0`.
-   - Correr para BA y QA con datasets preparados.
-   - Registrar métricas: completitud YAML (BA), cobertura negativa (QA), latencia promedio.
-
-5. **Evaluar resultados (½ día)**
-   - Comparar outputs optimizados vs baseline en 10 conceptos/historias nuevas.
-   - Documentar hallazgos en esta fase (sección Resultados) y en `artifacts/dspy/optimizer/report.md`.
-
-6. **Documentar y decidir (½ día)**
-   - Actualizar README (sección DSPy) y `DSPY_INTEGRATION_PLAN.md` con conclusiones.
-   - Proponer rollout (Fase 8) si mejora supera umbral (≥20% en cobertura negativa o reducción de iteraciones manuales).
+## 1. Metas y criterios de éxito
+- BA optimizado: completitud YAML ≥98%, revisión manual −25%
+- QA optimizado: cobertura negativa ≥95%, notas post-QA −20%
+- Operacional: BA ≤60s, QA ≤90s, tuning ≤6 min/rol, costo <$0.20
+- Reproducibilidad: mismos seeds/trainsets ⇒ métricas ±5%
+- Rollout: flag `USE_OPTIMIZED_PROGRAMS` tras 3 pilotos exitosos
 
 ---
 
-## 3. Riesgos y mitigaciones
+## 2. Escalado de datasets (Semana 1)
+1. **Minería de artifacts**: extraer histórico concept→requirements, stories→QA findings
+   - ✅ Extraídos conceptos semilla (TaskFlow, EventPulse, KnowloSync) desde planning y workshops.
+2. **Sprint de anotación**: 150 ejemplos validados por equipo (rubrica común)
+   - ⚠️ Iteración continua: se documentaron 3 ejemplos curados (train) + 1 eval; resta ampliarlo con sesiones de anotación.
+3. **Sintéticos controlados**: reaprovechar outputs legacy, etiquetar fallas con heurísticas
+   - ✅ Se generaron combinaciones negativas manuales alineadas con `qa_eval.yaml`.
+4. **Normalización y versionado**:
+   - ✅ Formato JSONL en `dspy_baseline/data/production/{ba,qa}_{train,eval}.jsonl`.
+   - ✅ Manifest `manifest.json` con hashes SHA y metadatos.
+   - ✅ Directorio `dspy_baseline/data/production/` creado y versionado.
 
+---
+
+## 3. Loop de curación continua
+- [ ] Post-iteración: agregar ejemplos aprobados
+- [ ] QA findings: registrar escenarios faltantes en `qa_eval.yaml`
+- [ ] Revisión trimestral: deduplicar, balancear dominio/tier
+- [ ] Política PR: doble revisión para cambios en dataset
+
+---
+
+## 4. Optimización con MIPROv2 (Semana 2)
+1. Infraestructura: `dspy_baseline/optimizers/mipro.py` + export en `__init__.py`  ✅
+2. Script `scripts/tune_dspy.py` con CLI (`--role`, `--trainset`, `--metric`, `--num-candidates`, `--max-iters`, `--seed`)  ✅
+3. Pilotos (BA y QA): `num_candidates=8`, `max_iters=8`, `seed=0`  ⚠️ pendiente (bloqueado por falta de proveedor DSPy)
+4. Métricas: completitud YAML, cobertura negativa, latencia. Guardar en `artifacts/dspy/optimizer/...`  ⚠️ pendiente
+5. Decisión: report en `artifacts/dspy/optimizer/report.md`; Go/No-Go para flag  ⚠️ pendiente
+
+---
+
+## 5. Integración con pipeline (Semana 3)
+- [ ] Story ↔ testcase: campo `testcases_path` en `planning/stories.yaml`
+- [ ] Subtareas DSPy: generar TODOs desde Unhappy Paths (`planning/tasks.csv`)
+- [ ] Gate dev opcional: `STRICT_ACCEPTANCE=1 make dev STORY=S#` ejecuta lint de la historia
+- [ ] Cross-check tests reales: script que detecte historias sin test pytest/Jest asociado a keywords DSPy
+- [ ] Dashboard: grafica cobertura, latencia, incidencias (JSON → Grafana/MLflow)
+
+---
+
+## 6. Integración CI/CD (Semana 4)
+- [ ] Tests dataset: validar schema JSONL, duplicados, required keys
+- [ ] Lint en PRs: `make dspy-qa-lint` (usar `DSPY_QA_STUB=1` si no hay modelo)
+- [ ] Job nocturno: `DSPY_QA_STUB=1 make dspy-qa && make dspy-qa-lint`
+- [ ] Snapshot artefactos: versionar programa compilado + hash dataset + seed
+
+---
+
+## 7. Produktización y documentación
+- [ ] Actualizar README (sección DSPy en producción)
+- [ ] Crear `docs/dspy_playbook.md` (guía anotación, tuning, troubleshooting)
+- [ ] Workshop interno: proceso de anotación y lectura de lint
+- [ ] Roadmap Fase 8: activar flag `USE_OPTIMIZED_PROGRAMS`, automatizar re-tuning mensual
+
+---
+
+## 8. Métricas y reporting
+- KPIs BA/QA: ver sección 1
+- Operacionales: % historias con enlace Markdown, % subtareas DSPy completadas, tasa de falsos positivos/negativos lint
+- Reporting: dashboard mensual + reunión DSPy/QA/Dev
+
+---
+
+## 9. Riesgos y mitigaciones
 | Riesgo | Impacto | Mitigación |
 |--------|---------|------------|
-| Dataset insuficiente | Optimización inestable | Recolectar ejemplos adicionales o reutilizar logs históricos |
-| Costos/latencia altos | Retrasa pipeline | Ejecutar fuera de horas pico, ajustar `num_candidates`/`max_iters` |
-| Falta de reproducibilidad | Resultados no confiables | Guardar seed, trainset exacto y artefactos compilados |
-| Incompatibilidad DSPy versión | Bloquea tuning | Fijar versión DSPy en `requirements.txt`, pruebas locales antes de CI |
+| Dataset sesgado/insuficiente | Modelos sobreajustados | Curación continua + eval set separado |
+| Costos tuning altos | Cuellos en pipeline | Ajustar hyperparams, ejecutar off-peak |
+| Divergencia sandbox/host | Resultados inconsistentes | Flags `DSPY_QA_SKIP_IF_MISSING` / `DSPY_QA_STUB`, documentar proveedores |
+| Falta de tests reales | Lint sin respaldo | Gate dev + script cross-check tests |
 
 ---
 
-## 4. Métricas de éxito
-
-- BA optimizado:
-  - Completitud YAML ≥98%
-  - Reducción de tiempo de revisión manual ≥25%
-- QA optimizado:
-  - Cobertura negativa (según lint) ≥95%
-  - Reducción de notas post‑QA ≥20%
-- Operacional:
-  - Tiempo de compilación ≤6 min por rol
-  - Artefactos reproducibles (mismos inputs → misma métrica ±5%)
-
----
-
-## 5. Resultados (pendiente)
-
-- **Fecha**: _(a completar)_  
-- **Roles optimizados**: BA / QA  
-- **Hallazgos**:  
-  - _Completar tras piloto_
-- **Siguientes pasos**:  
-  - _Completar tras piloto_
-
----
-
-## 6. Dependencias con fases futuras
-
-- Fase 8 (si Go): Integrar programas compilados al pipeline (`make ba` / `make dspy-qa`) con flag `USE_OPTIMIZED_PROGRAMS`.
-- Fase 9: Automatizar re‑tuning (p.ej., cron mensual) y seguimiento en MLflow.
-
+## 10. Estado actual
+- Plan Fase 7 documentado ✅
+- Semana 1 ejecutada (dataset bootstrap):
+  - Directorio `dspy_baseline/data/production/` + manifest con hashes ✅
+  - `ba_train.jsonl` (3 ejemplos curados) y `ba_eval.jsonl` (1 ejemplo holdout) ✅
+  - `qa_train.jsonl` / `qa_eval.jsonl` con escenarios felices/infelices y palabras clave ✅
+  - Documentado progreso y gaps (falta sesión de anotación masiva) ✅
+- Semana 2 en curso (optimización):
+  - Wrapper `dspy_baseline/optimizers/mipro.py` + export en `__init__.py` ✅
+  - CLI `scripts/tune_dspy.py` con parámetros de tuning ✅
+  - Pilotos dependientes de proveedor DSPy (pendiente) ⚠️
+- Pendientes inmediatos (detalle):
+  1. **Piloto MIPROv2 (bloqueado por proveedor)**
+     - Validar disponibilidad de un modelo accesible desde este entorno (codex_cli, vertex_cli o endpoint HTTP).
+     - Instalar dependencias DSPy en la venv (`pip install dspy-ai datasets`).
+     - Ejecutar `scripts/tune_dspy.py` por rol (`ba`, `qa`) usando los JSONL de `dspy_baseline/data/production/` y registrar artefactos en `artifacts/dspy/optimizer/`.
+     - Comparar métricas vs baseline y anexar reporte en `artifacts/dspy/optimizer/report.md`.
+  2. **Sprint de anotación ampliado (≥150 ejemplos)**
+     - Preparar pauta y checklist para revisores (campos obligatorios, estilo YAML/Markdown).
+     - Convocar sesión interna de 1-2 días; distribuir conceptos por dominio (web/app/api) y complejidad (simple/medium/corporate).
+     - Volcar los nuevos ejemplos en `dspy_baseline/data/production/*_train.jsonl`, actualizando `manifest.json` (hash + fecha + curator).
+  3. **Automatización y observabilidad inicial**
+     - Definir job nocturno (script o Jenkins/GitHub Actions) que corra `DSPY_QA_STUB=1 make dspy-qa && make dspy-qa-lint` para validar coherencia diaria de datasets/políticas.
+     - Instrumentar un dashboard mínimo (tabla HTML o notebook) con métricas: tamaño dataset, cobertura lint, errores recientes.
+     - Documentar procedimiento en `docs/dspy_playbook.md` (pendiente de creación).

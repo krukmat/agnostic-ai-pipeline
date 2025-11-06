@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
-from scripts import lint_dspy_testcases
-
-
+# Add scripts to path for imports
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import lint_dspy_testcases
 
 
 @pytest.mark.skipif(

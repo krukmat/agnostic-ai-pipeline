@@ -452,3 +452,7 @@ DSPy es un framework maduro y bien soportado (Stanford/Databricks, 28k+ stars), 
   4. Ejecutar pilotos (BA y QA) con configuración base (`num_candidates=8`, `max_iters=8`, `seed=0`) y registrar métricas (completitud YAML, cobertura negativa, latencia).
   5. Documentar resultados en `docs/phase7_optimizer_tuning.md` y `artifacts/dspy/optimizer/report.md`; decidir Go/No-Go para integrar programas optimizados en el pipeline.
   6. Preparar plan de rollout (Fase 8) si la mejora supera el umbral (≥20% cobertura negativa o reducción de retrabajo manual).
+- **Estado (2025-11-06)**:
+  - Directorio `dspy_baseline/data/production/` con `ba/qa_{train,eval}.jsonl` + `manifest.json` ✅
+  - Wrapper `dspy_baseline/optimizers/mipro.py` y CLI `scripts/tune_dspy.py` implementados ✅
+  - Pilotos MIPROv2 pendientes de proveedor DSPy accesible ⚠️ (requisito: instalar `dspy-ai` y habilitar modelo remoto)
