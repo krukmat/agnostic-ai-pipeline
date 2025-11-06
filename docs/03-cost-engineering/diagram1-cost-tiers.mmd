@@ -1,0 +1,28 @@
+flowchart TD
+    Start[New Task] --> Draft{Is it a draft?}
+
+    Draft -->|Yes| FreeTier[Free Tier<br/>Ollama Local<br/>$0/call]
+    Draft -->|No| Production{Production code?}
+
+    Production -->|Yes| HighTier[High Tier<br/>GPT-4 / Claude<br/>$5-6/call]
+    Production -->|No| Planning{Planning work?}
+
+    Planning -->|Yes| MediumTier[Medium Tier<br/>Gemini 2.5-pro<br/>$0.20/call]
+    Planning -->|No| Failed{Cloud failed?}
+
+    Failed -->|Yes| FreeTier
+    Failed -->|No| HighTier
+
+    FreeTier --> Examples1[Examples:<br/>• BA requirements<br/>• PO validation<br/>• Dev fallback<br/>• QA fallback]
+
+    MediumTier --> Examples2[Examples:<br/>• Architecture<br/>• User stories<br/>• Epic planning]
+
+    HighTier --> Examples3[Examples:<br/>• Production code<br/>• Security features<br/>• Critical QA]
+
+    style FreeTier fill:#d4edda,stroke:#28a745
+    style MediumTier fill:#fff3cd,stroke:#ffc107
+    style HighTier fill:#f8d7da,stroke:#dc3545
+
+    style Examples1 fill:#e9f7ef
+    style Examples2 fill:#fef9e7
+    style Examples3 fill:#fce8e9

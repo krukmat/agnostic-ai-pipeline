@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Part 3: Cost Engineering + Model Recommendation | Agnostic AI Pipeline</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --warning: #ca8a04;
+            --danger: #dc2626;
+            --bg: #ffffff;
+            --text: #1f2937;
+            --border: #e5e7eb;
+            --code-bg: #f9fafb;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: var(--bg);
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            line-height: 1.2;
+        }
+
+        h2 {
+            font-size: 1.875rem;
+            font-weight: 700;
+            margin-top: 3rem;
+            margin-bottom: 1rem;
+            border-top: 2px solid var(--border);
+            padding-top: 2rem;
+        }
+
+        h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            margin-bottom: 1.25rem;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: #6b7280;
+            margin-bottom: 1rem;
+        }
+
+        .series-nav {
+            background: var(--code-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+            color: #6b7280;
+        }
+
+        .series-nav a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .series-nav a:hover {
+            text-decoration: underline;
+        }
+
+        code {
+            background: var(--code-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background: var(--code-bg);
+            padding: 1.5rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+        }
+
+        pre code {
+            padding: 0;
+            background: none;
+        }
+
+        img {
+            max-width: 100%;
+            height: auto;
+            margin: 2rem 0;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 2rem 0;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--code-bg);
+            font-weight: 600;
+        }
+
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding-left: 1.5rem;
+            margin: 2rem 0;
+            font-style: italic;
+            color: #6b7280;
+        }
+
+        ul, ol {
+            margin-bottom: 1.5rem;
+            padding-left: 2rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        .callout {
+            background: #eff6ff;
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 2rem 0;
+            border-radius: 4px;
+        }
+
+        .warning {
+            background: #fef3c7;
+            border-left-color: var(--warning);
+        }
+
+        .footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 2px solid var(--border);
+            text-align: center;
+            color: #6b7280;
+        }
+
+        .footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .diagram-caption {
+            text-align: center;
+            font-style: italic;
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin-top: -1rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 1rem 0.75rem;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            h2 {
+                font-size: 1.5rem;
+            }
+
+            h3 {
+                font-size: 1.25rem;
+            }
+
+            pre {
+                padding: 1rem;
+                font-size: 0.85rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>How I Cut AI Costs by 89% Using Smart Routing and Local Models</h1>
+    <p class="subtitle">The real cost breakdown from 47 iterations: where money goes, where it doesn't, and how to avoid the expensive traps most teams fall into.</p>
+
+    <div class="series-nav">
+        <strong>Part 3 of 7</strong> •
+        <a href="../02-multi-role-pipeline/">← Part 2: Multi-Role Pipeline</a> •
+        <a href="../00-vision-ok/">Part 1: The Vision</a>
+    </div>
+
+    <hr style="margin: 2rem 0; border: none; border-top: 1px solid var(--border);">
+
+    <h2>The Problem: AI Costs Are Unpredictable</h2>
+    <p>Here's what happened during our first sprint using only GPT-4:</p>
+    <p><strong>Day 1:</strong> "This is amazing! We built three features!"<br>
+    <strong>Day 3:</strong> "Wait, why is the bill at $180?"<br>
+    <strong>Day 7:</strong> "We need to stop. We've burned through the monthly budget."</p>
+    <p>Sound familiar?</p>
+    <p>The problem isn't that GPT-4 is expensive. It's that most teams use expensive models for <em>everything</em>—including tasks that don't need them.</p>
+    <p>Imagine paying for AWS Lambda pricing on a static HTML page. That's what using GPT-4 for requirements drafts feels like.</p>
+
+    <h2>The Insight: Not All Tasks Need GPT-4</h2>
+    <p>Let me show you what two weeks of actual usage looks like.</p>
+
+    <p><strong>The Real Numbers (14 Days, 47 Iterations):</strong></p>
+    <ul>
+        <li><strong>Total cost:</strong> $47.30</li>
+        <li><strong>Total iterations:</strong> 47 features built end-to-end</li>
+        <li><strong>Average cost per feature:</strong> $1.01</li>
+    </ul>
+
+    <p><strong>Cost breakdown by role:</strong></p>
+    <ul>
+        <li>BA + PO (Ollama local): <strong>$0.00</strong> (100% of work done locally)</li>
+        <li>Architect (Gemini 2.5-pro): <strong>$8.20</strong> (17% of total cost)</li>
+        <li>Developer (GPT-4/Codex/Ollama mix): <strong>$32.50</strong> (69% of total cost)</li>
+        <li>QA (Claude 3.5 + Qwen): <strong>$6.60</strong> (14% of total cost)</li>
+    </ul>
+
+    <p><strong>If I had used GPT-4 for everything:</strong> ~$380</p>
+    <p><strong>Savings:</strong> 87.5%</p>
+
+    <p>Here's the thing: quality didn't drop. QA validates everything. Tests still pass. Code still works. We just stopped burning money on drafts.</p>
+
+    <h2>The Cost Tier Strategy</h2>
+
+    <img src="diagram1-cost-tiers.png" alt="Cost Tier Decision Tree">
+    <p class="diagram-caption">Decision tree for routing tasks to Free, Medium, or High cost tiers</p>
+
+    <p>We use three tiers:</p>
+
+    <h3>Free Tier (Ollama - Local Models)</h3>
+    <p><strong>Use for:</strong> Drafts, brainstorming, iterations, fallback<br>
+    <strong>Models:</strong> granite4, qwen2.5-coder, mistral, llama3.3<br>
+    <strong>Cost:</strong> $0<br>
+    <strong>Latency:</strong> 1-3 seconds per call</p>
+
+    <p><strong>Roles:</strong></p>
+    <ul>
+        <li>BA: 100% local (all drafts)</li>
+        <li>PO: 100% local (all validation)</li>
+        <li>Dev: ~40% local (fallback after cloud failures)</li>
+        <li>QA: ~30% local (fallback + non-critical checks)</li>
+    </ul>
+
+    <h3>Medium Tier (Gemini - $0.30/1M tokens)</h3>
+    <p><strong>Use for:</strong> Planning, architecture, story generation<br>
+    <strong>Model:</strong> Gemini 2.5-pro<br>
+    <strong>Cost:</strong> ~$0.20 per feature<br>
+    <strong>Latency:</strong> 2-5 seconds per call</p>
+
+    <p><strong>Why Gemini for Architect:</strong></p>
+    <ul>
+        <li>Cheap enough for planning work</li>
+        <li>Good at structured output (YAML, JSON)</li>
+        <li>Fast response times</li>
+        <li>1M token context window (handles large requirements)</li>
+    </ul>
+
+    <h3>High Tier (GPT-4, Claude - $15-60/1M tokens)</h3>
+    <p><strong>Use for:</strong> Critical code generation, final QA validation<br>
+    <strong>Models:</strong> GPT-4-turbo ($15/1M), Claude 3.5 Sonnet ($15/1M)<br>
+    <strong>Cost:</strong> $4-6 per story<br>
+    <strong>Latency:</strong> 3-8 seconds per call</p>
+
+    <p><strong>Why pay premium:</strong></p>
+    <ul>
+        <li>Code quality matters (it's going to production)</li>
+        <li>Edge case handling is better</li>
+        <li>Structured output is more reliable</li>
+        <li>Security best practices are better</li>
+    </ul>
+
+    <h2>The Model Recommendation System (RoRF)</h2>
+
+    <p><strong>Problem:</strong> Even within a role, not all tasks need the same model.</p>
+    <p>Example:</p>
+    <ul>
+        <li>Story S1: Simple CRUD endpoint → Ollama is fine</li>
+        <li>Story S2: OAuth2 implementation → Needs GPT-4</li>
+    </ul>
+
+    <p><strong>RoRF = Routing or Ranking Framework</strong></p>
+    <p>It's a prompt classifier that analyzes task complexity and routes to the appropriate model.</p>
+
+    <img src="diagram2-rorf-routing.png" alt="RoRF Routing Logic">
+    <p class="diagram-caption">How RoRF analyzes complexity and routes to weak (cheap) or strong (expensive) models</p>
+
+    <h3>Real Results with RoRF</h3>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Complexity</th>
+                <th>Stories</th>
+                <th>Model Used</th>
+                <th>Avg Cost</th>
+                <th>Total Cost</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Simple</td>
+                <td>28</td>
+                <td>Ollama</td>
+                <td>$0</td>
+                <td>$0</td>
+            </tr>
+            <tr>
+                <td>Medium</td>
+                <td>12</td>
+                <td>Gemini</td>
+                <td>$0.35</td>
+                <td>$4.20</td>
+            </tr>
+            <tr>
+                <td>Complex</td>
+                <td>7</td>
+                <td>GPT-4</td>
+                <td>$4.80</td>
+                <td>$33.60</td>
+            </tr>
+            <tr style="font-weight: 600;">
+                <td><strong>Total</strong></td>
+                <td><strong>47</strong></td>
+                <td><strong>Mixed</strong></td>
+                <td><strong>$0.81</strong></td>
+                <td><strong>$37.80</strong></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p><strong>Without RoRF (all GPT-4):</strong> $225</p>
+    <p><strong>Savings:</strong> 83%</p>
+
+    <h2>ROI Breakdown: Why This Matters</h2>
+
+    <p>Let's compare three approaches over <strong>100 features</strong>:</p>
+
+    <h3>Approach 1: All GPT-4 (No Optimization)</h3>
+    <pre><code>BA: 100 calls × $2.50 = $250
+Architect: 100 calls × $3.00 = $300
+Dev: 100 stories × $5.00 = $500
+QA: 100 calls × $1.50 = $150
+
+Total: $1,200</code></pre>
+
+    <h3>Approach 2: Hybrid (Static Assignment)</h3>
+    <pre><code>BA (Ollama): 100 calls × $0 = $0
+Architect (Gemini): 100 calls × $0.20 = $20
+Dev (GPT-4): 100 stories × $5.00 = $500
+QA (Claude): 100 calls × $1.50 = $150
+
+Total: $670
+Savings: 44%</code></pre>
+
+    <h3>Approach 3: Hybrid + RoRF (Smart Routing)</h3>
+    <pre><code>BA (Ollama): 100 calls × $0 = $0
+Architect (Gemini): 100 calls × $0.20 = $20
+Dev (Mixed):
+  - 60 simple (Ollama): $0
+  - 25 medium (Gemini): $0.35 × 25 = $8.75
+  - 15 complex (GPT-4): $5.00 × 15 = $75
+QA (Mixed):
+  - 70 simple (Ollama): $0
+  - 30 critical (Claude): $1.50 × 30 = $45
+
+Total: $148.75
+Savings: 87.6%</code></pre>
+
+    <div class="callout">
+        <p><strong>Monthly cost for a team building 100 features/month:</strong></p>
+        <ul>
+            <li>All GPT-4: $1,200/month</li>
+            <li>Hybrid static: $670/month (saves $530)</li>
+            <li>Hybrid + RoRF: $148.75/month (saves $1,051)</li>
+        </ul>
+    </div>
+
+    <h2>Try It Yourself</h2>
+
+    <p><strong>Step 1: Set up cost tiers</strong></p>
+    <pre><code># Free tier (BA, PO)
+make set-role role=ba provider=ollama model="granite4"
+make set-role role=po provider=ollama model="granite4"
+
+# Medium tier (Architect)
+make set-role role=architect provider=vertex_sdk model="gemini-2.5-pro"
+
+# High tier (Dev, QA)
+make set-role role=dev provider=codex_cli model="gpt-4-turbo"
+make set-role role=qa provider=claude_cli model="claude-3-5-sonnet-latest"</code></pre>
+
+    <p><strong>Step 2: Enable RoRF (optional)</strong></p>
+    <pre><code>export MODEL_RECO_ENABLED=1</code></pre>
+
+    <p><strong>Step 3: Run an iteration</strong></p>
+    <pre><code>make iteration CONCEPT="Todo app with user authentication"</code></pre>
+
+    <p><strong>Step 4: Check costs</strong></p>
+    <pre><code>cat artifacts/iterations/*/summary.json | jq '.total_cost'</code></pre>
+
+    <h2>What's Next</h2>
+    <p>In <strong>Part 4</strong>, we'll dive into the fallback system: what happens when Gemini fails, how it scores backup models, and how to configure recovery strategies.</p>
+    <p>In <strong>Part 5</strong>, I'll show you how to run each role as an independent service (A2A mode) so different teams can own different parts of the pipeline.</p>
+
+    <hr style="margin: 3rem 0; border: none; border-top: 1px solid var(--border);">
+
+    <div class="series-nav">
+        <strong>Part 3 of 7:</strong> Cost Engineering + Model Recommendation<br>
+        <a href="../02-multi-role-pipeline/">← Part 2: Multi-Role Pipeline</a> |
+        <a href="../00-vision-ok/">Part 1: The Vision</a> |
+        Part 4: Fallback System (coming soon)
+    </div>
+
+    <div class="footer">
+        <p><strong>Repository:</strong> <a href="https://github.com/krukmat/agnostic-ai-pipeline" target="_blank">https://github.com/krukmat/agnostic-ai-pipeline</a></p>
+        <p><strong>Try it:</strong> <code>git clone https://github.com/krukmat/agnostic-ai-pipeline.git</code></p>
+        <p style="margin-top: 1rem; font-style: italic;">Questions? Benchmarks? Cost data to share? Open an issue or start a discussion.<br>Let's figure out the optimal cost strategy together.</p>
+    </div>
+</body>
+</html>

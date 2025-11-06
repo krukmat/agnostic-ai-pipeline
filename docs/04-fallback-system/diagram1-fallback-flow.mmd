@@ -1,0 +1,56 @@
+flowchart TD
+    Start[Story S6:<br/>Implement OAuth2] --> Primary[Primary Model Attempt<br/>Gemini 2.5-pro]
+
+    Primary --> Check{Success?}
+
+    Check -->|Yes| Success[Story Complete<br/>Update model_history<br/>Status: done]
+
+    Check -->|No| Capture[Capture Failure<br/>• Error message<br/>• Duration<br/>• Cost $0]
+
+    Capture --> Analyze[Analyze Failure Type]
+
+    Analyze --> Type{Failure<br/>Type?}
+
+    Type -->|Timeout| Spec1[Specialties:<br/>fast_inference<br/>code_generation]
+    Type -->|Rate Limit| Spec2[Specialties:<br/>different_provider<br/>code_generation]
+    Type -->|Malformed| Spec3[Specialties:<br/>structured_output<br/>code_generation]
+    Type -->|Context Exceeded| Spec4[Specialties:<br/>large_context<br/>code_generation]
+    Type -->|API Down| Spec5[Specialties:<br/>different_provider<br/>code_generation]
+
+    Spec1 --> Score[Score Backup Models]
+    Spec2 --> Score
+    Spec3 --> Score
+    Spec4 --> Score
+    Spec5 --> Score
+
+    Score --> Rank[Rank by Score<br/>1. GPT-4: 85<br/>2. Ollama: 78<br/>3. Gemini: 65]
+
+    Rank --> Budget{Within<br/>budget?}
+
+    Budget -->|Yes| Backup1[Backup Attempt 1<br/>GPT-4 Turbo]
+    Budget -->|No| Block[Status: blocked_recovery_budget<br/>Manual intervention needed]
+
+    Backup1 --> Check2{Success?}
+
+    Check2 -->|Yes| Success2[Story Complete<br/>Update model_history<br/>Attempt 2 success]
+    Check2 -->|No| Attempts{Max attempts<br/>reached?}
+
+    Attempts -->|No| Backup2[Backup Attempt 2<br/>Ollama Qwen]
+    Attempts -->|Yes| Block
+
+    Backup2 --> Check3{Success?}
+    Check3 -->|Yes| Success3[Story Complete<br/>Cost $0 local fallback]
+    Check3 -->|No| Block
+
+    style Primary fill:#fff3cd,stroke:#ffc107
+    style Backup1 fill:#ffe6e6,stroke:#dc3545
+    style Backup2 fill:#e6ffe6,stroke:#28a745
+
+    style Success fill:#d1f2eb,stroke:#00c853,stroke-width:3px
+    style Success2 fill:#d1f2eb,stroke:#00c853,stroke-width:3px
+    style Success3 fill:#d1f2eb,stroke:#00c853,stroke-width:3px
+
+    style Block fill:#f8d7da,stroke:#dc2626,stroke-width:2px
+
+    style Score fill:#e3f2fd,stroke:#2196f3
+    style Rank fill:#e3f2fd,stroke:#2196f3

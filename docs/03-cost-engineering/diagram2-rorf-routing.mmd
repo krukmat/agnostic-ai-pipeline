@@ -1,0 +1,43 @@
+flowchart TD
+    Story[Story S1:<br/>Implement OAuth2] --> Analyze[RoRF Classifier<br/>Analyze prompt complexity]
+
+    Analyze --> Keywords{Check keywords}
+
+    Keywords -->|security, OAuth,<br/>distributed| Complex[Complexity: Complex]
+    Keywords -->|validation,<br/>business logic| Medium[Complexity: Medium]
+    Keywords -->|CRUD, basic,<br/>simple| Simple[Complexity: Simple]
+
+    Complex --> RouteStrong[Route to Strong Model<br/>GPT-4 Turbo<br/>Cost: ~$5]
+    Medium --> RouteMedium[Route to Medium Model<br/>Gemini 2.5-pro<br/>Cost: ~$0.35]
+    Simple --> RouteWeak[Route to Weak Model<br/>Ollama Qwen<br/>Cost: $0]
+
+    RouteStrong --> Execute1[Execute with GPT-4]
+    RouteMedium --> Execute2[Execute with Gemini]
+    RouteWeak --> Execute3[Execute with Ollama]
+
+    Execute1 --> Success1{Success?}
+    Execute2 --> Success2{Success?}
+    Execute3 --> Success3{Success?}
+
+    Success1 -->|Yes| Done[Story Complete<br/>Metadata logged]
+    Success1 -->|No| Fallback1[Fallback to next tier]
+
+    Success2 -->|Yes| Done
+    Success2 -->|No| Fallback2[Fallback to Ollama]
+
+    Success3 -->|Yes| Done
+    Success3 -->|No| Fallback3[Escalate to Gemini]
+
+    Fallback1 --> Execute2
+    Fallback2 --> Execute3
+    Fallback3 --> Execute2
+
+    style Complex fill:#f8d7da,stroke:#dc3545
+    style Medium fill:#fff3cd,stroke:#ffc107
+    style Simple fill:#d4edda,stroke:#28a745
+
+    style RouteStrong fill:#ffe6e6
+    style RouteMedium fill:#fffacd
+    style RouteWeak fill:#e6ffe6
+
+    style Done fill:#d1f2eb,stroke:#00c853,stroke-width:3px

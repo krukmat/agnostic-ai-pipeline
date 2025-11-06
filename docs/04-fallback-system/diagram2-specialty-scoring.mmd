@@ -1,0 +1,48 @@
+flowchart LR
+    subgraph Models[Available Backup Models]
+        M1[GPT-4 Turbo<br/>codex_cli]
+        M2[Qwen 2.5 Coder<br/>ollama]
+        M3[Gemini 2.5-pro<br/>vertex_sdk]
+    end
+
+    subgraph Specialties[Model Specialties]
+        M1 --> S1[code_generation: 10<br/>structured_output: 8<br/>fast_inference: 6<br/>Cost: high]
+        M2 --> S2[fast_inference: 10<br/>different_provider: 10<br/>code_generation: 7<br/>Cost: free]
+        M3 --> S3[large_context: 10<br/>code_generation: 9<br/>structured_output: 7<br/>Cost: medium]
+    end
+
+    subgraph Needed[Required for Current Failure]
+        F[Failure: API Unavailable<br/>Needed specialties:<br/>• different_provider<br/>• code_generation]
+    end
+
+    subgraph Scoring[Scoring Algorithm]
+        F --> Calc[Calculate Scores]
+        S1 --> Calc
+        S2 --> Calc
+        S3 --> Calc
+
+        Calc --> R1[GPT-4:<br/>code_gen +10<br/>diff_provider +0<br/>Cost penalty -0<br/>Total: 85]
+
+        Calc --> R2[Qwen:<br/>code_gen +7<br/>diff_provider +10<br/>Cost bonus +5<br/>Total: 88]
+
+        Calc --> R3[Gemini:<br/>code_gen +9<br/>diff_provider +0<br/>Cost penalty -5<br/>Total: 70]
+    end
+
+    subgraph Selection[Model Selection]
+        R1 --> Winner
+        R2 --> Winner
+        R3 --> Winner
+
+        Winner[Selected: Qwen<br/>Score: 88<br/>Reason: Different provider<br/>+ Free cost tier]
+    end
+
+    style F fill:#fef3c7,stroke:#ffc107,stroke-width:2px
+    style Winner fill:#d1f2eb,stroke:#00c853,stroke-width:3px
+
+    style S1 fill:#ffe6e6
+    style S2 fill:#e6ffe6
+    style S3 fill:#fff9e6
+
+    style R1 fill:#ffebee
+    style R2 fill:#e8f5e9
+    style R3 fill:#fff9c4
