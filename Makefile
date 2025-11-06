@@ -6,7 +6,7 @@ PY    := ./.venv/bin/python -u
 help:
 	@echo "Targets:"
 	@echo "  setup        -> venv + deps base"
-	@echo "  ba           -> Business Analyst (genera requirements.yaml)"
+	@echo "  ba           -> Business Analyst (DSPy, genera planning/requirements.yaml)"
 	@echo "  po           -> Product Owner (valida visión vs requirements)"
 	@echo "  plan         -> Arquitecto + normaliza historias"
 	@echo "  dev          -> Developer (toma siguiente 'todo')"
@@ -37,8 +37,9 @@ setup:
 
 ba:
 	@if [ -z "$$CONCEPT" ]; then echo 'Set CONCEPT="..."'; exit 1; fi
+	@echo "==> Ejecutando BA (configurable DSPy/legacy)"
 	CONCEPT="$$CONCEPT" $(PY) scripts/run_ba.py
-	@echo "==> planning/requirements.yaml generado"
+	@echo "==> planning/requirements.yaml actualizado (DSPy)"
 
 .PHONY: dspy-ba
 dspy-ba:
@@ -66,6 +67,8 @@ dev:
 	STORY="$$STORY" DEV_RETRIES="$${DEV_RETRIES:-3}" $(PY) scripts/run_dev.py
 
 qa:
+	DSPY_QA_SKIP_IF_MISSING="$${DSPY_QA_SKIP_IF_MISSING:-0}" $(PY) scripts/generate_dspy_testcases.py
+	DSPY_QA_SKIP_IF_MISSING="$${DSPY_QA_SKIP_IF_MISSING:-0}" $(PY) scripts/lint_dspy_testcases.py
 	QA_RUN_TESTS="$${QA_RUN_TESTS:-0}" $(PY) scripts/run_qa.py
 
 clean:
@@ -109,6 +112,14 @@ iteration:
 warmup:
 	@echo "--- Warming up remote services ---"
 	@$(PY) -c "from a2a.runtime import warmup; warmup()"
+
+.PHONY: dspy-qa
+dspy-qa:
+	@$(PY) scripts/generate_dspy_testcases.py
+
+.PHONY: dspy-qa-lint
+dspy-qa-lint:
+	@$(PY) scripts/lint_dspy_testcases.py
 
 .PHONY: reco-demo reco-on reco-off gcloud-init gcloud-auth-adc gcloud-enable-apis vertex-ping provider-vertex-cli
 

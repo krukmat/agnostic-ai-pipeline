@@ -13,6 +13,11 @@ FORMAT REQUIREMENTS:
 - Acceptance criteria as simple bullet points
 - **CRITICAL: All stories MUST include automated tests as part of implementation**
 - **Tests are NOT separate stories - they are INTEGRAL to each user story**
+- Provide a balanced mix of stories that cover backend services, frontend/UX surfaces, and supporting QA/operational tasks when the requirements imply user interfaces or monitoring needs.
+- When requirements mention user interactions or UI flows, include at least one story that describes the corresponding frontend experience (layout, accessibility, responsiveness).
+- Garantizar al menos una historia explícitamente dedicada a UI/UX (diseño de pantallas, comportamiento responsive, accesibilidad) cuando los requisitos mencionen flujos de usuario.
+- Dedica varias historias a la experiencia UI/UX cuando el concepto o los requisitos mencionen pantallas, dashboards, mobile, onboarding u otros puntos de contacto; describe estados vacíos, errores visibles, accesibilidad WCAG y telemetría básica.
+- Revisa `planning/requirements.yaml` y el concepto original en busca de palabras clave de interfaz (ui, frontend, app, journey, usuario, pantalla, flujo); si aparecen, asegúrate de que al menos ~30% de las historias cubran UI/UX o contenido visible para el usuario final.
 - Keep to 5-15 stories total for this project scope
 
 OUTPUT STRICTLY IN THIS FORMAT:

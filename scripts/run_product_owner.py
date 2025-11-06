@@ -125,9 +125,25 @@ async def main() -> None:
     save_text(DEBUG_PATH, response)
     logger.debug(f"[PO] Full response saved to {DEBUG_PATH}")
 
-
     vision_yaml = grab_block(response, "yaml", "VISION")
     review_yaml = grab_block(response, "yaml", "REVIEW")
+
+    if not review_yaml:
+        logger.warning("[PO] REVIEW block missing — retrying with explicit instruction.")
+        retry_user = (
+            user
+            + "\n\nIMPORTANT: You must output BOTH fenced blocks (VISION and REVIEW) exactly as specified."
+            + " If you lack details for a section, return an empty list [] or a short placeholder,"
+            + " but the REVIEW block is mandatory. Regenerate the entire response now."
+        )
+        response = await client.chat(system=PO_PROMPT, user=retry_user)
+        save_text(DEBUG_PATH, response)
+        vision_yaml = grab_block(response, "yaml", "VISION")
+        review_yaml = grab_block(response, "yaml", "REVIEW")
+
+    if not review_yaml:
+        logger.error("[PO] REVIEW block missing after retry; aborting to prevent stale review.")
+        raise SystemExit(1)
 
     # Task: fix-stories - Sanitize YAML before writing
     if vision_yaml:
