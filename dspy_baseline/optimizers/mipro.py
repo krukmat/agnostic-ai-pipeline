@@ -13,7 +13,8 @@ def optimize_program(
     metric: Callable[[Any, Any], float],
     *,
     num_candidates: int = 8,
-    max_iters: int = 8,
+    num_trials: int = 8,
+    max_bootstrapped_demos: int = 8,
     seed: int = 0,
 ) -> Any:
     """Compile and return an optimized DSPy program using MIPROv2.
@@ -25,13 +26,16 @@ def optimize_program(
     """
     optimizer = dspy.MIPROv2(
         metric=metric,
+        auto=None,
         num_candidates=num_candidates,
         seed=seed,
     )
     compiled_program = optimizer.compile(
         program,
         trainset=trainset,
-        max_iters=max_iters,
+        num_trials=num_trials,
+        max_bootstrapped_demos=max_bootstrapped_demos,
+        minibatch_size=10,
     )
     return compiled_program
 
