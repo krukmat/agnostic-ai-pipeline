@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Optional
 
 import dspy
 
@@ -16,26 +16,52 @@ def optimize_program(
     num_trials: int = 8,
     max_bootstrapped_demos: int = 8,
     seed: int = 0,
+    valset: Optional[Iterable[Any]] = None,
+    stop_metric: Optional[Callable[[Any, Any], float]] = None,
+    **compile_kwargs: Any,
 ) -> Any:
     """Compile and return an optimized DSPy program using MIPROv2.
 
-    This helper is designed for CLI scripts that fine-tune Business Analyst
-    or QA signatures with curated datasets. The caller is responsible for
-    providing a trainset iterable and a metric callable that returns a score
-    between 0.0 and 1.0 for each (example, prediction) pair.
+    Parameters
+    ----------
+    program:
+        DSPy module to compile (e.g., BARequirementsModule, QA ChainOfThought program).
+    trainset:
+        Iterable of `dspy.Example` instances used for optimization.
+    metric:
+        Callable that returns a score in [0, 1] given `(example, prediction)`.
+    num_candidates / num_trials / max_bootstrapped_demos / seed:
+        Parameters passed to `dspy.MIPROv2`.
+    valset:
+        Optional iterable of validation examples.
+    stop_metric:
+        Optional callable evaluated on the validation set to trigger early stop.
+    compile_kwargs:
+        Additional keyword arguments forwarded to `teleprompter.compile(...)`.
+
+    Returns
+    -------
+    Compiled DSPy program ready for inference.
     """
-    optimizer = dspy.MIPROv2(
+    teleprompter = dspy.MIPROv2(
         metric=metric,
-        auto=None,
+        auto=None,  # Required to use manual num_candidates/num_trials settings
         num_candidates=num_candidates,
         seed=seed,
     )
-    compiled_program = optimizer.compile(
-        program,
-        trainset=trainset,
-        num_trials=num_trials,
-        max_bootstrapped_demos=max_bootstrapped_demos,
-        minibatch_size=10,
-    )
+
+    compile_args = {
+        "trainset": trainset,
+        "num_trials": num_trials,
+        "max_bootstrapped_demos": max_bootstrapped_demos,
+        "minibatch_size": 10,  # Set to avoid exceeding valset size
+    }
+    if valset is not None:
+        compile_args["valset"] = valset
+    if stop_metric is not None:
+        compile_args["stop_metric"] = stop_metric
+    compile_args.update(compile_kwargs)
+
+    compiled_program = teleprompter.compile(program, **compile_args)
     return compiled_program
 

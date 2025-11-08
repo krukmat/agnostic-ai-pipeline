@@ -49,21 +49,10 @@ class BARequirementsModule(dspy.Module):
         super().__init__()
         self.generate = dspy.Predict(BARequirementsSignature)
 
-    def forward(self, concept: str) -> Dict[str, Any]:
-        """Generate requirements from concept and return structured dict."""
+    def forward(self, concept: str):
+        """Generate requirements from concept and return prediction."""
         prediction = self.generate(concept=concept)
-
-        return {
-            "title": prediction.title,
-            "description": prediction.description,
-            "functional_requirements": self._parse_yaml_field(
-                prediction.functional_requirements
-            ),
-            "non_functional_requirements": self._parse_yaml_field(
-                prediction.non_functional_requirements
-            ),
-            "constraints": self._parse_yaml_field(prediction.constraints),
-        }
+        return prediction
 
     def _parse_yaml_field(self, field_text: str) -> List[Any]:
         """Best-effort YAML parsing with fallbacks to simple lists."""

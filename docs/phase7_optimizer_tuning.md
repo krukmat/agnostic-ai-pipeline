@@ -29,7 +29,9 @@ Escalar DSPy más allá del prototipo: alimentar datasets curados, optimizar pro
 3. **Sintéticos controlados**: reaprovechar outputs legacy, etiquetar fallas con heurísticas
    - ✅ Se generaron combinaciones negativas manuales alineadas con `qa_eval.yaml`.
 4. **Normalización y versionado**:
-   - ✅ Formato JSONL en `dspy_baseline/data/production/{ba,qa}_{train,eval}.jsonl`.
+   - ✅ Formato JSONL en `dspy_baseline/data/production/{ba,qa}_{train,eval}.jsonl` (compatible con `dspy.Example`).
+   - ✅ Para BA, cada fila incluye `concept` y los campos desglosados del YAML (FR/NFR/constraints) -> inputs: `concept`.
+   - ⚠️ QA: dataset requiere añadir `test_cases_md` esperados para tuning real; por ahora solo guía sintética (unhappy paths) — completar en sprint de anotación.
    - ✅ Manifest `manifest.json` con hashes SHA y metadatos.
    - ✅ Directorio `dspy_baseline/data/production/` creado y versionado.
 
@@ -45,7 +47,10 @@ Escalar DSPy más allá del prototipo: alimentar datasets curados, optimizar pro
 
 ## 4. Optimización con MIPROv2 (Semana 2)
 1. Infraestructura: `dspy_baseline/optimizers/mipro.py` + export en `__init__.py`  ✅
-2. Script `scripts/tune_dspy.py` con CLI (`--role`, `--trainset`, `--metric`, `--num-candidates`, `--max-iters`, `--seed`)  ✅
+2. Script `scripts/tune_dspy.py` con CLI (`--role`, `--trainset`, `--valset`, `--metric`, `--stop-metric`, `--num-candidates`, `--max-iters`, `--seed`)  ✅
+   - Convierte JSONL a `dspy.Example` con inputs por rol y guarda artefactos usando `dspy.save(...)`.
+   - Requiere ejecutar `dspy.configure(lm=...)` antes de la llamada (el wrapper ya no configura el proveedor automáticamente).
+   - Sugerido: pasar métrica específica (`dspy_baseline.config.metrics:evaluate_testcase_coverage` para QA o métrica propia para BA) y, si existe, un `--valset`.
 3. Pilotos (BA y QA): `num_candidates=8`, `max_iters=8`, `seed=0`  ⚠️ pendiente (bloqueado por falta de proveedor DSPy)
 4. Métricas: completitud YAML, cobertura negativa, latencia. Guardar en `artifacts/dspy/optimizer/...`  ⚠️ pendiente
 5. Decisión: report en `artifacts/dspy/optimizer/report.md`; Go/No-Go para flag  ⚠️ pendiente

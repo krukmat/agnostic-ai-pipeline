@@ -174,8 +174,8 @@ Key Files
 - Artifacts: `planning/*.yaml`, `artifacts/dspy/testcases/*.md`
 
 Datasets & Tuning
-- Curated datasets viven en `dspy_baseline/data/production/` (JSONL + `manifest.json` con hashes).
-- Optimización opcional vía `dspy_baseline/optimizers/mipro.py` y el CLI `scripts/tune_dspy.py` (`--role`, `--trainset`, `--metric`, `--num-candidates`, `--max-iters`, `--seed`).
+- Curated datasets viven en `dspy_baseline/data/production/` (JSONL + `manifest.json` con hashes), formateados para cargarse como `dspy.Example`.
+- Optimización opcional vía `dspy_baseline/optimizers/mipro.py` y el CLI `scripts/tune_dspy.py` (`--role`, `--trainset`, `--valset`, `--metric`, `--stop-metric`, `--num-candidates`, `--max-iters`, `--seed`). Ejecuta `dspy.configure(lm=...)` antes de lanzar el tuning.
 - Los programas compilados y metadatos se guardan bajo `artifacts/dspy/optimizer/<role>/`.
 
 BA (Requirements) with DSPy
