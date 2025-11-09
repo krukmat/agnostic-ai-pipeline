@@ -101,8 +101,7 @@ This keeps every agent on locally hosted models while the pipeline remains ready
 
 Need a shareable, read-only view of the pipeline? The repository publishes the latest marketing/overview docs to GitHub Pages.
 
-- **Live site**: https://krukmat.github.io/agnostic-ai-pipeline/ (mirrors the `docs/` directory so stakeholders can browse without cloning).
-- **What’s inside**: the concept brief, workflow diagrams, and curated snapshots such as `docs/00-vision-ok/index.html` that highlight successful loop runs.
+- **Entry point**: https://krukmat.github.io/agnostic-ai-pipeline/00-vision-ok/ renders `docs/00-vision-ok/index.html`, the primary landing page curated for stakeholders.
 - **Updating it**: refresh or add HTML assets under `docs/`, commit them, and GitHub Pages will redeploy automatically on the next push to the default branch.
 
 ---
