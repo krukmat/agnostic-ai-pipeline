@@ -263,3 +263,15 @@ This pipeline has already generated:
 ## Conclusion
 
 Treat each `make iteration` cycle as a self-contained product increment. The workflow is **simple to operate**, **powerful in its coverage**, and **extensible to any tech stack**. The AGNOSTIC AI PIPELINE turns the release cycle into a repeatable process that scales while maintaining auditable artifacts. 🚀
+
+---
+
+## Public Pages (Guided Tour)
+
+A friendly tour to understand the project before running anything. Each link opens a shareable HTML page.
+
+- Start Here: Vision & End‑to‑End Flow (`docs/00-vision-ok/index.html`) — What the pipeline is, how an idea walks through BA → PO → Architect → Dev → QA, and why this loop keeps shipping consistently. Link: https://krukmat.github.io/agnostic-ai-pipeline/00-vision-ok/
+- Resilience in Practice (`docs/01-fallback-system/index.html`) — How the system keeps working when models fail, from the decision logic that promotes backups to the guardrails that protect the budget. Link: https://krukmat.github.io/agnostic-ai-pipeline/01-fallback-system/
+- Meet the Team of Agents (`docs/02-multi-role-pipeline/index.html`) — A story about each role’s deliverables, how artifacts move forward, and how you can run the same collaboration as Agent-to-Agent services. Link: https://krukmat.github.io/agnostic-ai-pipeline/02-multi-role-pipeline/
+- Cost Engineering & Model Routing (`docs/03-cost-engineering/index.html`) — How the router (RoRF) balances speed vs. quality, with playbooks for keeping spend in check without giving up coverage. Link: https://krukmat.github.io/agnostic-ai-pipeline/03-cost-engineering/
+- Configure Fallback Controls (`docs/04-fallback-system/index.html`) — Practical knobs in `config.yaml` to set recovery budgets, observability, and escalation paths so loops don’t stall. Link: https://krukmat.github.io/agnostic-ai-pipeline/04-fallback-system/
