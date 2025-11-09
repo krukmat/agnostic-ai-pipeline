@@ -107,6 +107,9 @@ def main(
     num_trials: int = typer.Option(8, help="Number of optimization trials."),
     max_bootstrapped_demos: int = typer.Option(8, help="Maximum bootstrapped demonstrations."),
     seed: int = typer.Option(0, help="Random seed for optimizer."),
+    provider: str = typer.Option("vertex_ai", help="LLM provider: 'vertex_ai' or 'ollama'."),
+    model: str = typer.Option("gemini-2.5-flash", help="Model name (provider-specific)."),
+    ollama_base_url: str = typer.Option("http://localhost:11434", help="Ollama base URL (only used if provider=ollama)."),
 ) -> None:
     """Compile the selected DSPy program using the provided trainset."""
     train_examples = _examples_from_jsonl(trainset_path, role=role)
@@ -118,14 +121,21 @@ def main(
     stop_metric = _load_metric(stop_metric_path) if stop_metric_path else None
     program = _load_program(role)
 
-    # Configure DSPy with Vertex AI LM (required for MIPROv2)
+    # Configure DSPy LM based on provider
     import os
     import dspy
-    project_id = os.environ.get("GCP_PROJECT", "agnostic-pipeline-476015")
-    location = os.environ.get("VERTEX_LOCATION", "us-central1")
-    model_name = os.environ.get("VERTEX_MODEL", "gemini-2.5-flash")
 
-    lm = dspy.LM(f"vertex_ai/{model_name}", project=project_id, location=location)
+    if provider == "vertex_ai":
+        project_id = os.environ.get("GCP_PROJECT", "agnostic-pipeline-476015")
+        location = os.environ.get("VERTEX_LOCATION", "us-central1")
+        lm = dspy.LM(f"vertex_ai/{model}", project=project_id, location=location)
+        typer.echo(f"🔧 Configured DSPy with Vertex AI: {model}")
+    elif provider == "ollama":
+        lm = dspy.LM(f"ollama/{model}", api_base=ollama_base_url)
+        typer.echo(f"🔧 Configured DSPy with Ollama: {model} @ {ollama_base_url}")
+    else:
+        raise typer.BadParameter(f"Unsupported provider '{provider}'. Expected 'vertex_ai' or 'ollama'.")
+
     dspy.configure(lm=lm)
 
     compiled = optimize_program(
@@ -154,6 +164,9 @@ def main(
         "stop_metric": stop_metric_path or None,
         "trainset_size": len(train_examples),
         "valset_size": len(val_examples) if val_examples else 0,
+        "provider": provider,
+        "model": model,
+        "ollama_base_url": ollama_base_url if provider == "ollama" else None,
     }
     metadata_path = role_dir / "metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")

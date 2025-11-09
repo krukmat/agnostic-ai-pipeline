@@ -237,3 +237,6 @@ dspy_prompts/
 scripts/generate_phase0_report.py
 scripts/run_phase0_audit.sh
 scripts/check_py311_compat.py
+docs/DSPY_COMPARISON_PLAN.md
+.gitignore
+docs/DSPY_INTEGRATION_PLAN.md
