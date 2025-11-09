@@ -746,6 +746,80 @@ lora_config = LoraConfig(
 - **Conclusión**: Para completar este paso necesitamos (a) correr en host con GPU + bitsandbytes 4-bit, (b) hacer el smoke test con un modelo base más pequeño, o (c) aceptar el tiempo extendido en CPU y lanzar el comando sin timeout manual.
 - **Estado**: Pendiente de definir la estrategia antes de lanzar el entrenamiento completo.
 
+#### 📝 8.4.5 - Plan alternativo (modelo pequeño local para smoke tests)
+- **Responsable**: Quien tenga acceso a internet (fuera del sandbox)
+- **Objetivo**: Descargar/copiar un modelo 3B abierto para validar la tubería sin esperar horas en CPU.
+- **Pasos**:
+  1. **Instalar y loguear HF CLI** (si hace falta):
+     ```bash
+     pip install --upgrade huggingface_hub
+     huggingface-cli login  # token con acceso al modelo elegido
+     ```
+  2. **Descargar el modelo pequeño** (ejemplo con Llama-3.2-3B; cambiar según disponibilidad):
+     ```bash
+     HF_DIR=~/hf-models/llama-3.2-3b-instruct
+     huggingface-cli download meta-llama/Llama-3.2-3B-Instruct \
+       --local-dir "$HF_DIR" \
+       --local-dir-use-symlinks False
+     du -sh "$HF_DIR"
+     ls "$HF_DIR"
+     ```
+  3. **Copiarlo al repo**:
+     ```bash
+     REPO=/Users/matiasleandrokruk/Documents/agnostic-ai-pipeline
+     mkdir -p "$REPO/artifacts/models/llama-3.2-3b-instruct"
+     rsync -avh "$HF_DIR"/ "$REPO/artifacts/models/llama-3.2-3b-instruct"/
+     ```
+  4. **Confirmar en el sandbox**: `ls -lh artifacts/models/llama-3.2-3b-instruct`
+  5. **Reintentar smoke test apuntando al modelo pequeño**:
+     ```bash
+     .venv/bin/python scripts/finetune_ba.py \
+       --train artifacts/synthetic/ba_train_v2_fixed.jsonl \
+       --val artifacts/synthetic/ba_val_v2_fixed.jsonl \
+       --output artifacts/finetuning/mistral-7b-ba-lora-smoke \
+       --base-model artifacts/models/llama-3.2-3b-instruct \
+       --epochs 1 \
+       --train-limit 1 \
+       --val-limit 1 \
+       --max-steps 1 \
+       --quantization bf16 \
+       --grad-accum 1
+     ```
+  6. **Si el smoke test pasa**: decidir cuándo volver a `mistral-7b-instruct` (idealmente en GPU con `--quantization bnb4`) para el entrenamiento completo de Fase 8.4.
+
+- **Notas**:
+  - Si el modelo elegido es “gated” (p.ej., Meta Llama), asegurarse de usar un token con permisos.
+  - Cualquier 3B abierto (Phi-3, Qwen 1.5B, etc.) sirve para esta validación.
+
+#### 🔄 8.4.6 - Ejecución CPU (bf16) iniciada según `docs/fase8_cpu_finetuning_continuity.md`
+- **Inicio**: 2025-11-09 16:54 PM (Opción C)
+- **Comando lanzado**:
+  ```bash
+  mkdir -p artifacts/finetuning/mistral-7b-ba-lora-cpu-bf16
+  nohup .venv/bin/python scripts/finetune_ba.py \
+    --train artifacts/synthetic/ba_train_v2_fixed.jsonl \
+    --val artifacts/synthetic/ba_val_v2_fixed.jsonl \
+    --output artifacts/finetuning/mistral-7b-ba-lora-cpu-bf16 \
+    --base-model artifacts/models/mistral-7b-instruct \
+    --epochs 3 \
+    --lr 2e-4 \
+    --batch-size 1 \
+    --grad-accum 8 \
+    --lora-r 8 \
+    --lora-alpha 32 \
+    --lora-dropout 0.1 \
+    --max-length 2048 \
+    --seed 42 \
+    --quantization bf16 \
+    > /tmp/finetune_ba_cpu_bf16.log 2>&1 &
+  echo $! > /tmp/finetune_ba_pid.txt
+  ```
+- **PID**: `$(cat /tmp/finetune_ba_pid.txt)` al momento del lanzamiento.
+- **Logs en vivo**: `/tmp/finetune_ba_cpu_bf16.log` (usar `tail -f` para monitorear). Primeras líneas confirman carga de datasets completos y entrada a `trainer.train()`.
+- **Duración estimada**: ~73 horas continuas (ver `docs/fase8_cpu_finetuning_continuity.md` para checklist completo: espacio en disco, RAM, monitoreo, recuperación si la Mac duerme, etc.).
+- **Acción pendiente**: Mantener la sesión activa (`caffeinate` recomendado), monitorear el log periódicamente y, una vez termine, continuar con la evaluación 3-way documentada en `docs/fase8_evaluation_strategy.md`.
+
+
 ### ✅ Implementación Completada
 
 #### Script Creado: `scripts/finetune_ba.py`
@@ -929,13 +1003,28 @@ Toda la documentación técnica completa está en estos archivos:
 
 ### ⚠️ Notas Importantes para Continuar
 
+#### 🚨 DECISIÓN: OPCIÓN C - CPU con bf16 (100% local)
+
+**Tiempo estimado**: 73+ horas (3 días continuos)
+**Documento completo de continuidad**: `docs/fase8_cpu_finetuning_continuity.md`
+
+**⚡ GUÍA RÁPIDA** (ver documento completo para detalles):
+
 #### Si el proceso se interrumpe:
 
-1. **Revisar documentación**:
-   - Leer `docs/fase8_finetuning_plan.md` (secciones 1-11)
-   - Leer `docs/fase8_evaluation_strategy.md` (protocolo 3-way)
+1. **📖 Leer documento de continuidad COMPLETO**:
+   ```bash
+   cat docs/fase8_cpu_finetuning_continuity.md
+   ```
+   - Checklist pre-ejecución (espacio, RAM, datasets, deps, modelo)
+   - Comando exacto de fine-tuning
+   - Timeline esperado (24.5h/época, 73.5h total)
+   - Monitoreo (logs, checkpoints, RAM)
+   - Manejo de interrupciones
+   - Post-ejecución y verificación
+   - Troubleshooting completo
 
-2. **Verificar prerequisitos**:
+2. **✅ Verificar prerequisitos rápido**:
    ```bash
    # Datasets corregidos existen
    ls -lh artifacts/synthetic/ba_*_v2_fixed.jsonl
@@ -943,28 +1032,43 @@ Toda la documentación técnica completa está en estos archivos:
    # Dependencias instaladas
    .venv/bin/python -c "import transformers, peft, bitsandbytes; print('OK')"
 
+   # Modelo base descargado (~13GB)
+   ls -lh artifacts/models/mistral-7b-instruct/
+
    # Script existe
    ls -lh scripts/finetune_ba.py
    ```
 
-3. **Ejecutar fine-tuning**:
+3. **🚀 Ejecutar fine-tuning (CPU bf16)**:
    ```bash
-   # Comando básico (usar valores por defecto del plan)
+   # Comando COMPLETO (ver docs/fase8_cpu_finetuning_continuity.md para versión con nohup)
    .venv/bin/python scripts/finetune_ba.py \
      --train artifacts/synthetic/ba_train_v2_fixed.jsonl \
      --val artifacts/synthetic/ba_val_v2_fixed.jsonl \
-     --output artifacts/finetuning/mistral-7b-ba-lora
+     --output artifacts/finetuning/mistral-7b-ba-lora-cpu-bf16 \
+     --base-model artifacts/models/mistral-7b-instruct \
+     --quantization bf16
    ```
 
-4. **Monitorear progreso**:
-   - Ver logs en pantalla (INFO level)
-   - Checkpoints guardados en `artifacts/finetuning/mistral-7b-ba-lora/`
-   - TensorBoard logs en `artifacts/finetuning/mistral-7b-ba-lora/logs/`
+4. **📊 Monitorear progreso**:
+   ```bash
+   # Ver logs en vivo
+   tail -f /tmp/finetune_ba_cpu_bf16.log
 
-5. **Después del training**:
-   - Revisar `artifacts/finetuning/mistral-7b-ba-lora/training_info.json`
+   # Ver checkpoints (uno por época)
+   ls -lhrt artifacts/finetuning/mistral-7b-ba-lora-cpu-bf16/checkpoint-*/
+   ```
+
+5. **✅ Después del training**:
+   - Revisar `artifacts/finetuning/mistral-7b-ba-lora-cpu-bf16/training_info.json`
    - Evaluar con `docs/fase8_evaluation_strategy.md` (protocolo 3-way)
    - Decidir: Si score ≥90%, integrar; si no, analizar errores
+
+**⏰ TIMELINE ESPERADO**:
+- Época 1/3: T+0h → T+24.5h
+- Época 2/3: T+24.5h → T+49h
+- Época 3/3: T+49h → T+73.5h
+- **TOTAL**: ~73.5 horas (3 días + 1.5h)
 
 ---
 
