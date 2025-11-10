@@ -58,10 +58,8 @@ def optimize_program(
     }
     if valset is not None:
         compile_args["valset"] = valset
-    if stop_metric is not None:
-        compile_args["stop_metric"] = stop_metric
+    # stop_metric not supported by current DSPy release for MIPROv2.compile
     compile_args.update(compile_kwargs)
 
     compiled_program = teleprompter.compile(program, **compile_args)
     return compiled_program
-

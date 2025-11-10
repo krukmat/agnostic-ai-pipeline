@@ -34,7 +34,7 @@ def extract_original_concept(requirements_text: str) -> str:
 
 def grab_block(text: str, tag: str, label: str) -> str:
     # Updated regex to be more robust for YAML block extraction
-    pattern = re.compile(rf"```{tag}\s*{label}\s*\n([\s\S]+?)\n```", re.MULTILINE)
+    pattern = re.compile(rf"```{tag}\s*{label}\s*\n([\s\S]+?)```", re.MULTILINE)
     match = pattern.search(text)
     content = match.group(1).strip() if match else ""
     logger.debug(f"[PO] Grabbed '{tag}:{label}' with {len(content)} characters")
