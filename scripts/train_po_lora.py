@@ -72,6 +72,7 @@ def train(
         tokenized = tokenizer(
             text,
             truncation=True,
+            padding="max_length",
             max_length=max_length,
         )
         tokenized["labels"] = tokenized["input_ids"].copy()
@@ -113,7 +114,9 @@ def train(
         model=model,
         args=training_args,
         train_dataset=ds,
-        data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        data_collator=DataCollatorForLanguageModeling(
+            tokenizer, mlm=False, pad_to_multiple_of=8
+        ),
     )
     trainer.train()
     model.save_pretrained(str(output_dir))
