@@ -618,7 +618,37 @@ Estas brechas deben cerrarse antes de escalar las optimizaciones en paralelo par
 ### Objetivo
 Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros roles) reemplazando `granite4` por un modelo local distillado que genere `product_vision` + `product_owner_review` en segundos. Esto habilita MIPROv2 repetible, reduce costos y evita cuellos de >3 horas por corrida.
 
-### 9.D.1 - Diseño y alcance
+### 9.D.1 - Diseño y alcance _(Estado: en curso)_
+
+**Objetivo**: Definir los parámetros operativos de la distillation antes de generar datasets o lanzar entrenamiento.
+
+**Decisiones tomadas**:
+- **Teacher**: `gemini-2.5-pro` (Vertex AI) – buena calidad en visión/review y ya tenemos credenciales/config en `config.yaml`.
+- **Cobertura**: 600 ejemplos (aprox. 200 por tier simple/medium/corporate) tomados de `artifacts/synthetic/product_owner/concepts.jsonl` para asegurar diversidad de dominios.
+- **Costos estimados**:
+  - Teacher inference: 600 llamadas × ~$0.01 = ~$6 (crecerá si se agregan retries).
+  - GPU para LoRA (A100 40GB) ~3 horas → ~$4–6 (según proveedor).
+- **Outputs esperados**:
+  - `artifacts/distillation/po_teacher_dataset.jsonl`
+  - Adapter/model card en `artifacts/models/po_student_v1/`
+  - Log de entrenamiento `logs/distillation/po_student_v1.log`
+
+**Plan de trabajo**:
+1. Script `scripts/generate_po_teacher_dataset.py`
+   - Batch size configurable (default 20) para Vertex.
+   - Validación automática (`product_owner_metric` >=0.85); los que queden debajo irán a una cola de revisión.
+2. Entrenamiento LoRA con `mistral-7b-instruct`:
+   - rank=32, alpha=64, target modules `q_proj,k_proj,v_proj,o_proj`.
+   - Epochs=3, batch=4, LR=1e-4.
+3. Conversión + despliegue:
+   - Merge LoRA → full weights (`po-student-v1.safetensors`).
+   - Empaquetar para Ollama (`Modelfile` con quantization q4_0).
+
+**Entregables de la tarea**:
+- Documento `docs/phase9_distillation_plan.md` (listo).
+- Tickets de seguimiento (opcional) para dataset y training.
+
+**Estado actual**: Documentación creada (ver `docs/phase9_distillation_plan.md`). Próximo paso → 9.D.2 (generación dataset maestro).
 
 - **Teacher**: Modelo superior (Gemini 2.5 Pro, GPT‑4o, etc.) usado sólo para generar un dataset maestro de alta calidad (500‑1000 ejemplos).
 - **Student**: Modelo OSS ligero (Mistral 7B, Qwen 7B) entrenado vía LoRA/PEFT o FT corto.
@@ -630,6 +660,48 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
 3. Estimar costo teacher (n llamadas x precio) y reservar slot en GPU para entrenamiento.
 
 ### 9.D.2 - Generación de dataset maestro
+
+**Estado**: en curso
+
+**Objetivo**: Crear `artifacts/distillation/po_teacher_dataset.jsonl` con ≥600 pares (concept + requirements) → (VISION, REVIEW) generados por el modelo teacher (Gemini 2.5 Pro).
+
+**Plan**:
+1. Implementar `scripts/generate_po_teacher_dataset.py`:
+   - Entrada: `artifacts/synthetic/product_owner/concepts.jsonl`
+   - Parámetros: `--provider vertex_sdk`, `--model gemini-2.5-pro`, `max_records=400`
+   - Validación automática con `product_owner_metric` (threshold 0.85)
+2. Registrar costo por lote (guardar log en `logs/distillation/teacher_calls_YYYYMMDD.log`)
+3. Salida JSONL con campos:
+   ```json
+   {
+     "concept": "...",
+     "requirements_yaml": "...",
+     "teacher_product_vision": "...",
+     "teacher_product_owner_review": "...",
+     "score": 0.91,
+     "metadata": { "model": "gemini-2.5-pro", "timestamp": "..." }
+   }
+   ```
+
+**Avance**:
+- 45 registros de `gemini-2.5-pro` + 274 registros de `gemini-2.5-flash` (threshold 0.80) → **319/350** completados.
+- Score promedio actual: 0.896 (min 0.80 / max 0.984). Dataset activo: `artifacts/distillation/po_teacher_dataset.jsonl`.
+- Log de generación: `/tmp/teacher_hybrid_flash.log` (pendiente mover a `logs/distillation/teacher_calls_20251110.log`).
+
+**Pendiente**:
+- Completar hasta 350 registros (faltan ~31). Comando (cuando se reanude):
+  ```bash
+  PYTHONPATH=. .venv/bin/python scripts/generate_po_teacher_dataset.py \
+    --provider vertex_sdk \
+    --model gemini-2.5-flash \
+    --max-records 350 \
+    --min-score 0.80 \
+    --seed 999 \
+    --resume \
+    2>&1 | tee -a /tmp/teacher_hybrid_flash.log
+  ```
+- Registrar costo estimado en `logs/distillation/teacher_costs_20251110.txt`.
+- Nota: último intento (`PID 82959`) falló por `NameResolutionError` al resolver `oauth2.googleapis.com` (sin red). Reintentar cuando haya conectividad.
 
 **Pipeline**:
 1. Tomar `artifacts/synthetic/product_owner/concepts.jsonl` (o subset balanceado por tier/industry).
@@ -649,6 +721,103 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
   ```
 
 ### 9.D.3 - Entrenamiento LoRA/FT del student
+
+**Estado**: pendiente (listo para iniciar)
+
+**Objetivo**: Entrenar un modelo `po-student` (loRA sobre Mistral-7B) que replique al teacher dataset (actualmente 319 muestras válidas) para reducir latencia del rol Product Owner.
+
+**Entradas disponibles**:
+- `artifacts/distillation/po_teacher_dataset.jsonl` (319 registros, score medio 0.896, min 0.80).
+- `docs/phase9_distillation_plan.md` (detalle de hyperparams).
+
+**Plan de trabajo**:
+1. **Preparar dataset supervisado**  
+   - Script `scripts/prep_po_lora_dataset.py` (pendiente) → transforma cada registro teacher en un prompt-respuesta.
+   - Estructura target:
+     ```
+     ### CONCEPT
+     ...
+     ### REQUIREMENTS
+     ...
+     ### OUTPUT
+     ```yaml VISION
+     ...
+     ```
+     ```yaml REVIEW
+     ...
+     ```
+     ```
+2. **Entrenamiento LoRA**  
+   - Modelo base: `mistral-7b-instruct` (HF).  
+   - Hyperparams (desde plan):
+     - rank=32, alpha=64, dropout=0.05
+     - epochs=3, batch=4, lr=1e-4, max seq len=2048
+   - Comando tentativo:
+     ```bash
+     python train_po_lora.py \
+       --data artifacts/distillation/po_teacher_dataset.jsonl \
+       --base mistral-7b-instruct \
+       --output artifacts/models/po_student_v1 \
+       --rank 32 --alpha 64 --epochs 3 --batch 4 --lr 1e-4 \
+       2>&1 | tee logs/distillation/train_po_student_v1.log
+     ```
+3. **Merge + empaquetado**  
+   - `merge_lora.py` para obtener `po_student_v1.safetensors`.
+   - Crear `Modelfile` para Ollama (`po-student-v1`).  
+   - Guardar model card en `artifacts/models/po_student_v1/model_card.md`.
+
+4. **Validación rápida**  
+   - Reutilizar 20 ejemplos del teacher dataset → `scripts/eval_po_student.py`.  
+   - Comparar `product_owner_metric` y tiempos vs granite4.
+
+**Deliverables**:
+- `artifacts/models/po_student_v1/` (adapters, merged weights, Modelfile).
+- Logs de entrenamiento (`logs/distillation/train_po_student_v1.log`).
+- Reporte comparativo (`docs/po_distillation_report.md`).
+
+**Prereq**: Dataset maestro ≥300 (actual: 319) y dataset supervisado (`artifacts/distillation/po_teacher_supervised.jsonl`). Listo para iniciar.
+
+#### Plan Colab (FT/LoRA en entorno cloud)
+
+**Pasos resumidos**:
+1. **Preparar entorno**  
+   - Abrir Colab → GPU A100 si disponible.  
+   - `!git clone https://.../agnostic-ai-pipeline.git` y `pip install -r requirements.txt`.
+2. **Copiar dataset maestro**  
+   - `!wget` o `gdown` del archivo `artifacts/distillation/po_teacher_dataset.jsonl` (subirlo a Drive si es necesario).
+3. **Entrenar LoRA**  
+   - Ejecutar celdas con `train_po_lora.py` (rank=32, alpha=64, batch=4, epochs=3, lr=1e-4).  
+   - Guardar checkpoints en `/content/drive/MyDrive/po_student_v1/`.
+4. **Exportar resultados**  
+   - `!zip -r po_student_v1.zip po_student_v1/` y descargar.  
+   - Subir a `artifacts/models/po_student_v1/` en el repo local.
+5. **Merge + validación**  
+   - Ejecutar `merge_lora.py` en local si se requiere pesos completos.  
+   - Correr `scripts/eval_po_student.py` (20 ejemplos) para comparar contra granite4.
+6. **Documentar**  
+   - Registrar fecha/duración en `docs/po_distillation_report.md`.  
+   - Guardar log de entrenamiento en `logs/distillation/train_po_student_v1.log`.
+
+1. **Preparar notebook (colab_po_student.ipynb)**  
+   - Secciones:
+     1. Montar drive/repositorio (`!git clone` + `pip install -r requirements.txt`).
+     2. Descargar dataset maestro (`po_teacher_dataset.jsonl`) desde repositorio (uso de `wget` + token o `gdown`).
+     3. Configurar entorno (instalar `transformers`, `peft`, `accelerate`, `auto-gptq` si se requiere quant).
+     4. Entrenar LoRA (celdas con los hiperparámetros mencionados).
+     5. Guardar adapters y merged weights en `/content/drive/MyDrive/po_student_v1/`.
+
+2. **Recursos**:
+   - Runtime: GPU T4 / A100 (preferible A100 para velocidad).
+   - Uso aproximado: 3h (dependerá de la cola de Colab).
+
+3. **Descarga y merge**:
+   - Tras finalizar, `!zip -r po_student_v1.zip po_student_v1/` y descargar.
+   - Ya en local: mover a `artifacts/models/po_student_v1/` y ejecutar `merge_lora.py` si se requiere conversiones adicionales.
+
+4. **Checklist**:
+   - Notebook versionado en `notebooks/colab_po_student.ipynb`.
+   - Registro de ejecución (fecha, duración, métricas de entrenamiento) en `docs/po_distillation_report.md`.
+   - Subir log/outputs relevantes a `logs/distillation/`.
 
 **Config recomendada**:
 - Base: `mistral-7b-instruct` o `qwen2.5-7b`.
@@ -700,6 +869,8 @@ python finetune_po_lora.py \
 1. Repetir 9.0.8 con el modelo student (trainset completo de 142 ejemplos) para obtener un programa optimizado sin esperas.
 2. Continuar con Architect/Dev/QA usando la misma estrategia (teacher dataset → student LoRA) si PO resulta exitoso.
 3. Mantener versionado de adapters/modelos en `artifacts/models/po_student_v1/` con metadata (`model_card.md`).
+
+- **Nota de control**: Antes de iniciar cada tarea 9.D.x se debe registrar el plan/entradas en este documento, y al finalizar dejar constancia de resultados/incidencias para facilitar retomarlo si se interrumpe.
 
 ---
 
