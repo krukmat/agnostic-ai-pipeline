@@ -754,8 +754,8 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
      - epochs=3, batch=4, lr=1e-4, max seq len=2048
    - Comando tentativo:
      ```bash
-     python train_po_lora.py \
-       --data artifacts/distillation/po_teacher_dataset.jsonl \
+     PYTHONPATH=. .venv/bin/python scripts/train_po_lora.py \
+       --data-path artifacts/distillation/po_teacher_supervised.jsonl \
        --base mistral-7b-instruct \
        --output artifacts/models/po_student_v1 \
        --rank 32 --alpha 64 --epochs 3 --batch 4 --lr 1e-4 \
@@ -781,27 +781,39 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
 
 **Pasos resumidos**:
 1. **Preparar entorno**  
-   - Abrir Colab → GPU A100 si disponible.  
-   - `!git clone https://.../agnostic-ai-pipeline.git` y `pip install -r requirements.txt`.
+   - Abrir Colab → seleccionar GPU (T4 vale, A100 preferible).  
+   - `!git clone https://.../agnostic-ai-pipeline.git && cd agnostic-ai-pipeline`.  
+   - `pip install -r requirements.txt` (añadir `pip install -U transformers peft accelerate bitsandbytes` si Colab viene desactualizado o no trae bnb).  
+   - Desactivar W&B para evitar prompts interactivos antes de entrenar:  
+     ```python
+     import os
+     os.environ["WANDB_DISABLED"] = "true"
+     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+     ```
 2. **Copiar dataset maestro**  
-   - `!wget` o `gdown` del archivo `artifacts/distillation/po_teacher_dataset.jsonl` (subirlo a Drive si es necesario).
+   - Asegurar que `artifacts/distillation/po_teacher_dataset.jsonl` y `artifacts/distillation/po_teacher_supervised.jsonl` existan dentro del repo en `/content/agnostic-ai-pipeline`.  
+   - Si es necesario subirlos desde local, usar `from google.colab import files; files.upload()` o `!wget <url_privada>` y moverlos a `artifacts/distillation/`.
 3. **Entrenar LoRA**  
-   - Ejecutar celdas con `train_po_lora.py` (rank=32, alpha=64, batch=4, epochs=3, lr=1e-4).  
-   - Guardar checkpoints en `/content/drive/MyDrive/po_student_v1/`.
-4. **Exportar resultados**  
-   - `!zip -r po_student_v1.zip po_student_v1/` y descargar.  
-   - Subir a `artifacts/models/po_student_v1/` en el repo local.
+   - Ejecutar `python scripts/train_po_lora.py` con paths absolutos de `/content/agnostic-ai-pipeline` (ejemplo más abajo) y parámetros `rank=32, alpha=64, epochs=3, batch=4, lr=1e-4, max_length=2048`.  
+   - Modelos probados sin token HF: `mistral-7b-instruct`, `Qwen/Qwen2.5-7B-Instruct`.  
+   - Guardar checkpoints y tokenizer en `/content/agnostic-ai-pipeline/artifacts/models/po_student_v1/` (o en Drive montado si se requiere persistencia extra).
+   - Para GPUs con ~16 GB (p. ej. T4) usar `--load-4bit --batch-size 1 --gradient-accumulation-steps 8` y mantener `gradient_checkpointing` activo para evitar OOM.
+4. **Monitorear/Exportar resultados**  
+   - Correr con `!stdbuf -oL python ... | tee logs/distillation/train_po_student_v1.log` para ver progreso en tiempo real y guardar log.  
+   - Al finalizar, `!zip -r po_student_v1.zip artifacts/models/po_student_v1` y descargar/respaldar.  
 5. **Merge + validación**  
    - Ejecutar `merge_lora.py` en local si se requiere pesos completos.  
-   - Correr `scripts/eval_po_student.py` (20 ejemplos) para comparar contra granite4.
+   - Correr `scripts/eval_po_student.py` (20 ejemplos) para comparar contra granite4.  
 6. **Documentar**  
-   - Registrar fecha/duración en `docs/po_distillation_report.md`.  
-   - Guardar log de entrenamiento en `logs/distillation/train_po_student_v1.log`.
+   - Registrar fecha/duración y métricas en `docs/po_distillation_report.md`.  
+   - Sincronizar `logs/distillation/train_po_student_v1.log` al repo (`artifacts/logs` si pesa mucho).
+
+> **Nota**: `scripts/train_po_lora.py` fuerza `WANDB_DISABLED=true`, pero si Colab vuelve a mostrar el prompt de W&B (1/2/3) es porque la celda previa no ejecutó el bloque `os.environ["WANDB_DISABLED"]="true"` o porque otro proceso lo sobreescribió. Re-ejecutar esa celda y volver a lanzar el entrenamiento.
 
 1. **Preparar notebook (colab_po_student.ipynb)**  
    - Secciones:
      1. Montar drive/repositorio (`!git clone` + `pip install -r requirements.txt`).
-     2. Descargar dataset maestro (`po_teacher_dataset.jsonl`) desde repositorio (uso de `wget` + token o `gdown`).
+     2. Descargar dataset maestro (`po_teacher_dataset.jsonl`) desde repositorio (uso de `wget` + token o `gdown`) o cargarlo manualmente, verificando que quede en `/content/agnostic-ai-pipeline/artifacts/distillation/`.
      3. Configurar entorno (instalar `transformers`, `peft`, `accelerate`, `auto-gptq` si se requiere quant).
      4. Entrenar LoRA (celdas con los hiperparámetros mencionados).
      5. Guardar adapters y merged weights en `/content/drive/MyDrive/po_student_v1/`.
@@ -826,16 +838,19 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
 - Epochs: 3‑5 (monitorizar loss para evitar overfitting).
 - Hardware: GPU cloud (A10/A100) por ~3‑4 horas.
 
-**Comando de ejemplo (pseudo-code)**:
+**Comando de ejemplo (Colab)**:
 ```bash
-python finetune_po_lora.py \
-  --base mistral-7b-instruct \
-  --dataset artifacts/distillation/po_teacher_dataset.jsonl \
-  --output adapters/po_student_lora \
-  --epochs 3 \
-  --batch-size 4 \
-  --lr 1e-4
+!python scripts/train_po_lora.py \
+  --data-path /content/agnostic-ai-pipeline/artifacts/distillation/po_teacher_supervised.jsonl \
+  --base-model Qwen/Qwen2.5-7B-Instruct \
+  --output-dir /content/agnostic-ai-pipeline/artifacts/models/po_student_v1 \
+  --rank 32 --alpha 64 --dropout 0.05 \
+  --epochs 3 --batch-size 1 --gradient-accumulation-steps 8 \
+  --lr 1e-4 --max-length 2048 \
+  --load-4bit --bnb-compute-dtype float16
 ```
+
+> **Tip OOM**: Si aparece `CUDA out of memory`, reduce `--batch-size`, incrementa `--gradient-accumulation-steps`, y asegúrate de correr con `--load-4bit`. Re-lanza la celda tras reiniciar el runtime para liberar memoria residual.
 
 ### 9.D.4 - Validación del modelo distillado
 

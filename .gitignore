@@ -204,6 +204,10 @@ planning/stories.yaml.bak.*
 
 # Artefactos generados del pipeline
 artifacts/
+
+# Excepción: Dataset para fine-tuning de Product Owner (necesario para Colab)
+!artifacts/distillation/
+!artifacts/distillation/po_teacher_supervised.jsonl
 planning/
 project/
 planning/architecture.yaml

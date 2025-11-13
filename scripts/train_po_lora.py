@@ -5,8 +5,9 @@ Train a LoRA adapter for the Product Owner student model using the teacher datas
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 import typer
 import torch
@@ -18,7 +19,12 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForLanguageModeling,
+    BitsAndBytesConfig,
 )
+
+# Disable W&B by default and reduce CUDA fragmentation unless the user overrides.
+os.environ.setdefault("WANDB_DISABLED", "true")
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 app = typer.Typer(help="Train LoRA adapter for Product Owner student.")
 
@@ -57,6 +63,19 @@ def train(
     batch_size: int = typer.Option(4, help="Batch size per device."),
     lr: float = typer.Option(1e-4, help="Learning rate."),
     max_length: int = typer.Option(2048, help="Max sequence length."),
+    gradient_accumulation_steps: int = typer.Option(
+        1, help="Number of gradient accumulation steps."
+    ),
+    gradient_checkpointing: bool = typer.Option(
+        True, help="Enable gradient checkpointing to save VRAM."
+    ),
+    load_4bit: bool = typer.Option(
+        False, help="Load base model in 4-bit using bitsandbytes (saves VRAM)."
+    ),
+    bnb_compute_dtype: Optional[str] = typer.Option(
+        "float16",
+        help="Compute dtype for 4-bit mode (float16|bfloat16). Ignored if load_4bit=False.",
+    ),
 ) -> None:
     samples = load_supervised_jsonl(data_path)
     if not samples:
@@ -80,11 +99,33 @@ def train(
 
     ds = Dataset.from_list(samples).map(tokenize, remove_columns=["prompt", "response"])
 
+    model_kwargs: Dict[str, Any] = {"device_map": "auto"}
+    use_bf16 = False
+    if load_4bit:
+        compute_dtype = torch.bfloat16 if bnb_compute_dtype == "bfloat16" else torch.float16
+        use_bf16 = compute_dtype == torch.bfloat16
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=compute_dtype,
+        )
+        model_kwargs.update(
+            quantization_config=quant_config,
+            torch_dtype=compute_dtype,
+        )
+    else:
+        model_kwargs["torch_dtype"] = torch.float16
+
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
-        torch_dtype=torch.float16,
-        device_map="auto",
+        **model_kwargs,
     )
+
+    if gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+        if hasattr(model.config, "use_cache"):
+            model.config.use_cache = False
 
     lora_config = LoraConfig(
         r=rank,
@@ -100,13 +141,16 @@ def train(
     training_args = TrainingArguments(
         output_dir=str(output_dir),
         per_device_train_batch_size=batch_size,
-        gradient_accumulation_steps=1,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         num_train_epochs=epochs,
         learning_rate=lr,
         weight_decay=0.01,
-        fp16=True,
+        fp16=not use_bf16,
+        bf16=use_bf16,
         logging_steps=10,
         save_strategy="epoch",
+        gradient_checkpointing=gradient_checkpointing,
+        report_to=[],
         push_to_hub=False,
     )
 
