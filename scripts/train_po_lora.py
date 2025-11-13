@@ -122,11 +122,7 @@ def train(
         **model_kwargs,
     )
 
-    if gradient_checkpointing:
-        model.gradient_checkpointing_enable()
-        if hasattr(model.config, "use_cache"):
-            model.config.use_cache = False
-
+    # Apply LoRA FIRST (before gradient checkpointing)
     lora_config = LoraConfig(
         r=rank,
         lora_alpha=alpha,
@@ -136,6 +132,13 @@ def train(
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
+
+    # Enable gradient checkpointing AFTER applying LoRA (required for PEFT >=0.10.0)
+    if gradient_checkpointing:
+        model.enable_input_require_grads()  # Required for gradient checkpointing with PEFT
+        model.gradient_checkpointing_enable()
+        if hasattr(model.config, "use_cache"):
+            model.config.use_cache = False
 
     output_dir.mkdir(parents=True, exist_ok=True)
     training_args = TrainingArguments(
