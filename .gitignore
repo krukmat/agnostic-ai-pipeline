@@ -208,6 +208,11 @@ artifacts/
 # Excepción: Dataset para fine-tuning de Product Owner (necesario para Colab)
 !artifacts/distillation/
 !artifacts/distillation/po_teacher_supervised.jsonl
+
+# Excepción: Modelo LoRA entrenado de Product Owner (para inferencia local)
+!artifacts/models/
+!artifacts/models/po_student_v1/
+!artifacts/models/po_student_v1/*
 planning/
 project/
 planning/architecture.yaml
