@@ -777,6 +777,12 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
 
 **Prereq**: Dataset maestro ≥300 (actual: 319) y dataset supervisado (`artifacts/distillation/po_teacher_supervised.jsonl`). Listo para iniciar.
 
+**Actualización 2025-11-13**:
+- Entrenamiento ejecutado en Colab (GPU T4 16 GB) con `Qwen/Qwen2.5-7B-Instruct`, `--load-4bit`, batch 1 y grad-accum 8.  
+- Métricas clave: loss inicial 1.46 → final 0.4299; `train_loss` promedio 0.6537; `train_runtime` 6005 s (≈1h40m).  
+- Artefactos generados en `/content/agnostic-ai-pipeline/artifacts/models/po_student_v1/`; log en `logs/distillation/train_po_student_v1.log`.  
+- **Pendiente**: descargar/zip de `po_student_v1`, traer el log al repo, documentar en `docs/po_distillation_report.md` y avanzar a 9.D.4 (validación con `scripts/eval_po_student.py`).
+
 #### Plan Colab (FT/LoRA en entorno cloud)
 
 **Pasos resumidos**:
