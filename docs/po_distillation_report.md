@@ -34,9 +34,50 @@
    - Documentar diferencias clave (velocidad estimada, longitud promedio) y adjuntar archivos `inference_results/*.json`.
 
 ### Última ejecución registrada (2025-11-14)
-- Dataset: 3 casos (`basic_blog_validation`, `ecommerce_requirements`, `incomplete_requirements`).  
-- Resultado: sin YAML válido → `product_owner_metric` no calculable.  
-- Acción: reintentar con `scripts/eval_po_student.py` (nuevo prompt + retries) y extender a ≥20 casos.
+- Dataset: 3 casos hardcodeados (`basic_blog_validation`, `ecommerce_requirements`, `incomplete_requirements`).
+- Problema: ninguno de los dos modelos (baseline/student) generó bloques YAML válidos.
+- Causa: Prompt no suficientemente restrictivo, sin retries, tokens limitados.
+- Resultado: sin YAML válido → `product_owner_metric` no calculable.
+
+### Plan de Relanzamiento (2025-11-15) - Estado LISTO
+
+**Análisis completado**:
+- ✅ Script `eval_po_student.py` ya implementa prompt correcto con ejemplo YAML completo
+- ✅ Ya tiene retry con REMINDER si falta YAML
+- ✅ Ya lee del dataset de validación real (`product_owner_val.jsonl`, 34 registros)
+- ✅ Ya calcula `product_owner_metric` solo si YAML válido
+
+**Parámetros optimizados**:
+- `--retries 2` (3 intentos totales vs 1 anterior)
+- `--max-new-tokens 1200` (vs 900 anterior)
+- `--max-samples 20` (casos reales del valset, balanceados por tier)
+
+**Comandos finales**:
+```bash
+# Baseline (sin adapter)
+PYTHONPATH=. .venv/bin/python scripts/eval_po_student.py \
+  --tag baseline \
+  --base-model Qwen/Qwen2.5-7B-Instruct \
+  --max-samples 20 \
+  --retries 2 \
+  --max-new-tokens 1200 \
+  --load-4bit --bnb-compute-dtype float16
+
+# Student (con LoRA adapter)
+PYTHONPATH=. .venv/bin/python scripts/eval_po_student.py \
+  --tag student \
+  --base-model Qwen/Qwen2.5-7B-Instruct \
+  --adapter-path artifacts/models/po_student_v1 \
+  --max-samples 20 \
+  --retries 2 \
+  --max-new-tokens 1200 \
+  --load-4bit --bnb-compute-dtype float16
+```
+
+**Criterio de aceptación**:
+- YAML válido en ≥90% de los casos (≥18/20)
+- `mean_student >= 0.9 * mean_baseline` (si baseline ~0.83, student ≥0.75)
+- Documentar velocidad, longitud promedio, casos `format_error`
 
 ## 4. Próximos pasos
 - [ ] Recolectar baseline/student outputs con el nuevo script (≥20 casos).  
