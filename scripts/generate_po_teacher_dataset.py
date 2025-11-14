@@ -11,16 +11,14 @@ from __future__ import annotations
 import asyncio
 import json
 import random
-import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import typer
-import yaml
-
 from dspy_baseline.metrics.product_owner_metrics import product_owner_metric
 from logger import logger
 from scripts.llm import Client
+from scripts.po_format import grab_yaml_block, sanitize_yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPT_PATH = ROOT / "prompts" / "product_owner.md"
@@ -61,37 +59,6 @@ def load_payloads(path: Path) -> List[Dict]:
                 continue
             items.append(json.loads(line))
     return items
-
-
-def grab_block(text: str, label: str) -> str:
-    pattern = re.compile(rf"```yaml\s*{label}\s*\n([\s\S]+?)```", re.MULTILINE)
-    match = pattern.search(text)
-    return match.group(1).strip() if match else ""
-
-
-def sanitize_yaml(content: str) -> str:
-    if not content.strip():
-        return content
-    try:
-        data = yaml.safe_load(content)
-        return yaml.safe_dump(
-            data,
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        ).strip()
-    except yaml.YAMLError:
-        cleaned = re.sub(r'`([^`]+?)`', r"\1", content)
-        try:
-            data = yaml.safe_load(cleaned)
-            return yaml.safe_dump(
-                data,
-                sort_keys=False,
-                allow_unicode=True,
-                default_flow_style=False,
-            ).strip()
-        except yaml.YAMLError:
-            return cleaned.strip()
 
 
 def build_user_payload(concept: str, requirements: str, existing_vision: str = "") -> str:
@@ -188,8 +155,8 @@ def generate(
         if response is None:
             return None
 
-        vision_yaml = sanitize_yaml(grab_block(response, "VISION"))
-        review_yaml = sanitize_yaml(grab_block(response, "REVIEW"))
+        vision_yaml = sanitize_yaml(grab_yaml_block(response, "VISION"))
+        review_yaml = sanitize_yaml(grab_yaml_block(response, "REVIEW"))
         if not (vision_yaml and review_yaml):
             logger.warning("[teacher] Missing VISION/REVIEW content, skipping.")
             return None

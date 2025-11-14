@@ -864,6 +864,50 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
 2. Re-ejecutar `scripts/run_product_owner.py` sobre un subset (ej. 30 conceptos) y comparar métricas con el teacher (usar `product_owner_metric`, diff textual, etc.).
 3. Documentar la comparación en `docs/po_distillation_report.md` (teacher vs student, velocidad, coste).
 
+**Ejecución 2025-11-14 (inference_results/)**  
+- Se corrió `scripts/eval_po_student.py` con 3 escenarios (`basic_blog_validation`, `ecommerce_requirements`, `incomplete_requirements`) usando el baseline (`Qwen/Qwen2.5-7B-Instruct` sin adapter) y el student (`po_student_v1`). Outputs guardados en `inference_results/baseline_20251114_143731.json`, `finetuned_20251114_143731.json` y comparativo `comparison_20251114_143731.json`.  
+- Resultado cuantitativo disponible: longitud promedio de respuesta bajó de **2577** caracteres (baseline) a **2503** (-2.9%), sin cambios relevantes en cobertura.  
+- Problema principal: ninguno de los dos modelos emitió los bloques ```yaml VISION``` / ```yaml REVIEW``` requeridos, por lo que **no pudimos calcular `product_owner_metric` ni validar contra el schema**. Además, las salidas incluyen repeticiones del prompt y texto libre, señal de que el prompt/evaluador no está forzando el formato.  
+- Estado: 9.D.4 **incompleto** hasta que logremos respuestas en el formato contractual. Próximos pasos:
+  1. Ajustar prompt de inferencia para inyectar ejemplos YAML o reutilizar el template del dataset supervisado.  
+  2. Reentrenar o aplicar post-processing para garantizar la emisión de bloques estructurados (posible uso de constrained decoding).  
+  3. Repetir la evaluación con ≥20 casos y registrar `product_owner_metric` una vez se obtenga YAML válido.
+
+**Plan de relanzamiento (2025-11-15)**  
+1. **Rediseñar prompt de evaluación** (Owner: PO team, ETA 2h)  
+   - Reutilizar exactamente el `PROMPT_TEMPLATE` de `scripts/prep_po_lora_dataset.py`.  
+   - Añadir un ejemplo completo con los fences ```yaml VISION``` / ```yaml REVIEW``` para que el modelo lo imite.  
+   - Forzar instrucciones finales tipo “Respond **only** with the two fenced YAML blocks”.  
+2. **Actualizar `scripts/eval_po_student.py`** (Owner: Dev, ETA 1h)  
+   - Parametrizar el prompt y permitir `--expect-yaml` para validar que la respuesta contiene ambos fences antes de guardar.  
+   - Si algún sample falla, aplicar un post-procesado mínimo (regex) o marcarlo para retry.  
+3. **Ejecutar nueva batería (>=20 casos)** (Owner: QA, ETA 3h)  
+   - Dataset: usar `artifacts/synthetic/product_owner/product_owner_val.jsonl` (tomar 20 al azar por tier).  
+   - Capturar JSONL con vision/review en YAML y calcular `product_owner_metric`; exportar a `inference_results/20251115/`.  
+4. **Reportar resultados** (Owner: PO, ETA 1h)  
+   - Comparar mean/min/max del student vs baseline.  
+   - Documentar en `docs/po_distillation_report.md` y cerrar 9.D.4 si `mean_student >= 0.90 * mean_teacher` y el formato es válido.
+
+**Herramienta nueva – `scripts/eval_po_student.py`**  
+- Reutiliza el prompt supervisado (con ejemplo YAML) y fuerza retries si falta algún bloque.  
+- Genera `inference_results/<tag>_<timestamp>.json` con cada caso, puntajes y estado (`ok` o `format_error`).  
+- Ejecución recomendada (usar `PYTHONPATH=.`):
+  ```bash
+  .venv/bin/python scripts/eval_po_student.py \
+    --tag baseline \
+    --base-model Qwen/Qwen2.5-7B-Instruct \
+    --max-samples 20 \
+    --load-4bit --bnb-compute-dtype float16
+
+  .venv/bin/python scripts/eval_po_student.py \
+    --tag student \
+    --base-model Qwen/Qwen2.5-7B-Instruct \
+    --adapter-path artifacts/models/po_student_v1 \
+    --max-samples 20 \
+    --load-4bit --bnb-compute-dtype float16
+  ```
+- Tras ambos corridas, comparar `metrics.mean` y anexar los hallazgos (incluidos los casos `format_error`) en `docs/po_distillation_report.md` para decidir si avanzar a 9.D.5.
+
 ### 9.D.5 - Integración al pipeline
 
 1. Actualizar `config.yaml`:

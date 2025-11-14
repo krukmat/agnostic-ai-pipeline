@@ -11,20 +11,9 @@ from typing import List, Dict, Optional
 
 import typer
 
+from scripts.po_prompts import build_po_prompt
+
 app = typer.Typer(help="Build supervised dataset from teacher outputs for PO LoRA.")
-
-PROMPT_TEMPLATE = """You are the Product Owner agent. Using the provided concept and requirements, generate both YAML blocks exactly as specified.
-
-CONCEPT:
-{concept}
-
-REQUIREMENTS:
-{requirements}
-
-IMPORTANT:
-- Always emit two fenced YAML blocks: ```yaml VISION``` ... ``` and ```yaml REVIEW``` ... ```
-- If some section is unknown, use [] or short placeholders, but never omit the block.
-- REVIEW must include status, summary, requirements_alignment (aligned/gaps/conflicts), recommended_actions, and narrative."""
 
 
 def load_teacher_records(path: Path) -> List[Dict]:
@@ -74,10 +63,7 @@ def build(
             if not (concept and requirements and vision and review):
                 continue
 
-            prompt = PROMPT_TEMPLATE.format(
-                concept=concept,
-                requirements=requirements,
-            )
+            prompt = build_po_prompt(concept, requirements, include_example=False)
             response = (
                 "```yaml VISION\n"
                 f"{vision}\n"

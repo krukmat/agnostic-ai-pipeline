@@ -1,0 +1,8 @@
+{
+  "timestamp": "20251114_143731",
+  "baseline_avg_length": 2577.6666666666665,
+  "finetuned_avg_length": 2503.0,
+  "difference": -74.66666666666652,
+  "difference_percent": -2.896676580887103,
+  "test_cases": 3
+}
