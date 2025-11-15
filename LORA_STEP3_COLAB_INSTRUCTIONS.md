@@ -218,7 +218,7 @@ def tokenize_function(examples):
         full_texts,
         truncation=True,
         padding="max_length",
-        max_length=1536,
+        max_length=768,
     )
 
     tokenized["labels"] = tokenized["input_ids"].copy()
@@ -247,10 +247,10 @@ training_args = TrainingArguments(
     # Output
     output_dir="/content/po_student_v2",
 
-    # Training schedule (OPTIMIZED para T4/Lightning)
+    # Training schedule (OPTIMIZADO para T4 / Lightning)
     num_train_epochs=4,
     per_device_train_batch_size=1,
-    gradient_accumulation_steps=24,        # Effective batch ≈24
+    gradient_accumulation_steps=48,        # Effective batch ≈48
 
     # Learning rate (OPTIMIZED)
     learning_rate=8e-5,                    # ← CHANGED from 1e-4 to 8e-5
@@ -304,7 +304,7 @@ print(f"  - Effective batch size: {training_args.per_device_train_batch_size * t
 | `lr_scheduler_type` | linear | **cosine** | Smoother convergence at end of training |
 | `warmup_ratio` | 0.1 | **0.05** | Faster ramp-up for small dataset |
 | `per_device_train_batch_size` | 2 | **1** | Ajustado para GPUs T4 (Lightning) |
-| `gradient_accumulation_steps` | 8 | **24** | Mantiene batch efectivo ≈24 con menos VRAM |
+| `gradient_accumulation_steps` | 8 | **48** | Mantiene batch efectivo ≈48 con menos VRAM |
 
 ---
 
