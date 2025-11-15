@@ -7,9 +7,14 @@
 ## Prerequisites Checklist
 
 - [ ] Supervised dataset ready: `artifacts/distillation/po_teacher_supervised.jsonl` (359 samples)
-- [ ] Google Colab notebook opened
-- [ ] GPU runtime selected (T4 or better recommended)
-- [ ] Google Drive mounted (if saving checkpoints there)
+- [ ] Runtime with GPU (Google Colab **or** Lightning AI Studio)
+- [ ] Repository cloned (`git clone -b dspy-multi-role ...`)
+- [ ] Optional (only Colab): Google Drive mounted para respaldos
+
+### Nota sobre Lightning AI Studio
+- No es necesario (ni posible) montar Google Drive.
+- El notebook detecta automáticamente si se ejecuta en Lightning y usa `/workspace/` para guardar artefactos temporales (`po_student_v2/`, `po_student_v2_adapter/`).
+- Los artefactos finales se pueden descargar usando la celda de compresión (`zip`) o copiarse dentro del propio repo (`artifacts/models/...`).
 
 ---
 
