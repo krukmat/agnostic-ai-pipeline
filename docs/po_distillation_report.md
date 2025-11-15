@@ -33,51 +33,20 @@
    - `metrics.mean_student >= 0.9 * metrics.mean_baseline`.  
    - Documentar diferencias clave (velocidad estimada, longitud promedio) y adjuntar archivos `inference_results/*.json`.
 
-### Última ejecución registrada (2025-11-14)
-- Dataset: 3 casos hardcodeados (`basic_blog_validation`, `ecommerce_requirements`, `incomplete_requirements`).
-- Problema: ninguno de los dos modelos (baseline/student) generó bloques YAML válidos.
-- Causa: Prompt no suficientemente restrictivo, sin retries, tokens limitados.
-- Resultado: sin YAML válido → `product_owner_metric` no calculable.
+### Ejecución 2025-11-14 (script nuevo)
+- Baseline (`baseline_20251114_215442.json`, 20 casos): mean **0.841**, std 0.049, min 0.773, max 0.948, 0 errores de formato.
+- Student (`student_20251114_220448.json`, 20 casos): mean **0.772**, std 0.181, min 0.375, max 0.958, 0 errores de formato.
+- Hallazgos:
+  - El student responde en formato correcto, pero pierde ~0.069 puntos (≈−8.2 %) frente al baseline.  
+  - Variancia elevada en casos corporate (scores ≤0.45), señal de que falta señal en el dataset o el prompt no fuerza referencias a IDs.  
+  - No cerrar 9.D.4 hasta que el adapter alcance ≥0.82 de media y std ≤0.10.
 
-### Plan de Relanzamiento (2025-11-15) - Estado LISTO
-
-**Análisis completado**:
-- ✅ Script `eval_po_student.py` ya implementa prompt correcto con ejemplo YAML completo
-- ✅ Ya tiene retry con REMINDER si falta YAML
-- ✅ Ya lee del dataset de validación real (`product_owner_val.jsonl`, 34 registros)
-- ✅ Ya calcula `product_owner_metric` solo si YAML válido
-
-**Parámetros optimizados**:
-- `--retries 2` (3 intentos totales vs 1 anterior)
-- `--max-new-tokens 1200` (vs 900 anterior)
-- `--max-samples 20` (casos reales del valset, balanceados por tier)
-
-**Comandos finales**:
-```bash
-# Baseline (sin adapter)
-PYTHONPATH=. .venv/bin/python scripts/eval_po_student.py \
-  --tag baseline \
-  --base-model Qwen/Qwen2.5-7B-Instruct \
-  --max-samples 20 \
-  --retries 2 \
-  --max-new-tokens 1200 \
-  --load-4bit --bnb-compute-dtype float16
-
-# Student (con LoRA adapter)
-PYTHONPATH=. .venv/bin/python scripts/eval_po_student.py \
-  --tag student \
-  --base-model Qwen/Qwen2.5-7B-Instruct \
-  --adapter-path artifacts/models/po_student_v1 \
-  --max-samples 20 \
-  --retries 2 \
-  --max-new-tokens 1200 \
-  --load-4bit --bnb-compute-dtype float16
-```
-
-**Criterio de aceptación**:
-- YAML válido en ≥90% de los casos (≥18/20)
-- `mean_student >= 0.9 * mean_baseline` (si baseline ~0.83, student ≥0.75)
-- Documentar velocidad, longitud promedio, casos `format_error`
+### Plan de Remediación
+- **Dataset**: filtrar muestras teacher con `score < 0.82`, generar ≥50 casos nuevos centrados en tier corporate y rearmar el supervisado hasta ~400 ejemplos equilibrados.  
+- **Prompt**: actualizar `scripts/po_prompts.py` para exigir IDs explícitos en `requirements_alignment` y al menos dos acciones concretas en `recommended_actions`; limitar la narrativa a 2-3 frases.  
+- **Entrenamiento**: reentrenar con `epochs=4`, `lr=8e-5`, scheduler cosine + warmup 5 %, `gradient_accumulation_steps=12`, manteniendo `rank 32` y `alpha 64`.  
+- **Evaluación**: correr `scripts/eval_po_student.py` (baseline + student) con ≥20 casos cada uno (`--retries 2`, `--max-new-tokens 1200`).  
+- **Criterio de cierre**: YAML válido en ≥90 % y `mean_student ≥ 0.82`, `|mean_student - mean_baseline| ≤ 0.03`, `std_student ≤ 0.10`. Documentar resultados y adjuntar los JSON correspondientes.
 
 ## 4. Próximos pasos
 - [ ] Recolectar baseline/student outputs con el nuevo script (≥20 casos).  

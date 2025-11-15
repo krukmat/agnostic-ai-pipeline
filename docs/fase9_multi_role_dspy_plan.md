@@ -873,39 +873,61 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
   2. Reentrenar o aplicar post-processing para garantizar la emisión de bloques estructurados (posible uso de constrained decoding).  
   3. Repetir la evaluación con ≥20 casos y registrar `product_owner_metric` una vez se obtenga YAML válido.
 
-**Plan de relanzamiento (2025-11-15)**  
-1. **Rediseñar prompt de evaluación** (Owner: PO team, ETA 2h)  
-   - Reutilizar exactamente el `PROMPT_TEMPLATE` de `scripts/prep_po_lora_dataset.py`.  
-   - Añadir un ejemplo completo con los fences ```yaml VISION``` / ```yaml REVIEW``` para que el modelo lo imite.  
-   - Forzar instrucciones finales tipo “Respond **only** with the two fenced YAML blocks”.  
-2. **Actualizar `scripts/eval_po_student.py`** (Owner: Dev, ETA 1h)  
-   - Parametrizar el prompt y permitir `--expect-yaml` para validar que la respuesta contiene ambos fences antes de guardar.  
-   - Si algún sample falla, aplicar un post-procesado mínimo (regex) o marcarlo para retry.  
-3. **Ejecutar nueva batería (>=20 casos)** (Owner: QA, ETA 3h)  
-   - Dataset: usar `artifacts/synthetic/product_owner/product_owner_val.jsonl` (tomar 20 al azar por tier).  
-   - Capturar JSONL con vision/review en YAML y calcular `product_owner_metric`; exportar a `inference_results/20251115/`.  
-4. **Reportar resultados** (Owner: PO, ETA 1h)  
-   - Comparar mean/min/max del student vs baseline.  
-   - Documentar en `docs/po_distillation_report.md` y cerrar 9.D.4 si `mean_student >= 0.90 * mean_teacher` y el formato es válido.
+**Plan de remediación (2025-11-15)**  
+1. **Curar dataset supervisado** (Owner: PO/BA, ETA 0.5d)  
+   - Filtrar `artifacts/distillation/po_teacher_supervised.jsonl` → descartar muestras con `score < 0.82` o REVIEW sin referencias a IDs.  
+   - Generar +50 registros nuevos del teacher centrados en tier corporate / edge cases (usando `scripts/generate_po_teacher_dataset.py --min-score 0.85`).  
+   - Volver a correr `scripts/prep_po_lora_dataset.py --min-score 0.82 --max-samples 400` para balancear la muestra final.  
+2. **Refinar prompt y evaluación** (Owner: Dev, ETA 0.5d)  
+   - Actualizar `scripts/po_prompts.py` para exigir:  
+     - `requirements_alignment` debe mencionar IDs específicos (FR/NFR/CON).  
+     - `recommended_actions` ≥2 entradas con verbos accionables.  
+     - `narrative` <=120 palabras para evitar desvíos.  
+   - Ajustar `scripts/eval_po_student.py` a `--retries 2` y validar que cada bloque contenga al menos 3 bullet points donde aplique; si falla, reintentar con instrucción más estricta.  
+3. **Reentrenar LoRA** (Owner: Dev, ETA 0.5d)  
+   - Volver a lanzar `train_po_lora.py` con: `--epochs 4`, `--gradient-accumulation-steps 12`, `--lr 8e-5`, `--lr-scheduler cosine`, `--warmup-ratio 0.05`.  
+   - Conservar `rank 32`, `alpha 64`, `--load-4bit`, `--gradient-checkpointing`. Al terminar, registrar loss y subir adapters a Drive.  
+   - Ejemplo (Colab / notebook):
+     ```bash
+     !python scripts/train_po_lora.py \
+       --data-path artifacts/distillation/po_teacher_supervised.jsonl \
+       --base-model Qwen/Qwen2.5-7B-Instruct \
+       --output-dir artifacts/models/po_student_v1 \
+       --rank 32 --alpha 64 --dropout 0.05 \
+       --epochs 4 --batch-size 1 --gradient-accumulation-steps 12 \
+       --lr 8e-5 --lr-scheduler cosine --warmup-ratio 0.05 \
+       --max-length 2048 --load-4bit --bnb-compute-dtype float16
+     ```
+4. **Nueva evaluación ≥40 casos** (Owner: QA, ETA 0.5d)  
+   - Ejecutar `scripts/eval_po_student.py` dos veces: baseline y student (20 casos por corrida, tiers balanceados).  
+   - Objetivo: `mean_student ≥ 0.82`, `|mean_student - mean_baseline| ≤ 0.03`, `std_student ≤ 0.10`, 0 `format_error`.  
+   - Guardar artefactos bajo `inference_results/20251115/` y anexar resumen comparativo en `docs/po_distillation_report.md`.  
+5. **Criterio de cierre 9.D.4**  
+   - Si el student supera los umbrales anteriores y las respuestas cumplen el schema, documentar la mejora en `docs/fase9_multi_role_dspy_plan.md` y avanzar a 9.D.5.  
+   - Si no, repetir pasos 1-4 enfocándose en los casos con peor score (ver `results[].score` en los JSON).
 
 **Herramienta nueva – `scripts/eval_po_student.py`**  
 - Reutiliza el prompt supervisado (con ejemplo YAML) y fuerza retries si falta algún bloque.  
 - Genera `inference_results/<tag>_<timestamp>.json` con cada caso, puntajes y estado (`ok` o `format_error`).  
 - Ejecución recomendada (usar `PYTHONPATH=.`):
-  ```bash
-  .venv/bin/python scripts/eval_po_student.py \
-    --tag baseline \
-    --base-model Qwen/Qwen2.5-7B-Instruct \
-    --max-samples 20 \
-    --load-4bit --bnb-compute-dtype float16
+```bash
+.venv/bin/python scripts/eval_po_student.py \
+  --tag baseline \
+  --base-model Qwen/Qwen2.5-7B-Instruct \
+  --max-samples 20 \
+  --max-new-tokens 1200 \
+  --retries 2 \
+  --load-4bit --bnb-compute-dtype float16
 
-  .venv/bin/python scripts/eval_po_student.py \
-    --tag student \
-    --base-model Qwen/Qwen2.5-7B-Instruct \
-    --adapter-path artifacts/models/po_student_v1 \
-    --max-samples 20 \
-    --load-4bit --bnb-compute-dtype float16
-  ```
+.venv/bin/python scripts/eval_po_student.py \
+  --tag student \
+  --base-model Qwen/Qwen2.5-7B-Instruct \
+  --adapter-path artifacts/models/po_student_v1 \
+  --max-samples 20 \
+  --max-new-tokens 1200 \
+  --retries 2 \
+  --load-4bit --bnb-compute-dtype float16
+```
 - Tras ambos corridas, comparar `metrics.mean` y anexar los hallazgos (incluidos los casos `format_error`) en `docs/po_distillation_report.md` para decidir si avanzar a 9.D.5.
 
 ### 9.D.5 - Integración al pipeline

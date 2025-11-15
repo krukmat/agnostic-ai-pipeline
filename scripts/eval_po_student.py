@@ -23,7 +23,7 @@ from transformers import (
 )
 
 from dspy_baseline.metrics.product_owner_metrics import product_owner_metric
-from scripts.po_format import extract_vision_review
+from scripts.po_format import extract_vision_review, validate_po_output
 from scripts.po_prompts import build_po_prompt
 
 app = typer.Typer(help="Evaluate Product Owner baseline or student models.")
@@ -100,10 +100,12 @@ def generate_response(
     top_p: float,
     max_new_tokens: int,
     retries: int,
-) -> Tuple[str, str, str, int]:
+) -> Tuple[str, str, str, int, str]:
     attempt = 0
     final_text = ""
-    while attempt <= retries:
+    max_attempts = retries + 1
+    last_error = "missing_yaml_blocks"
+    while attempt < max_attempts:
         attempt += 1
         forced_prompt = prompt
         if attempt > 1:
@@ -136,9 +138,14 @@ def generate_response(
         final_text = tokenizer.decode(generated, skip_special_tokens=True).strip()
         vision_yaml, review_yaml = extract_vision_review(final_text)
         if vision_yaml and review_yaml:
-            return final_text, vision_yaml, review_yaml, attempt
+            is_valid, reason = validate_po_output(vision_yaml, review_yaml)
+            if is_valid:
+                return final_text, vision_yaml, review_yaml, attempt, ""
+            last_error = reason or "schema_error"
+            continue
+        last_error = "missing_yaml_blocks"
 
-    return final_text, "", "", attempt
+    return final_text, "", "", attempt, last_error
 
 
 @app.command()
@@ -170,8 +177,8 @@ def evaluate(
     seed: int = typer.Option(42, help="Random seed for sampling."),
     temperature: float = typer.Option(0.2, help="Generation temperature."),
     top_p: float = typer.Option(0.9, help="Top-p nucleus sampling."),
-    max_new_tokens: int = typer.Option(900, help="Max new tokens to generate."),
-    retries: int = typer.Option(1, help="Retries if YAML format is missing."),
+    max_new_tokens: int = typer.Option(1200, help="Max new tokens to generate."),
+    retries: int = typer.Option(2, help="Additional retries if YAML/validation fails."),
     load_4bit: bool = typer.Option(False, help="Load base model in 4-bit mode."),
     bnb_compute_dtype: str = typer.Option(
         "float16",
@@ -206,7 +213,7 @@ def evaluate(
         requirements = payload.get("requirements_yaml") or entry.get("requirements_yaml") or ""
 
         prompt = build_po_prompt(concept, requirements, include_example=True)
-        response, vision_yaml, review_yaml, attempts = generate_response(
+        response, vision_yaml, review_yaml, attempts, error_reason = generate_response(
             tokenizer,
             model,
             prompt,
@@ -217,6 +224,7 @@ def evaluate(
         )
 
         status = "ok"
+        error = None
         score = None
         if vision_yaml and review_yaml:
             example = ExampleWrapper(requirements)
@@ -226,6 +234,7 @@ def evaluate(
         else:
             status = "format_error"
             failures += 1
+            error = error_reason
 
         per_case.append(
             {
@@ -237,6 +246,7 @@ def evaluate(
                 "vision_yaml": vision_yaml,
                 "review_yaml": review_yaml,
                 "raw_response": response,
+                "error": error,
             }
         )
 

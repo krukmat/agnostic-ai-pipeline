@@ -12,16 +12,11 @@ PO_BASE_PROMPT = dedent(
     You are the Product Owner agent. Using the provided concept and requirements, generate both YAML blocks exactly as specified.
 
     IMPORTANT:
-    1. Always emit two fenced YAML blocks in this order:
-       ```yaml VISION
-       ...
-       ```
-       ```yaml REVIEW
-       ...
-       ```
-    2. If information is missing, use empty lists [] or concise placeholders, but never omit a block.
-    3. The REVIEW block must include: status, summary (list), requirements_alignment (aligned/gaps/conflicts lists), recommended_actions (list), and narrative (string).
-    4. Do not add any explanation outside of the two fenced YAML blocks.
+    1. Always emit two fenced YAML blocks in this order (VISION first, REVIEW second) with no extra prose.
+    2. Each block MUST be valid YAML. If information is missing, use [] or concise placeholders, but never omit a key.
+    3. In `requirements_alignment`, every bullet must explicitly mention the requirement ID (FRxxx, NFRxxx, Cxxx, CONxxx, etc.).
+    4. `recommended_actions` must include at least two concrete, action-oriented items (start with verbs).
+    5. `narrative` must be a concise paragraph (≤120 words) summarizing alignment + gaps.
     """
 ).strip()
 
@@ -57,15 +52,16 @@ PO_SAMPLE_OUTPUT = dedent(
     - No conflicts detected between requested features and stated non-goals
     requirements_alignment:
       aligned:
-      - FR-001 covers the collaborative planning workspace
-      - FR-002 maps to the dependency and risk indicators
+      - FR001 covers the collaborative planning workspace and reporting boards
+      - FR002 maps to the dependency and risk indicators the vision requires
       gaps:
-      - Missing explicit success metrics or telemetry requirements
-      conflicts: []
+      - FR003 lacks telemetry acceptance criteria to confirm success metrics
+      conflicts:
+      - C001 proposes deep ERP integration, which contradicts the non-goal of replacing finance systems
     recommended_actions:
-    - Add acceptance criteria for risk indicator latency and accuracy
-    - Capture a non-functional requirement for access control
-    narrative: The scope is coherent with the collaboration hub vision; only minor telemetry and access control clarifications are required before implementation.
+    - Add FR005 to capture access-control granularity (roles + audit logging)
+    - Update FR003 with measurable latency/error budgets for risk indicators
+    narrative: The scope matches the collaboration hub vision; only telemetry metrics and the ERP integration constraint require clarification before moving into implementation.
     ```
     """
 ).strip()

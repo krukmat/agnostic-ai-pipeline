@@ -38,6 +38,9 @@ def build(
         help="Destination JSONL with prompt/response pairs.",
     ),
     seed: int = typer.Option(42, help="Random seed for shuffling."),
+    min_score: float = typer.Option(
+        0.0, help="Minimum teacher metric score to keep a sample."
+    ),
     max_samples: Optional[int] = typer.Option(
         None, help="Optional limit of samples to include."
     ),
@@ -46,6 +49,15 @@ def build(
     if not records:
         typer.echo(f"[prep] No records found in {input_path}")
         raise typer.Exit(code=1)
+
+    if min_score > 0:
+        before = len(records)
+        records = [
+            rec for rec in records if rec.get("score", 1.0) >= min_score
+        ]
+        typer.echo(f"[prep] Filtered by score >= {min_score}: {len(records)}/{before} samples remain.")
+        if not records:
+            raise typer.Exit(code=1)
 
     random.seed(seed)
     random.shuffle(records)

@@ -63,6 +63,12 @@ def train(
     batch_size: int = typer.Option(4, help="Batch size per device."),
     lr: float = typer.Option(1e-4, help="Learning rate."),
     max_length: int = typer.Option(2048, help="Max sequence length."),
+    lr_scheduler: str = typer.Option(
+        "linear", help="Learning rate scheduler (linear, cosine, polynomial, etc.)."
+    ),
+    warmup_ratio: float = typer.Option(
+        0.0, help="Warmup ratio for the LR scheduler."
+    ),
     gradient_accumulation_steps: int = typer.Option(
         1, help="Number of gradient accumulation steps."
     ),
@@ -152,6 +158,8 @@ def train(
         bf16=use_bf16,
         logging_steps=10,
         save_strategy="epoch",
+        lr_scheduler_type=lr_scheduler,
+        warmup_ratio=warmup_ratio,
         gradient_checkpointing=gradient_checkpointing,
         report_to=[],
         push_to_hub=False,
