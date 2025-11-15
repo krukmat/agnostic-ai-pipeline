@@ -50,13 +50,23 @@ drive.mount('/content/drive')
 
 ```python
 # Install required packages (compatible with Qwen2.5 models)
-!pip install -q \
+!pip install -q --upgrade --no-cache-dir \
   "transformers>=4.38.0" \
   "peft>=0.11.1" \
   "bitsandbytes>=0.43.2" \
   "accelerate>=0.28.0" \
   "datasets>=2.19.0"
+
+import importlib
+importlib.invalidate_caches()
+
+import transformers, peft, datasets
+print("✅ transformers", transformers.__version__)
+print("✅ peft", peft.__version__)
+print("✅ datasets", datasets.__version__)
 ```
+
+> Si aparece un error de importación tras el `pip install`, reinicia el runtime/kernel y vuelve a ejecutar esta celda para asegurarte de que se cargue la versión nueva.
 
 **Expected time**: ~2-3 minutes
 
