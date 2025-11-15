@@ -99,7 +99,9 @@ def train(
             truncation=True,
             padding="max_length",
             max_length=max_length,
+            return_tensors="np",
         )
+        tokenized = {k: v.squeeze(0) for k, v in tokenized.items()}
         tokenized["labels"] = tokenized["input_ids"].copy()
         return tokenized
 
