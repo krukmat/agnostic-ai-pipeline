@@ -213,15 +213,14 @@ def tokenize_function(examples):
         )
         full_texts.append(text)
 
-    # Tokenize
+    # Tokenize con padding fijo
     tokenized = tokenizer(
         full_texts,
         truncation=True,
-        max_length=2048,
-        padding=False,
+        padding="max_length",
+        max_length=1536,
     )
 
-    # Set labels (same as input_ids for causal LM)
     tokenized["labels"] = tokenized["input_ids"].copy()
 
     return tokenized
@@ -248,10 +247,10 @@ training_args = TrainingArguments(
     # Output
     output_dir="/content/po_student_v2",
 
-    # Training schedule (OPTIMIZED)
-    num_train_epochs=4,                    # ← CHANGED from 3 to 4
-    per_device_train_batch_size=2,
-    gradient_accumulation_steps=12,        # ← CHANGED from 8 to 12
+    # Training schedule (OPTIMIZED para T4/Lightning)
+    num_train_epochs=4,
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=24,        # Effective batch ≈24
 
     # Learning rate (OPTIMIZED)
     learning_rate=8e-5,                    # ← CHANGED from 1e-4 to 8e-5
@@ -267,9 +266,7 @@ training_args = TrainingArguments(
     logging_steps=10,
     save_strategy="epoch",
     save_total_limit=2,
-
-    # Evaluation (none for now)
-    evaluation_strategy="no",
+    torch_empty_cache_steps=10,
 
     # Performance
     dataloader_num_workers=2,
@@ -306,14 +303,18 @@ print(f"  - Effective batch size: {training_args.per_device_train_batch_size * t
 | `learning_rate` | 1e-4 | **8e-5** | Gentler learning for fine-grained distinction |
 | `lr_scheduler_type` | linear | **cosine** | Smoother convergence at end of training |
 | `warmup_ratio` | 0.1 | **0.05** | Faster ramp-up for small dataset |
-| `gradient_accumulation_steps` | 8 | **12** | Larger effective batch size (24 vs 16) |
+| `per_device_train_batch_size` | 2 | **1** | Ajustado para GPUs T4 (Lightning) |
+| `gradient_accumulation_steps` | 8 | **24** | Mantiene batch efectivo ≈24 con menos VRAM |
 
 ---
 
 ### 8. Run Training
 
 ```python
-# Start training
+import torch
+torch.cuda.empty_cache()
+
+print("\n🚀 Starting training...\n")
 trainer.train()
 ```
 
