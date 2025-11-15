@@ -1,4 +1,4 @@
-# LoRA Improvement Plan - Step 3: Colab Training Instructions
+# LoRA Improvement Plan - Step 3: Training Instructions (Colab / Lightning)
 **Date**: 2025-11-15
 **Task**: Re-run LoRA training with optimized hyperparameters
 
@@ -7,9 +7,9 @@
 ## Prerequisites Checklist
 
 - [ ] Supervised dataset ready: `artifacts/distillation/po_teacher_supervised.jsonl` (359 samples)
-- [ ] Runtime with GPU (Google Colab **or** Lightning AI Studio)
-- [ ] Repository cloned (`git clone -b dspy-multi-role ...`)
-- [ ] Optional (only Colab): Google Drive mounted para respaldos
+- [ ] Runtime con GPU (Google Colab **o** Lightning AI Studio)
+- [ ] Repositorio clonado (`git clone -b dspy-multi-role ...`)
+- [ ] Opcional (solo Colab): Google Drive montado si quieres respaldos adicionales
 
 ### Nota sobre Lightning AI Studio
 - No es necesario (ni posible) montar Google Drive.
@@ -20,28 +20,28 @@
 
 ## Step-by-Step Training Instructions
 
-### 1. Upload Dataset to Colab
+### 1. Subir / copiar el dataset al entorno
 
-**Option A: Direct Upload**
+**Opción A (sólo Colab): carga directa**
 ```python
 from google.colab import files
 uploaded = files.upload()
 # Upload: artifacts/distillation/po_teacher_supervised.jsonl
 ```
 
-**Option B: From Google Drive**
+**Opción B (sólo Colab): desde Google Drive**
 ```python
 from google.colab import drive
 drive.mount('/content/drive')
 
-# Copy dataset to Colab instance
+# Copiar dataset dentro del entorno actual
 !cp /content/drive/MyDrive/path/to/po_teacher_supervised.jsonl /content/
 ```
 
-**Option C: From Local Machine via Command Line**
+**Opción C (Lightning u otros entornos)**: subir/copy desde la máquina local o almacenamiento interno.
 ```bash
-# On local machine, use gcloud or scp to upload
-# Then download in Colab from cloud storage
+# Ejemplo: usar scp o gcloud para subir al directorio del proyecto
+# Luego asegúrate de que el archivo exista en DATASET_PATH
 ```
 
 ---
@@ -49,13 +49,13 @@ drive.mount('/content/drive')
 ### 2. Install Dependencies
 
 ```python
-# Install required packages
+# Install required packages (compatible with Qwen2.5 models)
 !pip install -q \
-  transformers==4.36.0 \
-  peft==0.7.0 \
-  bitsandbytes==0.41.0 \
-  accelerate==0.25.0 \
-  datasets==2.16.0
+  "transformers>=4.38.0" \
+  "peft>=0.11.1" \
+  "bitsandbytes>=0.43.2" \
+  "accelerate>=0.28.0" \
+  "datasets>=2.19.0"
 ```
 
 **Expected time**: ~2-3 minutes
@@ -68,9 +68,11 @@ drive.mount('/content/drive')
 import json
 from datasets import Dataset
 
+DATASET_PATH = "artifacts/distillation/po_teacher_supervised.jsonl"  # ajusta según tu entorno
+
 # Load supervised dataset
 data = []
-with open("/content/po_teacher_supervised.jsonl", "r") as f:
+with open(DATASET_PATH, "r") as f:
     for line in f:
         if line.strip():
             data.append(json.loads(line))
@@ -348,12 +350,9 @@ special_tokens_map.json
 
 ### 10. Download Adapter to Local Machine
 
-**Option A: Download via Colab UI**
+**Opción A (Colab)**: Descargar desde la UI
 ```python
-# Compress adapter directory
 !zip -r po_student_v2_adapter.zip /content/po_student_v2_adapter
-
-# Trigger download
 from google.colab import files
 files.download('/content/po_student_v2_adapter.zip')
 ```
@@ -546,4 +545,4 @@ After training completes and adapter is downloaded:
 ---
 
 **Prepared by**: Claude Code
-**Review Status**: Ready for Colab execution
+**Review Status**: Ready for Colab / Lightning execution
