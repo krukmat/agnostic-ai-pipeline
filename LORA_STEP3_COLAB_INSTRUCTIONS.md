@@ -56,6 +56,7 @@ drive.mount('/content/drive')
   "bitsandbytes>=0.43.2" \
   "accelerate>=0.28.0" \
   "datasets>=2.19.0"
+!pip install -q --upgrade --no-cache-dir "transformers @ git+https://github.com/huggingface/transformers.git"
 
 import importlib
 importlib.invalidate_caches()
@@ -66,7 +67,7 @@ print("✅ peft", peft.__version__)
 print("✅ datasets", datasets.__version__)
 ```
 
-> Si aparece un error de importación tras el `pip install`, reinicia el runtime/kernel y vuelve a ejecutar esta celda para asegurarte de que se cargue la versión nueva.
+> Si aparece un error de importación tras el `pip install`, reinicia el runtime/kernel y vuelve a ejecutar esta celda para asegurarte de que se cargue la versión nueva. La segunda línea instala la última versión de desarrollo de `transformers`, necesaria para `Qwen/Qwen2.5-7B-Instruct` en algunos entornos (Lightning AI Studio).
 
 **Expected time**: ~2-3 minutes
 
