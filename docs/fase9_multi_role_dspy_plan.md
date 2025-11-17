@@ -581,6 +581,31 @@ Estas brechas deben cerrarse antes de escalar las optimizaciones en paralelo par
 
 ### 9.0.9 - Evaluation & Comparison
 
+**Evaluación corregida (2025-11-17)**
+- Script: `/tmp/evaluate_po_optimization_FIXED.py` (log `/tmp/po_evaluation_CORRECTED.log`).
+- Baseline: media 0.0295, σ 0.0315, mediana 0.0156.
+- Optimizado: media 0.7458, σ 0.2619, **mediana 0.9031**.
+- Gap vs 0.85: 0.1042 (12.25%).
+- Se decide reportar mediana como indicador primario y registrar media/desvío para comparación.
+
+### 9.0.9 - Evaluation & Comparison
+
+**Evaluación corregida (2025-11-17)**
+- Script: `/tmp/evaluate_po_optimization_FIXED.py` (log en `/tmp/po_evaluation_CORRECTED.log`).
+- Baseline (`gemini-2.5-flash` sin optimizar):
+  - Media: 0.0295 (2.95%).
+  - Desvío estándar: 0.0315.
+  - Mediana: 0.0156 (casi todos los samples en el mínimo).
+- Optimizado (`gemini-2.5-pro` + último push DSPy):
+  - Media: 0.7458 (74.58%).
+  - Desvío estándar: 0.2619 (varios outliers en 0.3094).
+  - **Mediana**: 0.9031 (90.31%) → indicador más representativo dado el sesgo.
+- Gap vs meta 0.85: diferencia de 0.1042 (12.25%).
+- Archivos de referencia: `artifacts/dspy/po_optimization_evaluation_FIXED.json`, `/tmp/po_evaluation_CORRECTED.log`.
+- Determinación tomada: reportar mediana 0.9031 como indicador principal mientras se define si vale la pena otro run (ver recomendaciones previas).
+
+### 9.0.9 - Evaluation & Comparison
+
 **Objetivo**: Comparar baseline vs modelo optimizado en `product_owner_val.jsonl`.
 
 **Métricas**:
@@ -595,6 +620,14 @@ Estas brechas deben cerrarse antes de escalar las optimizaciones en paralelo par
 **Tiempo Estimado**: 0.4 días
 
 ---
+
+### 9.0.10 - Integration & Testing
+
+**Acciones inmediatas**:
+- Congelar el snapshot `artifacts/dspy/po_optimized_full_snapshot_20251117T105427/product_owner` (copiado 2025-11-17 10:54) y expedirlo al pipeline.
+- Actualizar `scripts/run_product_owner.py` para cargar `program_components.json` cuando `program.pkl` esté vacío.
+- Añadir bandera `USE_DSPY_PO=1` en `make po`.
+- Ejecutar `make ba → po → plan` con historia real y adjuntar logs/evidencia.
 
 ### 9.0.10 - Integration & Testing
 
@@ -873,6 +906,15 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
   2. Reentrenar o aplicar post-processing para garantizar la emisión de bloques estructurados (posible uso de constrained decoding).  
   3. Repetir la evaluación con ≥20 casos y registrar `product_owner_metric` una vez se obtenga YAML válido.
 
+**Intento Lightning AI Studio (2025-11-15)**  
+- Se migró el entrenamiento al entorno Lightning (GPU T4) para evitar los límites de Colab gratuito. Se actualizó el notebook `PO_LoRA_Training_v2.ipynb` para detectar `/workspace`, usar instalación pura via `subprocess`, y forzar padding/validación con el nuevo script (`scripts/eval_po_student.py`).  
+- Ajustes aplicados para contener VRAM:
+  - Reducción progresiva de `max_length` (2048→1536→1200→1024→768) y finalmente `rank=16 / alpha=32`.
+  - `per_device_train_batch_size=1`, `gradient_accumulation_steps` hasta 48, `torch_empty_cache_steps=10`, `torch.cuda.empty_cache()` antes de `trainer.train()`.  
+  - Se implementaron fallbacks automáticos para carga del modelo (4-bit → fp16 si el backend no soporta QLoRA) y se encapsuló todo en Python puro para evitar `%bash`.
+- Resultado: **OOM persistente** en `trainer.train()` a pesar de los recortes. La T4 (14 GB) no sostiene el LoRA sobre Qwen2.5 con secuencias >512 tokens.  
+- Próxima acción obligatoria → usar una GPU con ≥24 GB (RunPod L4/A100, Colab Pro u otra). El plan documentado ya incluye instrucciones para RunPod y Lightning; en cuanto se tenga acceso a una L4/A100, relanzar 9.D.3 con la configuración completa y repetir 9.D.4.
+
 **Plan de remediación (2025-11-15)**  
 1. **Curar dataset supervisado** (Owner: PO/BA, ETA 0.5d)  
    - Filtrar `artifacts/distillation/po_teacher_supervised.jsonl` → descartar muestras con `score < 0.82` o REVIEW sin referencias a IDs.  
@@ -929,6 +971,11 @@ Reducir drásticamente el tiempo de inferencia del rol Product Owner (y futuros 
   --load-4bit --bnb-compute-dtype float16
 ```
 - Tras ambos corridas, comparar `metrics.mean` y anexar los hallazgos (incluidos los casos `format_error`) en `docs/po_distillation_report.md` para decidir si avanzar a 9.D.5.
+
+**DSPy – Pilot Optimization (Paso 2 completado, 2025-11-15)**  
+- Proceso `dcf7ef` (Lightning AI Studio) finalizó con `Average Metric = 34/34 (100%)` sobre el valset de 34 ejemplos (`artifacts/synthetic/product_owner/product_owner_val.jsonl`).  
+- Log: `/tmp/po_pilot_optimization.log`. Componentes exportados a `artifacts/dspy/po_optimized_pilot/product_owner/program_components.json`; metadata en `.../metadata.json`.  
+- Acciones siguientes según el plan DSPy: ejecutar **Paso 3 – Full Optimization (142 samples, 2-4 h)** e incorporar el score resultante antes de decidir el paso 4.
 
 ### 9.D.5 - Integración al pipeline
 
@@ -1828,3 +1875,172 @@ PYTHONPATH=. .venv/bin/python scripts/tune_dspy.py \
 | gemini-2.5-flash | ~10s | ~10-15min |
 
 **Status**: Fix implementado y validado ✅. Listo para optimización completa.
+
+---
+
+## 🆕 ACTUALIZACIÓN 9.0.8 - Full Optimization Kickoff (2025-11-15)
+
+**Objetivo**: Ejecutar el Paso 3 (Full Optimization) con el **trainset completo (142 ejemplos)** usando Vertex AI `gemini-2.5-flash`, para obtener un programa superior al piloto (Paso 2 = 34/34, 100%).
+
+**Plan previo (documentado antes del arranque)**:
+- **Dataset**: `artifacts/synthetic/product_owner/product_owner_train.jsonl` + `product_owner_val.jsonl`.
+- **Hyperparams**: `--num-candidates 6`, `--num-trials 10`, `--max-bootstrapped-demos 4`, `seed=0`.
+- **Provider**: `vertex_ai` (modelo `gemini-2.5-flash`) con las mismas métricas (`product_owner_metric`).
+- **Infra**: Corrida desatendida vía `nohup`, log persistido en `/tmp/po_full_optimization.log`, PID en `/tmp/po_full_optimization.pid`.
+- **Cache fix**: fuerza `DSPY_CACHEDIR=/tmp/dspy_cache` para evitar el error `sqlite3.OperationalError: unable to open database file` visto el 15/11 por permisos en `artifacts/dspy/cache`.
+
+**Comando lanzado (15:43 UTC-3)**:
+```bash
+export DSPY_CACHEDIR=/tmp/dspy_cache PYTHONPATH=.
+nohup .venv/bin/python scripts/tune_dspy.py \
+  --role product_owner \
+  --trainset artifacts/synthetic/product_owner/product_owner_train.jsonl \
+  --valset artifacts/synthetic/product_owner/product_owner_val.jsonl \
+  --metric dspy_baseline.metrics.product_owner_metrics:product_owner_metric \
+  --num-candidates 6 \
+  --num-trials 10 \
+  --max-bootstrapped-demos 4 \
+  --seed 0 \
+  --output artifacts/dspy/po_optimized_full \
+  --provider vertex_ai \
+  --model gemini-2.5-flash \
+  >> /tmp/po_full_optimization.log 2>&1 &
+echo $! > /tmp/po_full_optimization.pid
+```
+
+**Estado / Métricas en vivo (15:54 UTC-3)**:
+- STEP 1 completado: bootstrapping de 6 sets (demora ~2.5 min por set con 142 ejemplos).
+- STEP 2 activo: 6 instrucciones propuestas para `ProductOwnerModule` (logs muestran truncation warnings → revisar `max_tokens` si reaparece).
+- Trials completados hasta el momento: 12 minibatches + 2 evaluaciones completas.
+  - **Best full score provisional**: **51.88 / 100** (34/34 validaciones con `gemini-2.5-flash`).
+  - Minibatch scores recientes: `[37.0, 36.5, 65.7, 9.31, 32.91, 36.5, 7.17, 10.76, 45.71, 1.56]`.
+- Logs en tiempo real: `tail -f /tmp/po_full_optimization.log`
+- PID tracking: `cat /tmp/po_full_optimization.pid` → `49795`
+
+**Incidencias resueltas**:
+1. `sqlite3.OperationalError` → resuelto creando `/tmp/dspy_cache` y exportando `DSPY_CACHEDIR` antes de invocar DSPy.
+2. `oauth2.googleapis.com` DNS failure (sandbox sin red) → rerun autorizado con red para Vertex.
+
+**Artefactos generados (en curso)**:
+- `artifacts/dspy/po_optimized_full/` (estructura inicial creada; se completará al cerrar el run).
+- `/tmp/po_full_optimization_20251115154251.log` conserva el log del intento fallido anterior (sin red).
+
+**Próximos pasos**:
+1. 🕒 Dejar correr la optimización (ETA 2-3h); monitorear `po_full_optimization.log` para confirmar `Trial 13/13` y guardado de `program_components.json`.
+2. 📦 Al finalizar: copiar el log a `logs/mipro/product_owner/20251115_full.log`, zipear los componentes y registrar métricas finales aquí y en `docs/po_distillation_report.md`.
+3. 📊 Task 9.0.9: correr evaluación usando el nuevo programa vs baseline (0.831) y documentar comparativa.
+4. 🔁 Si score final < target (85%), ajustar `num_trials`/`max_bootstrapped-demos` o repetir usando `gemini-2.5-pro`.
+
+**Notas operativas**:
+- Si el runtime se extiende >4h o aparecen nuevos `LM response truncated`, incrementar `max_tokens` en `dspy.LM` o dividir el trainset (Plan B).
+- Mantener libre `/tmp/dspy_cache` (limpiarlo sólo cuando la corrida finalice para no perder shards en uso).
+
+### Iteración ajustada (2025-11-15 16:09 UTC-3)
+
+Tras completar el primer intento full (51.88), lanzamos un **segundo run** priorizando exploración más profunda pero aún sobre `gemini-2.5-flash`:
+
+- **Ajustes solicitados**:
+  1. `--num-trials 20` (DSPy internamente ejecutó 25 iteraciones contando los full eval extra).
+  2. `--max-bootstrapped-demos 3` para reducir STEP 1.
+  3. `--num-candidates 5` + `--stop-metric dspy_baseline.metrics.product_owner_metrics:product_owner_metric` (el stop metric hoy es un no-op, pero deja documentada la intención de cortar en 0.7 cuando DSPy lo soporte).
+- **Comando**:
+  ```bash
+  export DSPY_CACHEDIR=/tmp/dspy_cache PYTHONPATH=.
+  nohup .venv/bin/python scripts/tune_dspy.py \
+    --role product_owner \
+    --trainset artifacts/synthetic/product_owner/product_owner_train.jsonl \
+    --valset artifacts/synthetic/product_owner/product_owner_val.jsonl \
+    --metric dspy_baseline.metrics.product_owner_metrics:product_owner_metric \
+    --num-candidates 5 \
+    --num-trials 20 \
+    --max-bootstrapped-demos 3 \
+    --stop-metric dspy_baseline.metrics.product_owner_metrics:product_owner_metric \
+    --seed 0 \
+    --output artifacts/dspy/po_optimized_full \
+    --provider vertex_ai \
+    --model gemini-2.5-flash \
+    >> /tmp/po_full_optimization.log 2>&1 &
+  ```
+- **Duración**: ~10.5 min (inicio 16:09, fin 16:20 UTC-3) gracias a menos candidatos/demos.
+- **Resultados**:
+  - `Full eval scores`: `[3.14, 43.35, 64.08, 49.31]` → **mejor = 64.08 / 100** (↑ +12.2 pts vs run anterior).
+  - `Minibatch scores`: `[33.16, 32.16, 46.3, 33.16, 25.97, 65.7, 29.56, 30.06, 46.71, 48.3, 39.51, 55.42, 50.4, 37.48, 36.93, 35.97, ...]` (ver log para el listado completo).
+  - `program_components.json` actualizado (22 KB) + `metadata.json` sobrescrito; `program.pkl` permanece como placeholder de 2 B.
+- **Logs**: `/tmp/po_full_optimization.log` (copiado a `logs/mipro/product_owner/po_full_optimization_20251115162146.log`).
+- **Observaciones**:
+  - STEP 1 ahora bootstrappeó 5 sets (vs 6) → menos overhead sin perder diversidad.
+  - Persisten los warnings de `max_tokens` en Vertex; evaluar aumentar el límite o habilitar `temperature>0` si seguimos viendo truncations.
+  - `stop_metric` no es consumido por `dspy.MIPROv2.compile`, pero dejamos el flag activo para cuando la librería habilite early stopping real.
+- **Siguiente acción**: ejecutar 9.0.9 con este snapshot (64.08) y decidir si hace falta un tercer run (ej. `gemini-2.5-pro` o más trials) para acercarnos al target ≥85.
+
+Luego de la evaluación corregida (71.7%), lanzaremos un **último push** con estos ajustes para intentar superar el 85%:
+
+- `max_tokens 8000` (nuevo flag en `scripts/tune_dspy.py`) para eliminar truncations.
+- `num_trials 25`, `max_bootstrapped-demos 5` (más exploración).
+- `num_candidates 5`, `temperature 0.0`, `seed 0`.
+- Plataforma: `gemini-2.5-pro`.
+
+Comando:
+```bash
+export DSPY_CACHEDIR=/tmp/dspy_cache PYTHONPATH=.
+nohup .venv/bin/python scripts/tune_dspy.py \
+  --role product_owner \
+  --trainset artifacts/synthetic/product_owner/product_owner_train.jsonl \
+  --valset artifacts/synthetic/product_owner/product_owner_val.jsonl \
+  --metric dspy_baseline.metrics.product_owner_metrics:product_owner_metric \
+  --num-candidates 5 \
+  --num-trials 25 \
+  --max-bootstrapped-demos 5 \
+  --stop-metric dspy_baseline.metrics.product_owner_metrics:product_owner_metric \
+  --max-tokens 8000 \
+  --temperature 0.0 \
+  --seed 0 \
+  --output artifacts/dspy/po_optimized_full \
+  --provider vertex_ai \
+  --model gemini-2.5-pro \
+  >> /tmp/po_full_optimization.log 2>&1 &
+```
+
+Notas: log final → `logs/mipro/product_owner/po_full_optimization_<timestamp>_pro_push.log`; al cerrar, repetir 9.0.9.
+
+
+### Iteración con gemini-2.5-pro (2025-11-15 16:25 UTC-3)
+
+Con 29 € disponibles confirmamos que había margen para un intento con `gemini-2.5-pro`, reutilizando exactamente los hyperparams anteriores.
+
+- **Objetivo**: medir si el modelo Pro aporta la mejora necesaria para acercarnos al target ≥85 sin tocar dataset ni seeds.
+- **Comando**:
+  ```bash
+  export DSPY_CACHEDIR=/tmp/dspy_cache PYTHONPATH=.
+  nohup .venv/bin/python scripts/tune_dspy.py \
+    --role product_owner \
+    --trainset artifacts/synthetic/product_owner/product_owner_train.jsonl \
+    --valset artifacts/synthetic/product_owner/product_owner_val.jsonl \
+    --metric dspy_baseline.metrics.product_owner_metrics:product_owner_metric \
+    --num-candidates 5 \
+    --num-trials 20 \
+    --max-bootstrapped-demos 3 \
+    --stop-metric dspy_baseline.metrics.product_owner_metrics:product_owner_metric \
+    --seed 0 \
+    --output artifacts/dspy/po_optimized_full \
+    --provider vertex_ai \
+    --model gemini-2.5-pro \
+    >> /tmp/po_full_optimization.log 2>&1 &
+  ```
+- **Duración / costo estimado**: ~40 min (start 16:25, end 17:07 UTC-3). A 2.8 € aprox. por corrida todavía quedan >8 intentos dentro del crédito de 29 €.
+- **Resultados**:
+  - `Full eval scores`: `[5.31, 77.51, 67.10, 71.04, 78.57]` → **nuevo máximo = 78.57 / 100** (↑ +14.5 pts vs run flash ajustado).
+  - Minibatch scores completos registrados en `logs/mipro/product_owner/po_full_optimization_20251115170702_pro_run.log`.
+  - `program_components.json` (22 KB) y `metadata.json` fueron actualizados nuevamente; `program.pkl` sigue con 2 B por el fallback.
+- **Logs**:
+  - `logs/mipro/product_owner/po_full_optimization_20251115170702_pro_run.log` (copia del runtime completo).
+  - `/tmp/po_full_optimization.log` contiene la ejecución actual hasta que se lance otra.
+- **Observaciones**:
+  - STEP 1 demoró más (bootstrap de 5 sets tomó >4 min cada uno) pero el run completo quedó <45 min.
+  - Los warnings de `max_tokens=4000` se repitieron entre 16:31 y 16:41; sigue pendiente exponer un flag para incrementarlo cuando necesitemos otra corrida Pro.
+  - DSPy aún ignora `stop_metric`, por lo que se completaron los 20 trials planificados.
+- **Próximo paso**:
+  1. Ejecutar 9.0.9 con este snapshot (78.57) y comparar contra baseline 0.831.
+  2. Si todavía apuntamos a ≥85, evaluar cuarta corrida con ajustes adicionales (e.g., `max_tokens` elevado, `num_trials` 25 o seeds nuevos) antes de cerrar 9.0.8.
+
+

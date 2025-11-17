@@ -38,11 +38,36 @@ def _get_attr(obj: Any, name: str) -> Any:
     return getattr(obj, name, None)
 
 
+def _strip_markdown_fences(raw: str) -> str:
+    """Remove markdown fences and artifacts from YAML output.
+
+    Handles common LLM output patterns:
+    - ```yaml ... ``` fences
+    - ```yml ... ``` fences
+    - ``` ... ``` generic fences
+    - Leading ] artifact from mistral:7b-instruct
+    """
+    if not raw:
+        return raw
+
+    # Remove markdown code fences (```yaml, ```yml, or just ```)
+    cleaned = re.sub(r'^```ya?ml?\s*\n?', '', raw, flags=re.MULTILINE | re.IGNORECASE)
+    cleaned = re.sub(r'\n?```\s*$', '', cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r'^```\s*\n?', '', cleaned, flags=re.MULTILINE)
+
+    # Remove leading ] artifact (mistral:7b-instruct issue)
+    cleaned = cleaned.lstrip(']').lstrip()
+
+    return cleaned
+
+
 def _safe_yaml_load(raw: Any) -> Any:
     if not raw or not isinstance(raw, str):
         return None
     try:
-        return yaml.safe_load(raw)
+        # Strip markdown fences before parsing
+        cleaned = _strip_markdown_fences(raw)
+        return yaml.safe_load(cleaned)
     except yaml.YAMLError:
         return None
 
@@ -279,9 +304,9 @@ def product_owner_metric(example: Any, prediction: Any, trace=None) -> float:
     requirements alignment, vision completeness, review specificity) to 120 points.
     """
 
-    vision_yaml = _get_attr(prediction, "vision_yaml")
-    review_yaml = _get_attr(prediction, "review_yaml")
-    requirements_yaml = _get_attr(example, "requirements")
+    vision_yaml = _get_attr(prediction, "product_vision")
+    review_yaml = _get_attr(prediction, "product_owner_review")
+    requirements_yaml = _get_attr(example, "requirements_yaml")
 
     vision_data = _safe_yaml_load(vision_yaml) or {}
     review_data = _safe_yaml_load(review_yaml) or {}

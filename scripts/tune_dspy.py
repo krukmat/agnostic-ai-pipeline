@@ -158,6 +158,8 @@ def _configure_lm(
     vertex_project: Optional[str] = None,
     vertex_location: Optional[str] = None,
     ollama_base_url: Optional[str] = None,
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
 ) -> dspy.LM:
     provider = provider.lower()
     if provider in {"vertex", "vertex_ai"}:
@@ -165,18 +167,37 @@ def _configure_lm(
             "GCP_PROJECT", "agnostic-pipeline-476015"
         )
         location = vertex_location or os.environ.get("VERTEX_LOCATION", "us-central1")
-        return dspy.LM(f"vertex_ai/{model}", project=project_id, location=location)
+        return dspy.LM(
+            f"vertex_ai/{model}",
+            project=project_id,
+            location=location,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
     if provider == "ollama":
         base_url = (
             ollama_base_url
             or os.environ.get("OLLAMA_BASE_URL")
             or "http://localhost:11434"
         )
-        return dspy.LM(f"ollama/{model}", base_url=base_url)
+        return dspy.LM(
+            f"ollama/{model}",
+            base_url=base_url,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
     if provider == "openai":
-        return dspy.LM(f"openai/{model}")
+        return dspy.LM(
+            f"openai/{model}",
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
     if provider == "claude_cli":
-        return dspy.LM(f"anthropic/{model}")
+        return dspy.LM(
+            f"anthropic/{model}",
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
     raise typer.BadParameter(f"Unsupported provider '{provider}'.")
 
 
@@ -237,6 +258,14 @@ def main(
     ollama_base_url: Optional[str] = typer.Option(
         None, help="Optional Ollama base URL (default http://localhost:11434)."
     ),
+    max_tokens: Optional[int] = typer.Option(
+        None,
+        help="Optional max_tokens override for the underlying LM (e.g., 8000).",
+    ),
+    temperature: Optional[float] = typer.Option(
+        None,
+        help="Optional temperature override for the LM.",
+    ),
 ) -> None:
     """Compile the selected DSPy program using the provided trainset."""
     train_examples = _examples_from_jsonl(trainset_path, role=role)
@@ -254,6 +283,8 @@ def main(
         vertex_project=vertex_project,
         vertex_location=vertex_location,
         ollama_base_url=ollama_base_url,
+        max_tokens=max_tokens,
+        temperature=temperature,
     )
     dspy.configure(lm=lm)
 
