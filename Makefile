@@ -47,8 +47,9 @@ dspy-ba:
 	@echo "Running DSPy BA module..."
 	$(PY) dspy_baseline/scripts/run_ba.py --concept "$$CONCEPT" --verbose
 
+
 po:
-	CONCEPT="$$CONCEPT" $(PY) scripts/run_product_owner.py
+	CONCEPT="$$CONCEPT" USE_DSPY_PO="$${USE_DSPY_PO:-0}" $(PY) scripts/run_product_owner.py
 	@echo "==> planning/product_owner_review.yaml"
 	@sed -n '1,40p' planning/product_owner_review.yaml 2>/dev/null || true
 

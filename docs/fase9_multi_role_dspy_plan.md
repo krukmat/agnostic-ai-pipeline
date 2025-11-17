@@ -625,9 +625,14 @@ Estas brechas deben cerrarse antes de escalar las optimizaciones en paralelo par
 
 **Acciones inmediatas**:
 - Congelar el snapshot `artifacts/dspy/po_optimized_full_snapshot_20251117T105427/product_owner` (copiado 2025-11-17 10:54) y expedirlo al pipeline.
+  - Estado (2025-11-17 11:00): snapshot congelado en `artifacts/dspy/po_optimized_full_snapshot_20251117T105427/`; listo para consumo de 9.0.10.
 - Actualizar `scripts/run_product_owner.py` para cargar `program_components.json` cuando `program.pkl` esté vacío.
 - Añadir bandera `USE_DSPY_PO=1` en `make po`.
+  - Estado (2025-11-17 11:35): Makefile propaga USE_DSPY_PO y scripts/run_product_owner.py carga el snapshot DSPy con fallback automático si Vertex falla (ahora usando `ollama/granite4` por defecto para mantener el provider local; se puede ajustar con `DSPY_PO_LM`).
+    * El loader aplica `program_components.json` (instructions+demos) y sanitiza YAML antes de escribir.
+    * El LM para DSPy corre localmente (`ollama/granite4` por defecto); se expondrá una ruta LoRA para mejorar performance sin depender de Vertex.
 - Ejecutar `make ba → po → plan` con historia real y adjuntar logs/evidencia.
+  - Estado (2025-11-17 11:38): intento fallido al invocar `make ba` (error dspy.settings thread en `scripts/run_ba.py`); se requiere ajustar BA DSPy para permitir configure en threads o forzar modo legacy antes de repetir la prueba.
 
 ### 9.0.10 - Integration & Testing
 

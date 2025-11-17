@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
+from pathlib import Path
 import yaml
 
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
+
+DSPY_CACHE_DIR = Path(os.environ.get("DSPY_CACHEDIR", "/tmp/dspy_cache"))
+DSPY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("DSPY_CACHEDIR", str(DSPY_CACHE_DIR))
+
+import dspy
+from dspy_baseline.modules.product_owner import ProductOwnerModule
 
 PO_PROMPT = (ROOT / "prompts" / "product_owner.md").read_text(encoding="utf-8")
 VISION_PATH = PLANNING / "product_vision.yaml"
@@ -114,6 +123,15 @@ async def main() -> None:
     if VISION_PATH.exists():
         existing_vision = VISION_PATH.read_text(encoding="utf-8")
 
+    use_dspy = os.environ.get("USE_DSPY_PO") == "1"
+    if use_dspy:
+        logger.info("[PO] USE_DSPY_PO=1 detected — running optimized DSPy snapshot")
+        try:
+            await run_dspy_program(requirements_content, concept, existing_vision)
+            return
+        except Exception as exc:
+            logger.error(f"[PO][DSPY] Optimized path failed: {exc}. Falling back to default client.", exc_info=True)
+
     client = Client(role="product_owner")
     logger.info(f"[PO] Using CONCEPT: {concept or 'No concept provided'}")
     logger.info("[PO] Maintaining product vision and evaluating BA alignment...")
@@ -159,6 +177,74 @@ async def main() -> None:
         logger.info("✓ product_owner_review.yaml updated")
     else:
         logger.warning("[PO] REVIEW block missing in LLM response")
+
+
+async def run_dspy_program(requirements_content: str, concept: str, existing_vision: str) -> None:
+    program_dir = ROOT / "artifacts" / "dspy" / "po_optimized_full_snapshot_20251117T105427" / "product_owner"
+    if not program_dir.exists():
+        logger.error(f"[PO][DSPY] Snapshot missing at {program_dir} — aborting")
+        raise SystemExit(1)
+
+    components_path = program_dir / "program_components.json"
+    if not components_path.exists():
+        logger.error(f"[PO][DSPY] program_components.json missing in {program_dir}")
+        raise SystemExit(1)
+
+    with components_path.open("r", encoding="utf-8") as f:
+        components = json.load(f)
+
+    lm_spec = os.environ.get("DSPY_PO_LM", "ollama/granite4")
+    lm_kwargs = {
+        "max_tokens": int(os.environ.get("DSPY_PO_MAX_TOKENS", "4096")),
+        "temperature": float(os.environ.get("DSPY_PO_TEMPERATURE", "0.3")),
+    }
+    if lm_spec.startswith("ollama/"):
+        lm_kwargs["base_url"] = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+
+    dspy.configure(lm=dspy.LM(lm_spec, **lm_kwargs))
+
+    module = ProductOwnerModule()
+
+    generate_cfg = components.get("modules", {}).get("generate", {})
+    instructions = generate_cfg.get("instructions")
+    if instructions:
+        module.generate.signature.instructions = instructions
+
+    demos = []
+    for demo in generate_cfg.get("demos", []):
+        example = dspy.Example(
+            concept=demo.get("concept", ""),
+            requirements_yaml=demo.get("requirements_yaml", ""),
+            existing_vision=demo.get("existing_vision", ""),
+            product_vision=demo.get("product_vision", ""),
+            product_owner_review=demo.get("product_owner_review", ""),
+        ).with_inputs("concept", "requirements_yaml", "existing_vision")
+        demos.append(example)
+    if demos:
+        module.generate.demos = demos
+
+    prediction = module(
+        concept=concept,
+        requirements_yaml=requirements_content,
+        existing_vision=existing_vision,
+    )
+
+    vision_yaml = prediction.product_vision
+    review_yaml = prediction.product_owner_review
+
+    if vision_yaml:
+        sanitized_vision = sanitize_yaml(vision_yaml)
+        VISION_PATH.write_text(sanitized_vision.strip() + "\n", encoding="utf-8")
+        logger.info("[PO][DSPY] ✓ product_vision.yaml updated from DSPy snapshot")
+    else:
+        logger.warning("[PO][DSPY] Missing product_vision output from snapshot")
+
+    if review_yaml:
+        sanitized_review = sanitize_yaml(review_yaml)
+        REVIEW_PATH.write_text(sanitized_review.strip() + "\n", encoding="utf-8")
+        logger.info("[PO][DSPY] ✓ product_owner_review.yaml updated from DSPy snapshot")
+    else:
+        logger.warning("[PO][DSPY] Missing product_owner_review output from snapshot")
 
 
 if __name__ == "__main__":
