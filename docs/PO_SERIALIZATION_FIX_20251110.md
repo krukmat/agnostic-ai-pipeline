@@ -226,7 +226,7 @@ PYTHONPATH=. .venv/bin/python scripts/tune_dspy.py \
 
 4. **Integrar en pipeline** (task 9.0.10):
    - Modificar `scripts/run_product_owner.py` para cargar programa optimizado
-   - Añadir bandera `USE_DSPY_PO=1` en Makefile
+   - Añadir flag `features.use_dspy_product_owner` en `config.yaml` (con `USE_DSPY_PO` como override puntual) y actualizar `make po`.
    - Backwards compatibility si programa no existe
 
 ### Si Test Falla ❌

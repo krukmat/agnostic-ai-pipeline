@@ -49,7 +49,7 @@ dspy-ba:
 
 
 po:
-	CONCEPT="$$CONCEPT" USE_DSPY_PO="$${USE_DSPY_PO:-0}" $(PY) scripts/run_product_owner.py
+	CONCEPT="$$CONCEPT" USE_DSPY_PO="$${USE_DSPY_PO:-}" $(PY) scripts/run_product_owner.py
 	@echo "==> planning/product_owner_review.yaml"
 	@sed -n '1,40p' planning/product_owner_review.yaml 2>/dev/null || true
 

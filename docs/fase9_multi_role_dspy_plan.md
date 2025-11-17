@@ -627,19 +627,28 @@ Estas brechas deben cerrarse antes de escalar las optimizaciones en paralelo par
 - Congelar el snapshot `artifacts/dspy/po_optimized_full_snapshot_20251117T105427/product_owner` (copiado 2025-11-17 10:54) y expedirlo al pipeline.
   - Estado (2025-11-17 11:00): snapshot congelado en `artifacts/dspy/po_optimized_full_snapshot_20251117T105427/`; listo para consumo de 9.0.10.
 - Actualizar `scripts/run_product_owner.py` para cargar `program_components.json` cuando `program.pkl` esté vacío.
-- Añadir bandera `USE_DSPY_PO=1` en `make po`.
-  - Estado (2025-11-17 11:35): Makefile propaga USE_DSPY_PO y scripts/run_product_owner.py carga el snapshot DSPy con fallback automático si Vertex falla (ahora usando `ollama/granite4` por defecto para mantener el provider local; se puede ajustar con `DSPY_PO_LM`).
+- Conectar `make po` y `scripts/run_product_owner.py` a `features.use_dspy_product_owner` (manteniendo `USE_DSPY_PO` solo como override puntual).
+  - Estado (2025-11-17 12:45): 📌 **Completado.** `config.yaml` ahora incluye `features.use_dspy_product_owner`, `Makefile` deja de forzar `USE_DSPY_PO=0` y el script usa el flag como default, permitiendo overrides con `USE_DSPY_PO=0|1` cuando se necesite un cambio temporal.
     * El loader aplica `program_components.json` (instructions+demos) y sanitiza YAML antes de escribir.
-    * El LM para DSPy corre localmente (`ollama/granite4` por defecto); se expondrá una ruta LoRA para mejorar performance sin depender de Vertex.
+    * `scripts/dspy_lm_helper.py` soporta overrides `DSPY_PRODUCT_OWNER_LM`, `_TEMPERATURE`, `_MAX_TOKENS` para pruebas rápidas sin editar el YAML principal.
+    * LM por defecto: `ollama/granite4`, totalmente local. Vertex se mantiene como fallback manual cuando vuelva la red.
+    * 2025-11-17 13:40: además se ajustó `scripts/run_product_owner.py` para que el concepto se lea siempre desde `planning/requirements.yaml` (env `CONCEPT` solo opera cuando ese meta falta), evitando divergencias BA→PO.
 - Ejecutar `make ba → po → plan` con historia real y adjuntar logs/evidencia.
-  - Estado (2025-11-17 11:38): intento fallido al invocar `make ba` (error dspy.settings thread en `scripts/run_ba.py`); se requiere ajustar BA DSPy para permitir configure en threads o forzar modo legacy antes de repetir la prueba.
+  - Referencia fix BA: ver `docs/BA_DSPY_THREADFIX_PLAN.md` (2025-11-17) para resolver el error dspy.settings al llamar `make ba`.
+    * Estado actual: thread fix aplicado; la corrida se detiene por falta de acceso al LLM remoto (ver plan para reintentar cuando haya red/GCP).
+    * Plan aprobado: ver `docs/BA_DSPY_THREADFIX_PLAN.md` (sección DSPy Local LM) para configurar BA con `DSPY_BA_LM` y modelos locales.
+    * Validación 2025-11-17: `make ba` completado usando `DSPY_BA_LM=ollama/granite4`; falta repetir con logs formales cuando tengamos un LM local estable.
+
+    * Estado actual: thread fix aplicado; la corrida se detiene por falta de acceso al LLM remoto (ver plan para reintentar cuando haya red/GCP).
+    * Plan aprobado: ver `docs/BA_DSPY_THREADFIX_PLAN.md` (sección DSPy Local LM) para configurar BA con `DSPY_BA_LM` y modelos locales.
+  - Estado (2025-11-17 11:38): `make ba` ya no falla por hilos; la ejecución se detiene porque el proveedor remoto no está disponible (`Operation not permitted`). Próximo paso: habilitar LM local (ver plan) o reintentar con red.
 
 ### 9.0.10 - Integration & Testing
 
 **Cambios Requeridos**:
 1. Actualizar `scripts/run_product_owner.py` para cargar el programa optimizado (`program.pkl`) si existe
 2. Ajustar `prompts/product_owner.md` para reflejar nuevas instrucciones y placeholders DSPy
-3. Añadir bandera `USE_DSPY_PO=1` en `make po` para habilitar el modelo optimizado
+3. Enlazar `make po` y `scripts/run_product_owner.py` a `features.use_dspy_product_owner` (con `USE_DSPY_PO` como override opcional)
 4. Ejecutar `make ba → po → plan` con conceptos reales y validar artefactos
 
 **Criterios de Aceptación**:
@@ -2049,3 +2058,19 @@ Con 29 € disponibles confirmamos que había margen para un intento con `gemi
   2. Si todavía apuntamos a ≥85, evaluar cuarta corrida con ajustes adicionales (e.g., `max_tokens` elevado, `num_trials` 25 o seeds nuevos) antes de cerrar 9.0.8.
 
 
+
+### 9.X - Plan para LM independiente por rol (aprobado 2025-11-17)
+- Contexto: actualmente PO y BA ya leen sus LMs desde `config.yaml` (flags `features.use_dspy_ba` / `features.use_dspy_product_owner` + overrides `DSPY_<ROL>_*`). El refactor general unificará todos los roles.
+1. Definir variables `DSPY_<ROL>_LM`, `DSPY_<ROL>_MAX_TOKENS`, `DSPY_<ROL>_TEMPERATURE` en `config.yaml`/env para BA, PO, Architect, Dev y QA, reutilizando los valores existentes en `config.yaml` como default.
+2. Ajustar `scripts/run_<rol>.py` para leer esas variables y configurar `dspy.LM` con fallback a modelos locales (Ollama). Si se quiere Vertex u otros proveedores, bastará con cambiar la variable.
+3. Documentar en un anexo (por rol) cómo cambiar el LM sin tocar el código y actualizar este plan con el estado de cada rol.
+4. Verificación: ejecutar `make <rol>` con los modelos locales y guardar logs en `logs/mipro/<rol>/`.
+
+Estado: Fase en marcha. BA y PO ya consumen modelos DSPy directamente desde config.yaml (ver scripts/dspy_lm_helper.py). Pendiente aplicar la misma capa en Architect, Dev y QA.
+
+1. Definir variables de entorno `DSPY_<ROL>_LM`, `DSPY_<ROL>_MAX_TOKENS`, `DSPY_<ROL>_TEMPERATURE` para BA, PO, Architect, Dev y QA.
+2. Ajustar cada `scripts/run_<rol>.py` para leer dichas variables, configurar `dspy.LM` con fallback a modelos locales (Ollama) y solo opcionalmente usar Vertex/otros si se especifica.
+3. Documentar en `docs/<rol>_DSPY.md` cómo cambiar los modelos y actualizar `docs/fase9...` con el estado de cada rol.
+4. Verificación: ejecutar `make <rol>` para cada rol en modo local y guardar logs en `logs/mipro/<rol>/`.
+
+Estado: A la espera de aprobación para proceder con el refactor general.

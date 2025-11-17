@@ -156,3 +156,4 @@ a2a:
     mode: none
 features:
   use_dspy_ba: true
+  use_dspy_product_owner: true

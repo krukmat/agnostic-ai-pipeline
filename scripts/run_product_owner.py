@@ -11,12 +11,15 @@ from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
 
+CONFIG_PATH = ROOT / "config.yaml"
+
 DSPY_CACHE_DIR = Path(os.environ.get("DSPY_CACHEDIR", "/tmp/dspy_cache"))
 DSPY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("DSPY_CACHEDIR", str(DSPY_CACHE_DIR))
 
 import dspy
 from dspy_baseline.modules.product_owner import ProductOwnerModule
+from scripts.dspy_lm_helper import build_lm_for_role
 
 PO_PROMPT = (ROOT / "prompts" / "product_owner.md").read_text(encoding="utf-8")
 VISION_PATH = PLANNING / "product_vision.yaml"
@@ -106,6 +109,46 @@ def build_user_payload(concept: str, existing_vision: str, requirements: str) ->
     )
 
 
+def _load_config() -> dict:
+    try:
+        return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        return {}
+
+
+def _normalize_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if not cleaned:
+            return default
+        if cleaned in {"1", "true", "yes", "on"}:
+            return True
+        if cleaned in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def _use_dspy_po() -> bool:
+    config = _load_config()
+    features_candidate = config.get("features", {})
+    features = features_candidate if isinstance(features_candidate, dict) else {}
+    flag_value = features.get("use_dspy_product_owner")
+    if flag_value is None:
+        flag_value = features.get("use_dspy_po")
+    config_flag = _normalize_bool(flag_value, default=False)
+
+    env_override = os.environ.get("USE_DSPY_PO")
+    if env_override is not None and env_override.strip() != "":
+        return _normalize_bool(env_override, config_flag)
+    return config_flag
+
+
 async def main() -> None:
     ensure_dirs()
 
@@ -115,17 +158,23 @@ async def main() -> None:
         raise SystemExit(1)
 
     requirements_content = requirements_path.read_text(encoding="utf-8")
-    concept_env = os.environ.get("CONCEPT", "").strip()
     concept_meta = extract_original_concept(requirements_content)
-    concept = concept_env or concept_meta
+    concept_env = os.environ.get("CONCEPT", "").strip()
+    concept = concept_meta or concept_env
+    if concept_env and not concept_meta:
+        logger.info("[PO] Using CONCEPT from environment because requirements metadata was empty.")
+    elif concept_env and concept_meta and concept_env != concept_meta:
+        logger.warning(
+            "[PO] CONCEPT env value differs from requirements meta; using requirements version to avoid drift."
+        )
 
     existing_vision = ""
     if VISION_PATH.exists():
         existing_vision = VISION_PATH.read_text(encoding="utf-8")
 
-    use_dspy = os.environ.get("USE_DSPY_PO") == "1"
+    use_dspy = _use_dspy_po()
     if use_dspy:
-        logger.info("[PO] USE_DSPY_PO=1 detected — running optimized DSPy snapshot")
+        logger.info("[PO] DSPy flag enabled — running optimized snapshot")
         try:
             await run_dspy_program(requirements_content, concept, existing_vision)
             return
@@ -193,15 +242,8 @@ async def run_dspy_program(requirements_content: str, concept: str, existing_vis
     with components_path.open("r", encoding="utf-8") as f:
         components = json.load(f)
 
-    lm_spec = os.environ.get("DSPY_PO_LM", "ollama/granite4")
-    lm_kwargs = {
-        "max_tokens": int(os.environ.get("DSPY_PO_MAX_TOKENS", "4096")),
-        "temperature": float(os.environ.get("DSPY_PO_TEMPERATURE", "0.3")),
-    }
-    if lm_spec.startswith("ollama/"):
-        lm_kwargs["base_url"] = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-
-    dspy.configure(lm=dspy.LM(lm_spec, **lm_kwargs))
+    lm = build_lm_for_role("product_owner")
+    dspy.configure(lm=lm)
 
     module = ProductOwnerModule()
 

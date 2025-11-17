@@ -182,6 +182,15 @@ Key Files
 - Scripts: `scripts/generate_dspy_testcases.py`, `scripts/lint_dspy_testcases.py`
 - Artifacts: `planning/*.yaml`, `artifacts/dspy/testcases/*.md`
 
+#### DSPy vs. legacy – how each role is configured
+- **Single source of truth**: `config.yaml` controls provider/model/temperature per role for both legacy clients and DSPy modules. You no longer need to duplicate these values elsewhere.
+- **Business Analyst**: toggle `features.use_dspy_ba` to switch between the DSPy baseline and the legacy `ba_legacy.py`. When DSPy is enabled, `scripts/run_ba.py` builds an LM with the `roles.ba` settings.
+- **Product Owner**: toggle `features.use_dspy_product_owner`. When true, `scripts/run_product_owner.py` loads the frozen DSPy snapshot in `artifacts/dspy/po_optimized_full_snapshot_*` and uses the LM described under `roles.product_owner`. When false, the legacy LLM client runs with the same config defaults.
+- **Concept source**: regardless of DSPy/legacy mode, the PO script pulls the concept from `planning/requirements.yaml` (`meta.original_request`) so it always matches the BA output. Setting `CONCEPT="..." make po` is only needed for local experiments when BA hasn’t run yet.
+- **Other roles (Architect/Dev/QA)**: still run in legacy mode today. The migration path (plan 9.X in `docs/fase9_multi_role_dspy_plan.md`) states that they will reuse this exact mechanism once their DSPy snapshots are ready.
+- **Temporary overrides**: to experiment without editing `config.yaml`, export `DSPY_<ROLE>_LM`, `DSPY_<ROLE>_TEMPERATURE`, or `DSPY_<ROLE>_MAX_TOKENS` (for example `DSPY_PRODUCT_OWNER_LM=ollama/qwen2.5`). These environment variables override the LM spec only for that run. You can also force/disable PO DSPy with `USE_DSPY_PO=1` or `USE_DSPY_PO=0`.
+If a provider is unavailable (e.g., Ollama is stopped) the scripts log the failure and, when applicable, fall back to the legacy path so the pipeline keeps moving.
+
 Datasets & Tuning
 - Curated datasets viven en `dspy_baseline/data/production/` (JSONL + `manifest.json` con hashes), formateados para cargarse como `dspy.Example`.
 - Optimización opcional vía `dspy_baseline/optimizers/mipro.py` y el CLI `scripts/tune_dspy.py` (`--role`, `--trainset`, `--valset`, `--metric`, `--stop-metric`, `--num-candidates`, `--max-iters`, `--seed`). Ejecuta `dspy.configure(lm=...)` antes de lanzar el tuning.

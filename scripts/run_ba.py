@@ -23,7 +23,8 @@ import importlib.util
 from dspy_baseline.modules.ba_requirements import (
     generate_requirements as dsp_generate,
 )
-from dspy_baseline.scripts.run_ba import load_llm_config
+from scripts.dspy_lm_helper import build_lm_for_role
+import dspy
 
 
 def _load_legacy_module():
@@ -47,8 +48,9 @@ def _use_dspy() -> bool:
 
 def _run_dspy(concept: str) -> dict[str, str]:
     ensure_dirs()
-    lm = load_llm_config()
-    payload = dsp_generate(concept=concept, lm=lm)
+    lm = build_lm_for_role("ba")
+    dspy.configure(lm=lm)
+    payload = dsp_generate(concept=concept, lm=None)
 
     data: dict = {"meta": {"original_request": concept}}
     if isinstance(payload, dict):
@@ -70,7 +72,7 @@ def _run_dspy(concept: str) -> dict[str, str]:
 
 async def generate_requirements(concept: str) -> dict[str, str]:
     if _use_dspy():
-        return await asyncio.to_thread(_run_dspy, concept)
+        return _run_dspy(concept)
     logger.info("[BA] DSPy disabled; using legacy implementation.")
     legacy_module = _load_legacy_module()
     return await legacy_module.generate_requirements(concept)
