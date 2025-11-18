@@ -247,17 +247,32 @@ def _build_stub_stories_from_requirements(requirements_yaml: str, max_stories: i
         desc = str(data.get("description") or "Core capability").strip()
         picked = [f"{title}: {desc}"]
 
+    def _estimate_for(text: str) -> int:
+        w = len(text.split())
+        if w <= 6:
+            return 3
+        if w <= 14:
+            return 5
+        return 8
+
     for i, text in enumerate(picked, start=1):
         sentence = text.split(".")[0].strip()
         if not sentence.endswith("."):
             sentence = sentence + "."
+        estimate = _estimate_for(sentence)
+        acceptance = [
+            f"Implements: {sentence.rstrip('.')}",
+            "Acceptance tests validate main path",
+        ]
         stories.append(
             {
                 "id": f"S{i}",
                 "epic": "EPIC-ARCH",
                 "title": sentence,
                 "description": sentence,
-                "acceptance": [],
+                "acceptance": acceptance,
+                "depends_on": [],
+                "estimate": estimate,
                 "priority": "Medium",
                 "status": "To Do",
             }

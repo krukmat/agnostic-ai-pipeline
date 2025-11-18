@@ -45,7 +45,11 @@ def _normalize_po_yaml(content: str) -> str:
         if stripped.startswith("-"):
             payload = stripped[1:].lstrip()
             if payload:
-                if payload[0] in (">", "<"):
+                # Quote bullets that start with special characters that YAML treats as directives/tokens
+                if payload[0] in ("%", "&", "*", "#", "!", "?", "@", "[", "]", "{", "}", ","):
+                    payload_q = payload.replace('"', '\\"')
+                    line = " " * indent + f"- \"{payload_q}\""
+                elif payload[0] in (">", "<"):
                     payload = payload.replace('"', '\\"')
                     line = " " * indent + f"- \"{payload}\""
                 else:
