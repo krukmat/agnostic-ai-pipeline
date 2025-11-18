@@ -6,6 +6,6 @@ pytest>=8.0
 fastapi
 fastapi>=0.112
 uvicorn
-google-genai>=0.6.0
+google-genai>=1.46.0
 rorf>=0.1.0
 uvicorn

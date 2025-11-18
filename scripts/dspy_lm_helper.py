@@ -99,8 +99,6 @@ def build_lm_for_role(role: str) -> dspy.LM:
         lm_spec = f"openai/{model}"
     elif provider == "claude_cli":
         lm_spec = f"anthropic/{model}"
-    elif provider == "codex_cli":
-        lm_spec = f"codex_cli/{model}"
     else:
         base_url = providers_cfg.get("ollama", {}).get("base_url")
         base_url = base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")

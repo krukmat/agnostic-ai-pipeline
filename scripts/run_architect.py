@@ -9,12 +9,18 @@ import hashlib
 import time
 from typing import List, Tuple, Optional
 
+import dspy
 import yaml
 import typer
 
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
+from scripts.dspy_lm_helper import build_lm_for_role
+from dspy_baseline.modules.architect import (
+    StoriesEpicsModule,
+    ArchitectureModule,
+)
 
 
 ARCHITECT_PROMPTS = {
@@ -33,9 +39,126 @@ COMPLEXITY_CLASSIFIER_PROMPT = (
 _COMPLEXITY_CACHE: dict[str, tuple[str, float]] = {}
 COMPLEXITY_CACHE_TTL_SECONDS = 300
 DEBUG_DIR = ART / "debug"
+CONFIG_PATH = ROOT / "config.yaml"
+
+
+def _load_config() -> dict:
+    try:
+        return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        return {}
+
+
+def _normalize_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if not cleaned:
+            return default
+        if cleaned in {"1", "true", "yes", "on"}:
+            return True
+        if cleaned in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def _use_dspy_architect() -> bool:
+    config = _load_config()
+    features_candidate = config.get("features", {})
+    features = features_candidate if isinstance(features_candidate, dict) else {}
+    flag_value = features.get("use_dspy_architect")
+    config_flag = _normalize_bool(flag_value, default=False)
+    env_override = os.environ.get("USE_DSPY_ARCHITECT")
+    if env_override is not None and env_override.strip() != "":
+        return _normalize_bool(env_override, config_flag)
+    return config_flag
 
 def _complexity_cache_key(requirements_text: str) -> str:
     return hashlib.sha256(requirements_text.encode("utf-8")).hexdigest()
+
+
+def _run_dspy_pipeline(
+    concept: str,
+    requirements_yaml: str,
+    product_vision: str,
+    complexity_tier: str,
+) -> dict:
+    """Execute the modular DSPy pipeline (stories → architecture → PRD)."""
+    tier_value = (complexity_tier or "medium").strip().lower() or "medium"
+    lm = build_lm_for_role("architect")
+    stories_module = StoriesEpicsModule()
+    architecture_module = ArchitectureModule()
+    with dspy.context(lm=lm):
+        stories_prediction = stories_module(
+            concept=concept,
+            requirements_yaml=requirements_yaml,
+            product_vision=product_vision or "",
+            complexity_tier=tier_value,
+        )
+        stories_epics_json = getattr(stories_prediction, "stories_epics_json", "") or ""
+
+        architecture_prediction = architecture_module(
+            concept=concept,
+            requirements_yaml=requirements_yaml,
+            product_vision=product_vision or "",
+            complexity_tier=tier_value,
+            stories_epics_json=stories_epics_json,
+        )
+        architecture_yaml = getattr(architecture_prediction, "architecture_yaml", "") or ""
+
+    stories_yaml, epics_yaml = _convert_stories_epics_to_yaml(stories_epics_json)
+    architecture_yaml = _sanitize_yaml_block(architecture_yaml)
+    return {
+        "stories_yaml": stories_yaml,
+        "epics_yaml": epics_yaml,
+        "architecture_yaml": architecture_yaml,
+    }
+
+
+def _convert_stories_epics_to_yaml(raw_text: str) -> tuple[str, str]:
+    if not raw_text.strip():
+        return "", ""
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        try:
+            data = yaml.safe_load(raw_text)
+        except yaml.YAMLError:
+            data = None
+
+    if isinstance(data, dict):
+        stories = data.get("stories", [])
+        epics = data.get("epics", [])
+    else:
+        stories = []
+        epics = []
+
+    stories_yaml = _sanitize_yaml_block(stories)
+    epics_yaml = _sanitize_yaml_block(epics)
+    return stories_yaml, epics_yaml
+
+
+def _sanitize_yaml_block(value) -> str:
+    if not value:
+        return ""
+    if isinstance(value, str):
+        cleaned = re.sub(r"```(?:yaml)?", "", value, flags=re.IGNORECASE)
+        cleaned = cleaned.replace("```", "")
+        return cleaned.strip()
+    try:
+        return yaml.safe_dump(
+            value,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
+        ).strip()
+    except yaml.YAMLError:
+        return str(value).strip()
 
 def get_architect_prompt(mode: str, tier: str) -> str:
     if mode == "review_adjustment":
@@ -269,20 +392,48 @@ async def run_architect_job(
     detail_level: str = "medium",
     iteration_count: int = 1,
     force_tier: str | None = None,
+    allow_partial_blocks: bool = False,
 ) -> dict:
     logger.debug("[ARCHITECT] Starting run_architect_job")
     ensure_dirs()
     logger.debug("[ARCHITECT] Directories ensured")
-
     requirements_path = PLANNING / "requirements.yaml"
     requirements_content = requirements_path.read_text(encoding="utf-8") if requirements_path.exists() else ""
     logger.debug(f"[ARCHITECT] Requirements loaded: {len(requirements_content)} chars")
+    vision_path = PLANNING / "product_vision.yaml"
+    product_vision_content = vision_path.read_text(encoding="utf-8") if vision_path.exists() else ""
     concept_meta = extract_original_concept(requirements_content)
     concept_value = (concept or "").strip() or concept_meta
     logger.debug(f"[ARCHITECT] Concept value: {concept_value}")
 
     stories_content, _stories_snapshot = load_stories()
     logger.debug("[ARCHITECT] Stories loaded")
+
+    if _use_dspy_architect():
+        tier_value = (force_tier or await classify_complexity_with_llm(requirements_content)).strip().lower() or "medium"
+        logger.info(f"[ARCHITECT][DSPy] Running modular DSPy pipeline with tier '{tier_value}'.")
+        outputs = _run_dspy_pipeline(
+            concept=concept_value,
+            requirements_yaml=requirements_content,
+            product_vision=product_vision_content,
+            complexity_tier=tier_value,
+        )
+        (PLANNING / "stories.yaml").write_text(outputs["stories_yaml"], encoding="utf-8")
+        (PLANNING / "epics.yaml").write_text(outputs["epics_yaml"], encoding="utf-8")
+        (PLANNING / "architecture.yaml").write_text(outputs["architecture_yaml"], encoding="utf-8")
+        if outputs.get("prd_yaml"):
+            (PLANNING / "prd_generated.yaml").write_text(outputs["prd_yaml"], encoding="utf-8")
+        print("✓ Architect DSPy pipeline completed.")
+        return {
+            "mode": "dspy",
+            "concept": concept_value,
+            "complexity_tier": tier_value,
+            "outputs": {
+                "stories": str(PLANNING / "stories.yaml"),
+                "epics": str(PLANNING / "epics.yaml"),
+                "architecture": str(PLANNING / "architecture.yaml"),
+            },
+        }
 
     if architect_mode == "review_adjustment" and story_id:
         print(f"[ARCHITECT] Programmatic review adjustment for {story_id} (level={detail_level}, iteration={iteration_count})")
@@ -389,6 +540,57 @@ async def run_architect_job(
         match = pattern.search(text)
         return match.group(1).strip() if match else ""
 
+    inline_json_pattern = re.compile(r"^(\s*)([^:#\n]+):(.*)$")
+    emphasis_pattern = re.compile(r"(\*\*?)([^\*\n]+)(\*\*?)")
+
+    def _strip_markdown_emphasis(content: str) -> str:
+        def replace(match: re.Match) -> str:
+            prefix, text, suffix = match.groups()
+            if prefix == suffix and prefix in ("**", "*"):
+                text = text.replace('"', '\\"')
+                return f"\"{text}\""
+            return match.group(0)
+
+        return emphasis_pattern.sub(replace, content)
+
+    def _normalize_inline_json(content: str) -> str:
+        """Expand inline JSON objects/arrays into multiline YAML for safe loading."""
+        if not content.strip():
+            return content
+
+        normalized_lines: list[str] = []
+        for line in content.splitlines():
+            match = inline_json_pattern.match(line)
+            if not match:
+                normalized_lines.append(line)
+                continue
+
+            leading_ws, key, remainder = match.groups()
+            value = remainder.strip()
+            if not value or (value[0] not in "{[" or not value.endswith(("}", "]"))):
+                normalized_lines.append(line)
+                continue
+
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                normalized_lines.append(line)
+                continue
+
+            key_line = f"{leading_ws}{key.strip()}:"
+            normalized_lines.append(key_line)
+            dumped = yaml.safe_dump(
+                parsed,
+                sort_keys=False,
+                allow_unicode=True,
+                default_flow_style=False,
+            ).rstrip()
+            child_indent = leading_ws + "  "
+            for sub_line in dumped.splitlines():
+                normalized_lines.append(f"{child_indent}{sub_line}")
+
+        return "\n".join(normalized_lines)
+
     def sanitize_yaml(content: str) -> str:
         """Remove markdown backticks from YAML content to prevent parsing errors.
 
@@ -397,9 +599,12 @@ async def run_architect_job(
         if not content.strip():
             return content
 
+        prepped = _strip_markdown_emphasis(content)
+        normalized = _normalize_inline_json(prepped)
+
         try:
             # Try to parse and re-serialize to ensure valid YAML
-            data = yaml.safe_load(content)
+            data = yaml.safe_load(normalized)
             # Re-serialize with safe_dump to ensure proper formatting
             sanitized = yaml.safe_dump(
                 data,
@@ -415,7 +620,7 @@ async def run_architect_job(
 
             # Remove backticks from YAML values
             # Pattern: match backticks that are likely markdown formatting
-            cleaned = re.sub(r'`([^`]+?)`', r'\1', content)
+            cleaned = re.sub(r'`([^`]+?)`', r'\1', normalized)
 
             # Try parsing again after cleanup
             try:
@@ -435,9 +640,8 @@ async def run_architect_job(
 
     # Extract and save all planning artifacts
     prd_content = grab("yaml", "PRD")
-    if not prd_content:
+    if not prd_content and not allow_partial_blocks:
         print("[ARCHITECT] WARNING: PRD block missing in LLM response. Retrying...")
-        # Simple retry logic for missing blocks
         text = await client.chat(system=arch_prompt, user=user_input)
         retry_path = DEBUG_DIR / "debug_architect_response_retry_prd.txt"
         save_text(retry_path, text)
@@ -446,11 +650,13 @@ async def run_architect_job(
         if not prd_content:
             print("[ARCHITECT] ERROR: PRD block still missing after retry.")
 
+    if not prd_content and allow_partial_blocks:
+        logger.warning("[ARCHITECT] Proceeding without PRD block (allow_partial_blocks=True).")
+
     arch_content = grab("yaml", "ARCHITECTURE")
-    if not arch_content:
+    if not arch_content and not allow_partial_blocks:
         print("[ARCHITECT] WARNING: ARCHITECTURE block missing in LLM response. Retrying...")
-        # Retry logic for missing blocks
-        for i in range(1, 3): # Try up to 2 more times
+        for i in range(1, 3):
             text = await client.chat(system=arch_prompt, user=user_input)
             retry_path = DEBUG_DIR / f"debug_architect_response_retry_arch_{i}.txt"
             save_text(retry_path, text)
@@ -462,11 +668,13 @@ async def run_architect_job(
         if not arch_content:
             print("[ARCHITECT] ERROR: ARCHITECTURE block still missing after retry.")
 
+    if not arch_content and allow_partial_blocks:
+        logger.warning("[ARCHITECT] Proceeding without ARCHITECTURE block (allow_partial_blocks=True).")
+
     tasks_content = grab("csv", "TASKS")
-    if not tasks_content:
+    if not tasks_content and not allow_partial_blocks:
         print("[ARCHITECT] WARNING: TASKS block missing in LLM response. Retrying...")
-        # Retry logic for missing blocks
-        for i in range(1, 3): # Try up to 2 more times
+        for i in range(1, 3):
             text = await client.chat(system=arch_prompt, user=user_input)
             retry_path = DEBUG_DIR / f"debug_architect_response_retry_tasks_{i}.txt"
             save_text(retry_path, text)
@@ -477,6 +685,9 @@ async def run_architect_job(
                 break
         if not tasks_content:
             print("[ARCHITECT] ERROR: TASKS block still missing after retry.")
+
+    if not tasks_content and allow_partial_blocks:
+        logger.warning("[ARCHITECT] Proceeding without TASKS block (allow_partial_blocks=True).")
 
     # Task: fix-stories - Apply YAML sanitization to all outputs
     # Only write files that have actual content (not empty)

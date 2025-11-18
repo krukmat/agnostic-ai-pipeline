@@ -26,6 +26,48 @@ VISION_PATH = PLANNING / "product_vision.yaml"
 REVIEW_PATH = PLANNING / "product_owner_review.yaml"
 DEBUG_PATH = ART / "debug" / "debug_product_owner_response.txt"
 
+_THIN_SPACE_CHARS = ("\u202f", "\u00a0", "\u2007")
+
+
+def _normalize_po_yaml(content: str) -> str:
+    """Pre-process Gemini output so yaml.safe_load can handle human text lists."""
+    lines = content.splitlines()
+    normalized: list[str] = []
+    for raw_line in lines:
+        line = raw_line
+        for ch in _THIN_SPACE_CHARS:
+            if ch in line:
+                line = line.replace(ch, " ")
+
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        if stripped.startswith("-"):
+            payload = stripped[1:].lstrip()
+            if payload:
+                if payload[0] in (">", "<"):
+                    payload = payload.replace('"', '\\"')
+                    line = " " * indent + f"- \"{payload}\""
+                else:
+                    colon_idx = payload.find(":")
+                    if colon_idx != -1:
+                        key_part = payload[:colon_idx]
+                        remainder = payload[colon_idx + 1 :].strip()
+                        key_has_spaces = " " in key_part.strip()
+                        key_has_unicode = any(ord(ch) > 127 for ch in key_part)
+                        key_is_simple = re.fullmatch(r"[\w-]+", key_part.strip() or "") is not None
+                        if remainder and (key_has_spaces or key_has_unicode) and not key_is_simple:
+                            quoted = payload.replace('"', '\\"')
+                            line = " " * indent + f"- \"{quoted}\""
+        else:
+            if stripped and stripped[0] in (">", "<"):
+                payload = stripped.replace('"', '\\"')
+                line = " " * indent + f"\"{payload}\""
+
+        normalized.append(line)
+
+    return "\n".join(normalized)
+
 
 def extract_original_concept(requirements_text: str) -> str:
     if not requirements_text.strip():
@@ -61,9 +103,11 @@ def sanitize_yaml(content: str) -> str:
     if not content.strip():
         return content
 
+    prepared = _normalize_po_yaml(content)
+
     try:
         # Try to parse and re-serialize to ensure valid YAML
-        data = yaml.safe_load(content)
+        data = yaml.safe_load(prepared)
         # Re-serialize with safe_dump to ensure proper formatting
         sanitized = yaml.safe_dump(
             data,
@@ -79,7 +123,7 @@ def sanitize_yaml(content: str) -> str:
 
         # Remove backticks from YAML values
         # Pattern: match backticks that are likely markdown formatting
-        cleaned = re.sub(r'`([^`]+?)`', r'\1', content)
+        cleaned = re.sub(r'`([^`]+?)`', r'\1', prepared)
 
         # Try parsing again after cleanup
         try:

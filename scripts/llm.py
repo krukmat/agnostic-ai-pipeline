@@ -107,6 +107,7 @@ class Client:
         self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434"
         self.oai_base = os.environ.get("OPENAI_API_BASE") or "http://localhost:4010/v1"
         self.oai_key = os.environ.get("OPENAI_API_KEY", "dummy")
+        self.google_api_key = os.environ.get("GEMINI_API_KEY")
 
         # CLI provider defaults
         self.cli_command = None
@@ -145,6 +146,11 @@ class Client:
             self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or base_url or self.ollama_base
         elif self.provider_type == "openai":
             self.oai_base = os.environ.get("OPENAI_API_BASE") or base_url or self.oai_base
+            if provider_cfg.get("api_key"):
+                self.oai_key = provider_cfg["api_key"]
+        elif self.provider_type == "google_ai_gemini":
+            if provider_cfg.get("api_key"):
+                self.google_api_key = provider_cfg["api_key"]
         elif self.provider_type in ("codex_cli", "claude_cli"):
             default_command = ["codex", "chat"] if self.provider_type == "codex_cli" else ["claude", "-p", "--print"]
             self.cli_command = provider_cfg.get("command", default_command)
@@ -195,7 +201,7 @@ class Client:
             maxt = legacy_args[3] if len(legacy_args) >= 4 else None
             base = legacy_args[4] if len(legacy_args) >= 5 else None
 
-            if prov in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli"):
+            if prov in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli", "google_ai_gemini"):
                 self.provider_type = prov
             if isinstance(model, str) and model:
                 self.model = model
@@ -218,7 +224,7 @@ class Client:
             self.max_tokens = int(overrides["max_tokens"])
         if "provider" in overrides and overrides["provider"]:
             p = str(overrides["provider"]).strip().lower()
-            if p in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli"):
+            if p in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli", "google_ai_gemini"):
                 self.provider_type = p
         if "base_url" in overrides and overrides["base_url"]:
             if self.provider_type == "ollama":
@@ -251,6 +257,9 @@ class Client:
         elif self.provider_type == "openai":
             logger.debug("[LLM] Using OpenAI provider.")
             return await self._openai_chat(system, user)
+        elif self.provider_type == "google_ai_gemini":
+            logger.debug("[LLM] Using Google AI Gemini provider.")
+            return await asyncio.to_thread(self._google_gemini_chat, system, user)
         else:
             # Ollama models should not have "ollama/" prefix
             model_name_for_ollama = self.model
@@ -388,6 +397,43 @@ class Client:
             except Exception as exc:
                 logger.error(f"[LLM] Unexpected OpenAI chat response format: {exc}. Full response: {json.dumps(data)[:200]}...")
                 return json.dumps(data)
+
+    def _google_gemini_chat(self, system: str, user: str) -> str:
+        try:
+            from google import genai
+        except ImportError as exc:
+            raise RuntimeError("google-genai package not installed. Run `pip install google-genai`." ) from exc
+
+        api_key = self.google_api_key or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY is not set for google_ai_gemini provider.")
+
+        client = genai.Client(api_key=api_key)
+        model_name = self.model or "gemini-2.5-pro"
+        prompt = f"{system.strip()}\n\n{user.strip()}".strip()
+        logger.debug(f"[LLM] Google Gemini payload prepared. Model: {model_name}")
+
+        response = client.models.generate_content(model=model_name, contents=prompt)
+
+        text = getattr(response, "text", None)
+        if text:
+            return text
+
+        candidates = getattr(response, "candidates", None)
+        if candidates:
+            parts: list[str] = []
+            for candidate in candidates:
+                content = getattr(candidate, "content", None)
+                if not content:
+                    continue
+                for part in getattr(content, "parts", []) or []:
+                    value = getattr(part, "text", None)
+                    if value:
+                        parts.append(value)
+            if parts:
+                return "\n".join(parts)
+
+        raise RuntimeError("Google Gemini response did not contain text output.")
 
     async def _cli_chat_async(self, system: str, user: str) -> str:
         """Async version of _cli_chat using asyncio subprocess.

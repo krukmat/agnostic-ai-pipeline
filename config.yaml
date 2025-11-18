@@ -40,14 +40,14 @@ providers:
     log_stderr: true
   vertex_cli:
     type: vertex_cli
-    project_id: agnostic-pipeline-476015
+    project_id: agnostic-pipeline-478600
     location: europe-west1
     model: gemini-2.5-flash
     temperature: 0.2
     max_output_tokens: 2048
   vertex_sdk:
     type: vertex_sdk
-    project_id: agnostic-pipeline-476015
+    project_id: agnostic-pipeline-478600
     location: europe-west1
     model: gemini-2.5-flash
     temperature: 0.2
@@ -60,10 +60,10 @@ roles:
     max_tokens: 8192
     top_p: 0.95
   architect:
-    provider: ollama
-    model: granite4
+    provider: vertex_sdk
+    model: gemini-2.5-flash
     temperature: 0.2
-    max_tokens: 4096
+    max_tokens: 12000
     top_p: 0.95
   dev:
     provider: vertex_sdk
@@ -99,8 +99,8 @@ roles:
     max_tokens: 8192
     top_p: 0.5
   product_owner:
-    provider: ollama
-    model: granite4
+    provider: vertex_sdk
+    model: gemini-2.5-flash
     temperature: 0.6
     max_tokens: 8192
     top_p: 0.95
@@ -157,3 +157,4 @@ a2a:
 features:
   use_dspy_ba: true
   use_dspy_product_owner: true
+  use_dspy_architect: true

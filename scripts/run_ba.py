@@ -49,8 +49,8 @@ def _use_dspy() -> bool:
 def _run_dspy(concept: str) -> dict[str, str]:
     ensure_dirs()
     lm = build_lm_for_role("ba")
-    dspy.configure(lm=lm)
-    payload = dsp_generate(concept=concept, lm=None)
+    with dspy.context(lm=lm):
+        payload = dsp_generate(concept=concept, lm=None)
 
     data: dict = {"meta": {"original_request": concept}}
     if isinstance(payload, dict):
