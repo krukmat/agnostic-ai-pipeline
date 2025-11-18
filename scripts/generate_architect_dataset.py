@@ -259,16 +259,19 @@ def _build_stub_stories_from_requirements(requirements_yaml: str, max_stories: i
         sentence = text.split(".")[0].strip()
         if not sentence.endswith("."):
             sentence = sentence + "."
+        concise = sentence.rstrip(".")
         estimate = _estimate_for(sentence)
+        # Gherkin‑like acceptance to improve story completeness
         acceptance = [
-            f"Implements: {sentence.rstrip('.')}",
-            "Acceptance tests validate main path",
+            f"Given the system context, when implementing '{concise}', then the feature works end-to-end.",
+            "Given unit and integration tests, when executed in CI, then they pass for core flows.",
+            "Given documented edge cases, when tested, then no critical regressions are found.",
         ]
         stories.append(
             {
                 "id": f"S{i}",
                 "epic": "EPIC-ARCH",
-                "title": sentence,
+                "title": concise,
                 "description": sentence,
                 "acceptance": acceptance,
                 "depends_on": [],
@@ -370,7 +373,7 @@ def generate(
     arch_only = _bool_like(arch_features.get("arch_only"))
 
     architecture_cap = get_role_output_cap("architect", "architecture")
-    architecture_lm = build_lm_for_role("architect", max_output_tokens=architecture_cap)
+    architecture_lm = build_lm_for_role("architect", max_tokens=architecture_cap)
     architecture_module = ArchitectureModule(lm=architecture_lm)
     arch_provider, arch_model = _lm_metadata(architecture_module.lm)
 
@@ -385,7 +388,7 @@ def generate(
         stories_cap = None
     else:
         stories_cap = get_role_output_cap("architect", "stories")
-        stories_lm = build_lm_for_role("architect", max_output_tokens=stories_cap)
+        stories_lm = build_lm_for_role("architect", max_tokens=stories_cap)
         stories_module = StoriesEpicsModule(lm=stories_lm)
         stories_provider, stories_model = _lm_metadata(stories_module.lm)
         logger.info(

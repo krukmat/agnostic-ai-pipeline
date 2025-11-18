@@ -71,7 +71,7 @@ class StoriesEpicsModule(dspy.Module):
     def __init__(self, lm: dspy.LM | None = None) -> None:
         super().__init__()
         cap = get_role_output_cap("architect", "stories")
-        self.lm = lm or build_lm_for_role("architect", max_output_tokens=cap)
+        self.lm = lm or build_lm_for_role("architect", max_tokens=cap)
         if lm is None:
             logger.info(
                 "[ArchitectDSPy] Stories LM configured: model=%s cap=%s",
@@ -103,7 +103,7 @@ class ArchitectureModule(dspy.Module):
     def __init__(self, lm: dspy.LM | None = None) -> None:
         super().__init__()
         cap = get_role_output_cap("architect", "architecture")
-        self.lm = lm or build_lm_for_role("architect", max_output_tokens=cap)
+        self.lm = lm or build_lm_for_role("architect", max_tokens=cap)
         if lm is None:
             logger.info(
                 "[ArchitectDSPy] Architecture LM configured: model=%s cap=%s",
