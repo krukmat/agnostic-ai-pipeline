@@ -57,9 +57,9 @@ class ArchitectureSignature(dspy.Signature):
 
     architecture_yaml: str = dspy.OutputField(
         desc=(
-            "YAML describing AT MOST 6 top-level components: backend, frontend, data, "
-            "integrations, observability, security. Each component may list up to 4 short "
-            "bullet points (phrases, not paragraphs). Output ONLY the YAML, no prose/markdown."
+            "YAML describing AT MOST 6 top-level components: backend, frontend, data, integrations, observability, security. "
+            "For backend and frontend USE A MAP with at least: framework: <string>. You MAY add small maps/lists (e.g., services: [svcA], api: [REST, GraphQL]). "
+            "For other components USE up to 3 short bullet points (phrases, not paragraphs). Output ONLY the YAML, no prose/markdown."
         )
     )
 

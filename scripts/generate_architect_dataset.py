@@ -80,7 +80,7 @@ VALID_ARCH_COMPONENTS = {
 }
 MAX_STORIES = 6
 MAX_EPICS = 3
-MAX_COMPONENT_POINTS = 4
+MAX_COMPONENT_POINTS = 3
 
 
 def _strip_code_fences(text: str) -> str:
@@ -190,6 +190,64 @@ def parse_and_validate_arch_yaml(raw: str) -> Optional[Dict[str, Any]]:
         return None
 
     for comp, section in data.items():
+        # Allow dicts for backend/frontend to satisfy metric (framework key required)
+        if comp in {"backend", "frontend"} and isinstance(section, dict):
+            fw = section.get("framework")
+            if not isinstance(fw, str) or not fw.strip() or len(fw) > 80:
+                logger.warning(f"[architect-dataset] Component '{comp}' dict missing valid 'framework'.")
+                return None
+            # Optional light validation for small maps/lists inside these sections
+            for k, v in section.items():
+                if k == "framework":
+                    continue
+                if isinstance(v, list):
+                    if len(v) > MAX_COMPONENT_POINTS:
+                        logger.warning(
+                            f"[architect-dataset] Component '{comp}.{k}' has too many items; pruning to {MAX_COMPONENT_POINTS}."
+                        )
+                        v = v[:MAX_COMPONENT_POINTS]
+                        section[k] = v
+                    for item in v:
+                        if not isinstance(item, str) or not item.strip():
+                            logger.warning(f"[architect-dataset] Component '{comp}.{k}' contains non-string item.")
+                            return None
+                elif isinstance(v, str):
+                    if len(v.split()) > 40:
+                        logger.warning(f"[architect-dataset] Component '{comp}.{k}' string too long.")
+                        return None
+                elif isinstance(v, (int, float)):
+                    # allow small scalar values
+                    continue
+                else:
+                    logger.warning(f"[architect-dataset] Component '{comp}.{k}' has unsupported type.")
+                    return None
+            continue
+
+        # Allow a small dict for 'data' (common LM output); no required key, but keep values simple
+        if comp == "data" and isinstance(section, dict):
+            for k, v in section.items():
+                if isinstance(v, list):
+                    if len(v) > MAX_COMPONENT_POINTS:
+                        logger.warning(
+                            f"[architect-dataset] Component '{comp}.{k}' has too many items; pruning to {MAX_COMPONENT_POINTS}."
+                        )
+                        v = v[:MAX_COMPONENT_POINTS]
+                        section[k] = v
+                    for item in v:
+                        if not isinstance(item, str) or not item.strip():
+                            logger.warning(f"[architect-dataset] Component '{comp}.{k}' contains non-string item.")
+                            return None
+                elif isinstance(v, str):
+                    if len(v.split()) > 40:
+                        logger.warning(f"[architect-dataset] Component '{comp}.{k}' string too long.")
+                        return None
+                elif isinstance(v, (int, float)):
+                    continue
+                else:
+                    logger.warning(f"[architect-dataset] Component '{comp}.{k}' has unsupported type.")
+                    return None
+            continue
+
         if isinstance(section, list):
             if len(section) > MAX_COMPONENT_POINTS:
                 logger.warning(f"[architect-dataset] Component '{comp}' has too many bullet points.")
