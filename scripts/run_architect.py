@@ -9,14 +9,12 @@ import hashlib
 import time
 from typing import List, Tuple, Optional
 
-import dspy
 import yaml
 import typer
 
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
-from scripts.dspy_lm_helper import build_lm_for_role
 from dspy_baseline.modules.architect import (
     StoriesEpicsModule,
     ArchitectureModule,
@@ -90,26 +88,24 @@ def _run_dspy_pipeline(
 ) -> dict:
     """Execute the modular DSPy pipeline (stories → architecture → PRD)."""
     tier_value = (complexity_tier or "medium").strip().lower() or "medium"
-    lm = build_lm_for_role("architect")
     stories_module = StoriesEpicsModule()
     architecture_module = ArchitectureModule()
-    with dspy.context(lm=lm):
-        stories_prediction = stories_module(
-            concept=concept,
-            requirements_yaml=requirements_yaml,
-            product_vision=product_vision or "",
-            complexity_tier=tier_value,
-        )
-        stories_epics_json = getattr(stories_prediction, "stories_epics_json", "") or ""
+    stories_prediction = stories_module(
+        concept=concept,
+        requirements_yaml=requirements_yaml,
+        product_vision=product_vision or "",
+        complexity_tier=tier_value,
+    )
+    stories_epics_json = getattr(stories_prediction, "stories_epics_json", "") or ""
 
-        architecture_prediction = architecture_module(
-            concept=concept,
-            requirements_yaml=requirements_yaml,
-            product_vision=product_vision or "",
-            complexity_tier=tier_value,
-            stories_epics_json=stories_epics_json,
-        )
-        architecture_yaml = getattr(architecture_prediction, "architecture_yaml", "") or ""
+    architecture_prediction = architecture_module(
+        concept=concept,
+        requirements_yaml=requirements_yaml,
+        product_vision=product_vision or "",
+        complexity_tier=tier_value,
+        stories_epics_json=stories_epics_json,
+    )
+    architecture_yaml = getattr(architecture_prediction, "architecture_yaml", "") or ""
 
     stories_yaml, epics_yaml = _convert_stories_epics_to_yaml(stories_epics_json)
     architecture_yaml = _sanitize_yaml_block(architecture_yaml)

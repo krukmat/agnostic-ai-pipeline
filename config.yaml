@@ -65,6 +65,13 @@ roles:
     temperature: 0.2
     max_tokens: 12000
     top_p: 0.95
+    output_caps:
+      stories:
+        tokens: 1500      # increased to reduce JSON truncation
+        min_tokens: 600
+      architecture:
+        tokens: 1300
+        min_tokens: 600
   dev:
     provider: vertex_sdk
     model: gemini-2.5-pro
@@ -158,3 +165,5 @@ features:
   use_dspy_ba: true
   use_dspy_product_owner: true
   use_dspy_architect: true
+  architect:
+    arch_only: true

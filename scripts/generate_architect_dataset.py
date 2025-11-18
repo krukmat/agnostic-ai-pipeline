@@ -5,19 +5,28 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import typer
+import yaml
 
-from common import PLANNING
 from dspy_baseline.metrics.architect_metrics import architect_metric
+from dspy_baseline.modules.architect import (
+    ArchitectureModule,
+    StoriesEpicsModule,
+)
 from logger import logger
-from scripts.llm import Client
+from scripts.llm import Client, load_config
 from scripts.po_format import grab_yaml_block
-from scripts.run_architect import run_architect_job
+from scripts.run_architect import (
+    _convert_stories_epics_to_yaml,
+    _sanitize_yaml_block,
+)
 from scripts.run_product_owner import sanitize_yaml as sanitize_po_yaml
+from scripts.dspy_lm_helper import build_lm_for_role, get_role_output_cap
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BA_DATA = ROOT / "dspy_baseline" / "data" / "production" / "ba_train.jsonl"
@@ -61,6 +70,212 @@ class ArchitectSample:
         }
 
 
+VALID_ARCH_COMPONENTS = {
+    "backend",
+    "frontend",
+    "data",
+    "integrations",
+    "observability",
+    "security",
+}
+MAX_STORIES = 6
+MAX_EPICS = 3
+MAX_COMPONENT_POINTS = 4
+
+
+def _strip_code_fences(text: str) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```[a-zA-Z0-9_+-]*\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
+
+
+def _bool_like(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in {"1", "true", "yes", "on"}:
+            return True
+        if v in {"0", "false", "no", "off"}:
+            return False
+    return False
+
+
+def parse_and_validate_stories_json(raw: str) -> Optional[Dict[str, Any]]:
+    text = _strip_code_fences(raw)
+    if not text:
+        logger.warning("[architect-dataset] Empty stories JSON; skipping sample.")
+        return None
+    if not text.endswith("}"):
+        logger.warning("[architect-dataset] Stories JSON missing closing brace (likely truncated).")
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        logger.warning(f"[architect-dataset] Invalid stories JSON: {exc}")
+        return None
+    if not isinstance(data, dict):
+        logger.warning("[architect-dataset] Stories JSON must be an object.")
+        return None
+
+    stories = data.get("stories")
+    if not isinstance(stories, list) or not stories:
+        logger.warning("[architect-dataset] Stories JSON missing 'stories' list.")
+        return None
+    if len(stories) > MAX_STORIES:
+        logger.warning("[architect-dataset] Stories JSON exceeds maximum story count.")
+        return None
+
+    for idx, story in enumerate(stories):
+        if not isinstance(story, dict):
+            logger.warning(f"[architect-dataset] Story #{idx+1} is not an object.")
+            return None
+        description = story.get("description") or story.get("title")
+        if not isinstance(description, str) or not description.strip():
+            logger.warning(f"[architect-dataset] Story #{idx+1} missing description/title.")
+            return None
+        sentences = [seg for seg in re.split(r"[.!?]+", description) if seg.strip()]
+        if len(sentences) > 1:
+            logger.warning(f"[architect-dataset] Story #{idx+1} is not a single sentence.")
+            return None
+
+    epics = data.get("epics", [])
+    if epics and not isinstance(epics, list):
+        logger.warning("[architect-dataset] Stories JSON 'epics' must be a list.")
+        return None
+    if len(epics) > MAX_EPICS:
+        logger.warning("[architect-dataset] Stories JSON exceeds maximum epic count.")
+        return None
+    for idx, epic in enumerate(epics):
+        if not isinstance(epic, dict):
+            logger.warning(f"[architect-dataset] Epic #{idx+1} is not an object.")
+            return None
+        story_refs = epic.get("stories") or epic.get("story_ids") or []
+        if story_refs:
+            if not isinstance(story_refs, list):
+                logger.warning(f"[architect-dataset] Epic #{idx+1} story references must be a list.")
+                return None
+            if len(story_refs) > 3:
+                logger.warning(f"[architect-dataset] Epic #{idx+1} references more than 3 stories.")
+                return None
+
+    return data
+
+
+def parse_and_validate_arch_yaml(raw: str) -> Optional[Dict[str, Any]]:
+    text = _strip_code_fences(raw)
+    if not text:
+        logger.warning("[architect-dataset] Empty architecture YAML; skipping sample.")
+        return None
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        logger.warning(f"[architect-dataset] Invalid architecture YAML: {exc}")
+        return None
+    if not isinstance(data, dict) or not data:
+        logger.warning("[architect-dataset] Architecture YAML must be a non-empty mapping.")
+        return None
+
+    keys = list(data.keys())
+    if len(keys) > len(VALID_ARCH_COMPONENTS):
+        logger.warning("[architect-dataset] Architecture YAML exceeds component limit.")
+        return None
+    invalid_keys = [key for key in keys if key not in VALID_ARCH_COMPONENTS]
+    if invalid_keys:
+        logger.warning(f"[architect-dataset] Architecture YAML has invalid components: {invalid_keys}")
+        return None
+
+    for comp, section in data.items():
+        if isinstance(section, list):
+            if len(section) > MAX_COMPONENT_POINTS:
+                logger.warning(f"[architect-dataset] Component '{comp}' has too many bullet points.")
+                return None
+            for bullet in section:
+                if not isinstance(bullet, str) or not bullet.strip():
+                    logger.warning(f"[architect-dataset] Component '{comp}' has non-string bullet.")
+                    return None
+                if len(bullet.split()) > 25:
+                    logger.warning(f"[architect-dataset] Component '{comp}' bullet too long.")
+                    return None
+        elif isinstance(section, str):
+            if len(section.split()) > 40:
+                logger.warning(f"[architect-dataset] Component '{comp}' paragraph too long.")
+                return None
+        else:
+            logger.warning(f"[architect-dataset] Component '{comp}' must be string or list of strings.")
+            return None
+
+    return data
+
+
+def _lm_metadata(lm) -> Tuple[str, str]:
+    model_name = getattr(lm, "model", "unknown")
+    provider = "unknown"
+    if isinstance(model_name, str):
+        provider = model_name.split("/", 1)[0] if "/" in model_name else model_name
+    return provider, model_name or "unknown"
+
+
+def _build_stub_stories_from_requirements(requirements_yaml: str, max_stories: int = 3) -> Dict[str, Any]:
+    """Create a tiny stories/epics JSON from BA requirements to feed ArchitectureModule.
+
+    - Picks up to `max_stories` items from `functional_requirements` if present; otherwise
+      derives short statements from `description`/`title`.
+    - Returns a dict with `stories` and `epics` suitable for JSON-serialization.
+    """
+    try:
+        data = yaml.safe_load(requirements_yaml) or {}
+    except Exception:
+        data = {}
+
+    fr_list = []
+    if isinstance(data, dict):
+        fr = data.get("functional_requirements")
+        if isinstance(fr, list):
+            fr_list = [str(x).strip() for x in fr if str(x).strip()]
+
+    stories: list[Dict[str, Any]] = []
+    picked = fr_list[: max_stories or 3] if fr_list else []
+
+    if not picked:
+        # Fallback: synthesize from title/description
+        title = str(data.get("title") or "Feature").strip()
+        desc = str(data.get("description") or "Core capability").strip()
+        picked = [f"{title}: {desc}"]
+
+    for i, text in enumerate(picked, start=1):
+        sentence = text.split(".")[0].strip()
+        if not sentence.endswith("."):
+            sentence = sentence + "."
+        stories.append(
+            {
+                "id": f"S{i}",
+                "epic": "EPIC-ARCH",
+                "title": sentence,
+                "description": sentence,
+                "acceptance": [],
+                "priority": "Medium",
+                "status": "To Do",
+            }
+        )
+
+    epics = [
+        {
+            "id": "EPIC-ARCH",
+            "name": "Architecture-aligned Stories",
+            "description": "Stories derived from BA requirements for architecture context.",
+            "priority": "Medium",
+            "stories": [s["id"] for s in stories],
+        }
+    ]
+
+    return {"stories": stories, "epics": epics}
+
+
 def load_ba_examples(path: Path) -> List[Dict]:
     payloads: List[Dict] = []
     with path.open("r", encoding="utf-8") as fh:
@@ -95,24 +310,6 @@ def split_train_val(samples: List[Dict], val_ratio: float = 0.2) -> tuple[List[D
     size = len(samples)
     val_size = max(1, int(size * val_ratio))
     return samples[:-val_size], samples[-val_size:]
-
-
-def write_planning_artifacts(requirements: str, vision: str) -> None:
-    (PLANNING / "requirements.yaml").write_text(requirements, encoding="utf-8")
-    (PLANNING / "product_vision.yaml").write_text(vision, encoding="utf-8")
-
-
-def read_architect_outputs() -> Optional[Dict[str, str]]:
-    stories_path = PLANNING / "stories.yaml"
-    epics_path = PLANNING / "epics.yaml"
-    architecture_path = PLANNING / "architecture.yaml"
-    if not (stories_path.exists() and epics_path.exists() and architecture_path.exists()):
-        return None
-    return {
-        "stories": stories_path.read_text(encoding="utf-8"),
-        "epics": epics_path.read_text(encoding="utf-8"),
-        "architecture": architecture_path.read_text(encoding="utf-8"),
-    }
 
 
 async def call_product_owner(requirements: str, concept: str, client: Client) -> Optional[str]:
@@ -151,7 +348,40 @@ def generate(
     random.shuffle(payloads)
 
     po_client = Client(role="product_owner")
-    architect_client = Client(role="architect")
+    # Read feature toggle for architecture-only mode
+    cfg = load_config() or {}
+    features = cfg.get("features", {}) if isinstance(cfg.get("features", {}), dict) else {}
+    arch_features = features.get("architect", {}) if isinstance(features, dict) else {}
+    arch_only = _bool_like(arch_features.get("arch_only"))
+
+    architecture_cap = get_role_output_cap("architect", "architecture")
+    architecture_lm = build_lm_for_role("architect", max_output_tokens=architecture_cap)
+    architecture_module = ArchitectureModule(lm=architecture_lm)
+    arch_provider, arch_model = _lm_metadata(architecture_module.lm)
+
+    if arch_only:
+        logger.info(
+            "[architect-dataset] MODE=arch_only. Using stubbed stories. architecture:(provider=%s model=%s cap=%s)",
+            arch_provider,
+            arch_model,
+            architecture_cap,
+        )
+        stories_module = None
+        stories_cap = None
+    else:
+        stories_cap = get_role_output_cap("architect", "stories")
+        stories_lm = build_lm_for_role("architect", max_output_tokens=stories_cap)
+        stories_module = StoriesEpicsModule(lm=stories_lm)
+        stories_provider, stories_model = _lm_metadata(stories_module.lm)
+        logger.info(
+            "[architect-dataset] LM setup → stories:(provider=%s model=%s cap=%s) architecture:(provider=%s model=%s cap=%s)",
+            stories_provider,
+            stories_model,
+            stories_cap,
+            arch_provider,
+            arch_model,
+            architecture_cap,
+        )
 
     existing_train = _load_existing_jsonl(out_train) if resume else []
     existing_val = _load_existing_jsonl(out_val) if resume else []
@@ -165,7 +395,6 @@ def generate(
 
         # Task 9.0.11.3 - Handle BA dataset format where requirements is a dict, not YAML string
         if not requirements and "requirements" in entry:
-            import yaml
             requirements = yaml.dump(entry["requirements"], default_flow_style=False, allow_unicode=True)
 
         if not concept or not requirements:
@@ -180,31 +409,71 @@ def generate(
             logger.warning("[architect-dataset] Missing VISION block; skipping sample.")
             return None
 
-        write_planning_artifacts(requirements, vision_yaml)
-        result = await run_architect_job(concept=concept, allow_partial_blocks=True)
-        outputs = read_architect_outputs()
-        if not outputs:
-            logger.warning("[architect-dataset] Architect outputs missing; skipping sample.")
+        tier = (
+            entry.get("complexity_tier")
+            or entry.get("input", {}).get("complexity_tier")
+            or estimate_tier(requirements)
+        )
+        if arch_only:
+            stories_data = _build_stub_stories_from_requirements(requirements, max_stories=3)
+            stories_json_raw = json.dumps(stories_data, ensure_ascii=False)
+        else:
+            try:
+                stories_prediction = stories_module(
+                    concept=concept,
+                    requirements_yaml=requirements,
+                    product_vision=vision_yaml,
+                    complexity_tier=str(tier),
+                )
+            except Exception as exc:
+                logger.warning(f"[architect-dataset] Stories module failed: {exc}")
+                return None
+            stories_json_raw = getattr(stories_prediction, "stories_epics_json", "") or ""
+            stories_data = parse_and_validate_stories_json(stories_json_raw)
+            if not stories_data:
+                return None
+        stories_json = json.dumps(stories_data, ensure_ascii=False)
+        stories_yaml, epics_yaml = _convert_stories_epics_to_yaml(stories_json)
+        if not stories_yaml or not epics_yaml:
+            logger.warning("[architect-dataset] Failed to convert stories/epics to YAML.")
             return None
 
-        score = metric_score(outputs["stories"], outputs["epics"], outputs["architecture"])
+        try:
+            architecture_prediction = architecture_module(
+                concept=concept,
+                requirements_yaml=requirements,
+                product_vision=vision_yaml,
+                complexity_tier=str(tier),
+                stories_epics_json=stories_json,
+            )
+        except Exception as exc:
+            logger.warning(f"[architect-dataset] Architecture module failed: {exc}")
+            return None
+        architecture_raw = getattr(architecture_prediction, "architecture_yaml", "") or ""
+        architecture_data = parse_and_validate_arch_yaml(architecture_raw)
+        if not architecture_data:
+            return None
+        architecture_yaml = _sanitize_yaml_block(architecture_data)
+        if not architecture_yaml:
+            logger.warning("[architect-dataset] Sanitized architecture YAML is empty.")
+            return None
+
+        score = metric_score(stories_yaml, epics_yaml, architecture_yaml)
         if score < min_score:
             logger.info(f"[architect-dataset] Sample filtered (score={score:.3f} < {min_score}).")
             return None
-
-        tier = result.get("complexity_tier", "medium") if isinstance(result, dict) else estimate_tier(requirements)
 
         sample = ArchitectSample(
             concept=concept,
             requirements_yaml=requirements,
             product_vision=vision_yaml,
             complexity_tier=str(tier),
-            stories_yaml=outputs["stories"],
-            epics_yaml=outputs["epics"],
-            architecture_yaml=outputs["architecture"],
+            stories_yaml=stories_yaml,
+            epics_yaml=epics_yaml,
+            architecture_yaml=architecture_yaml,
             score=score,
-            provider=architect_client.provider_type,
-            model=architect_client.model,
+            provider=arch_provider,
+            model=arch_model,
         )
 
         sample_json = sample.to_json()

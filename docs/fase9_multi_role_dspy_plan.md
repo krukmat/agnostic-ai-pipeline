@@ -78,6 +78,19 @@ Fase 8 demostró que DSPy MIPROv2 es **extremadamente efectivo** para optimizaci
 - Dependencias entre stories (orden de implementación)
 - Trade-offs arquitectónicos (simplicidad vs escalabilidad)
 
+#### 9.1.A – Modo Architecture‑Only (dataset)
+
+- Objetivo: estabilizar la calidad de arquitectura reduciendo truncados y coste al evitar la llamada de Stories/Epics durante la generación de dataset.
+- Configuración: activar `features.architect.arch_only: true` en `config.yaml`.
+- Flujo: el generador construye un stub de historias/épicas (≤3 historias de una frase) a partir de `functional_requirements` y alimenta únicamente `ArchitectureModule`.
+- Código:
+  - Flag y logs de modo/LM: `scripts/generate_architect_dataset.py:350-368`, `scripts/generate_architect_dataset.py:372-380`.
+  - Stub builder: `scripts/generate_architect_dataset.py:223-276`.
+  - Rama de ejecución con stub: `scripts/generate_architect_dataset.py:417-435`.
+- Notas:
+  - Mantiene compatibilidad con el pipeline completo; sólo afecta a la ruta de dataset.
+  - `roles.architect.output_caps.{architecture,stories}` siguen controlando los límites de tokens por módulo.
+
 ---
 
 ### 9.2 - Developer Role Optimization

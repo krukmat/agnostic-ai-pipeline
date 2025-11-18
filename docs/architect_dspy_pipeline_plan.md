@@ -79,14 +79,12 @@ class ArchitectureModule(dspy.Module):
 
 ```python
 def _run_dspy_pipeline(...):
-    lm = build_lm_for_role("architect")
     stories_module = StoriesEpicsModule()
     architecture_module = ArchitectureModule()
-    with dspy.context(lm=lm):
-        stories_prediction = stories_module(...)
-        architecture_prediction = architecture_module(
-            ..., stories_epics_json=stories_prediction.stories_epics_json
-        )
+    stories_prediction = stories_module(...)
+    architecture_prediction = architecture_module(
+        ..., stories_epics_json=stories_prediction.stories_epics_json
+    )
     stories_yaml, epics_yaml = _convert_stories_epics_to_yaml(
         stories_prediction.stories_epics_json
     )
@@ -100,13 +98,50 @@ def _run_dspy_pipeline(...):
     }
 ```
 
-- El contexto DSPy se abre una sola vez para compartir el mismo LM por ejecución y reducir overhead.
+- Cada módulo trae su LM limitado (`max_output_tokens`) para evitar truncados y permitir tuning independiente.
 - `_convert_stories_epics_to_yaml` y `_sanitize_yaml_block` limpian fences ``` y vuelcan listas/dict a YAML estable antes de escribir en `planning/`.
 
 **3. Compatibilidad Legacy vs DSPy**
 
 - `config.yaml` mantiene `features.use_dspy_architect`; `_use_dspy_architect()` (líneas 36-62) permite conmutar el pipeline desde config/env.
 - README.md (sección *Architect role*) deja claro que el modo DSPy usa el pipeline modular y que el modo legacy sigue disponible sin cambios.
+
+### Dataset generation
+
+- `scripts/generate_architect_dataset.py` ahora ejecuta DOS llamadas LM por sample (StoriesEpicsModule y ArchitectureModule) y valida JSON/YAML antes de escribir.
+- Las respuestas truncadas/invalidas se descartan automáticamente, conservando los mismos flags CLI (`--max-records`, `--min-score`, `--resume`).
+- Esto nos permite alimentar MiPRO/MIPROv2 con muestras limpias sin depender de `run_architect_job` ni de archivos intermedios en `planning/`.
+- `config.yaml` expone `roles.architect.output_caps.{stories,architecture}` para controlar los `max_output_tokens` de cada módulo sin tocar código (por defecto usan 8 % del presupuesto global con un mínimo de 600 tokens).
+
+### Modo Architecture‑Only (`features.architect.arch_only`)
+
+- Propósito: generar dataset de Architect enfocando solo la etapa de arquitectura y usando historias/épicas mínimas derivadas de BA para reducir truncado, coste y dependencias.
+- Activación: en `config.yaml` añade:
+
+  ```yaml
+  features:
+    architect:
+      arch_only: true
+  ```
+
+- Comportamiento:
+  - El generador de dataset salta `StoriesEpicsModule` y arma un stub de historias/épicas a partir de BA (≤3 historias, una frase) con `_build_stub_stories_from_requirements()`.
+  - Luego llama únicamente a `ArchitectureModule` con ese JSON de soporte.
+  - Registra el modo elegido y el LM real usado: “MODE=arch_only. Using stubbed stories. …”.
+
+- Referencias de código (clickables):
+  - Leer flag y loguear modo/LM: `scripts/generate_architect_dataset.py:350-368`, `scripts/generate_architect_dataset.py:372-380` y `scripts/generate_architect_dataset.py:357-365`.
+  - Construcción de stub: `scripts/generate_architect_dataset.py:223-276`.
+  - Bifurcación del flujo (usar stub vs. DSPy stories): `scripts/generate_architect_dataset.py:417-435`.
+
+- Ejecución sugerida (1–3 registros):
+  ```bash
+  PYTHONPATH=. .venv/bin/python scripts/generate_architect_dataset.py \
+    --ba-path dspy_baseline/data/production/ba_train_plus_extra.jsonl \
+    --out-train dspy_baseline/data/production/architect_train.jsonl \
+    --out-val dspy_baseline/data/production/architect_val.jsonl \
+    --min-score 0.6 --max-records 3 --seed 42 --resume
+  ```
 
 ## Conclusión
 Aunque la estructura modular ya está implementada, los modelos actuales (Gemini/T4 locales) siguen truncando salidas cuando la generación se hace en una sola llamada. La siguiente iteración deberá dividir efectivamente las llamadas (por ejemplo, stories vs arquitectura) o usar un LM con contexto suficiente (LoRA/Gemini Pro); sólo así podremos producir samples que pasen el filtro del dataset sin cortes.

@@ -3,6 +3,8 @@ import asyncio
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add project root to path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -14,6 +16,8 @@ from scripts.run_product_owner import sanitize_yaml as sanitize_po_yaml
 from common import PLANNING
 from logger import logger
 
+
+@pytest.mark.asyncio
 async def test_po_call():
     """Test calling Product Owner."""
     logger.info("[DEBUG] Testing Product Owner call...")
