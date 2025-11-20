@@ -67,7 +67,7 @@ roles:
     top_p: 0.95
     output_caps:
       stories:
-        tokens: 1500      # increased to reduce JSON truncation
+        tokens: 2000      # increased to reduce JSON truncation (next runs)
         min_tokens: 600
       architecture:
         tokens: 2000

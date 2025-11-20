@@ -18,6 +18,10 @@ from logger import logger # Import the logger
 from pathlib import Path
 from scripts.generate_architect_dataset import generate as _dataset_generate
 from scripts.normalize_ba_jsonl import normalize as _ba_normalize
+from scripts.architect_utils import (
+    convert_stories_epics_to_yaml,
+    sanitize_yaml_block,
+)
 from dspy_baseline.modules.architect import (
     StoriesEpicsModule,
     ArchitectureModule,
@@ -110,8 +114,8 @@ def _run_dspy_pipeline(
     )
     architecture_yaml = getattr(architecture_prediction, "architecture_yaml", "") or ""
 
-    stories_yaml, epics_yaml = _convert_stories_epics_to_yaml(stories_epics_json)
-    architecture_yaml = _sanitize_yaml_block(architecture_yaml)
+    stories_yaml, epics_yaml = convert_stories_epics_to_yaml(stories_epics_json)
+    architecture_yaml = sanitize_yaml_block(architecture_yaml)
     return {
         "stories_yaml": stories_yaml,
         "epics_yaml": epics_yaml,
@@ -239,44 +243,13 @@ if __name__ == "__main__":
 
 
 def _convert_stories_epics_to_yaml(raw_text: str) -> tuple[str, str]:
-    if not raw_text.strip():
-        return "", ""
-    try:
-        data = json.loads(raw_text)
-    except json.JSONDecodeError:
-        try:
-            data = yaml.safe_load(raw_text)
-        except yaml.YAMLError:
-            data = None
-
-    if isinstance(data, dict):
-        stories = data.get("stories", [])
-        epics = data.get("epics", [])
-    else:
-        stories = []
-        epics = []
-
-    stories_yaml = _sanitize_yaml_block(stories)
-    epics_yaml = _sanitize_yaml_block(epics)
-    return stories_yaml, epics_yaml
+    # Backward-compatible wrapper retained for legacy callers inside this module
+    return convert_stories_epics_to_yaml(raw_text)
 
 
 def _sanitize_yaml_block(value) -> str:
-    if not value:
-        return ""
-    if isinstance(value, str):
-        cleaned = re.sub(r"```(?:yaml)?", "", value, flags=re.IGNORECASE)
-        cleaned = cleaned.replace("```", "")
-        return cleaned.strip()
-    try:
-        return yaml.safe_dump(
-            value,
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        ).strip()
-    except yaml.YAMLError:
-        return str(value).strip()
+    # Backward-compatible wrapper retained for legacy callers inside this module
+    return sanitize_yaml_block(value)
 
 def get_architect_prompt(mode: str, tier: str) -> str:
     if mode == "review_adjustment":

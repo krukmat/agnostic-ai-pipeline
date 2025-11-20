@@ -216,3 +216,37 @@ def architect_metric(example: Any, prediction: Any, trace=None) -> float:
 
     total = stories_completeness + stories_quality + epics_structure + architecture_validity + dependency_score
     return max(0.0, min(total / 100.0, 1.0))
+
+
+def stories_epics_metric(example: Any, prediction: Any, trace=None) -> float:
+    """Metric for Stage 1 (stories/epics only). Scales to 1.0.
+
+    Expects prediction to have attributes: stories_yaml, epics_yaml.
+    """
+    stories_raw = getattr(prediction, "stories_yaml", "")
+    epics_raw = getattr(prediction, "epics_yaml", "")
+
+    stories = _ensure_story_list(_safe_yaml_load(stories_raw))
+    epics = _ensure_epic_list(_safe_yaml_load(epics_raw))
+    epic_ids = [str(epic.get("id")) for epic in epics if epic.get("id")]
+
+    stories_completeness = _stories_completeness(stories, epic_ids)
+    stories_quality = _stories_quality(stories)
+    epics_structure = _epics_structure(epics, stories)
+    dependency_score = _dependency_score(stories)
+
+    # Normalize to 1.0 (sum of 4 components: 25 + 25 + 20 + 10 = 80)
+    total = stories_completeness + stories_quality + epics_structure + dependency_score
+    return max(0.0, min(total / 80.0, 1.0))
+
+
+def architecture_only_metric(example: Any, prediction: Any, trace=None) -> float:
+    """Metric for Stage 2 (architecture only). Scales to 1.0.
+
+    Expects prediction to have attribute: architecture_yaml.
+    """
+    architecture_raw = getattr(prediction, "architecture_yaml", "")
+    architecture = _extract_architecture(_safe_yaml_load(architecture_raw))
+    architecture_validity = _architecture_validity(architecture)  # already out of 20.0
+    # Normalize 20 -> 1.0
+    return max(0.0, min(architecture_validity / 20.0, 1.0))

@@ -47,7 +47,7 @@ def _examples_from_jsonl(path: Path, role: str) -> List[dspy.Example]:
             example = dspy.Example(**payload).with_inputs(
                 "concept", "requirements_yaml", "existing_vision"
             )
-        elif role == "architect":
+        elif role in {"architect", "architect_stories", "architect_arch"}:
             input_block = row.get("input", row)
             output_block = row.get("output", {})
             payload = {
@@ -59,9 +59,19 @@ def _examples_from_jsonl(path: Path, role: str) -> List[dspy.Example]:
                 "epics_yaml": output_block.get("epics_yaml", ""),
                 "architecture_yaml": output_block.get("architecture_yaml", ""),
             }
-            example = dspy.Example(**payload).with_inputs(
-                "concept", "requirements_yaml", "product_vision", "complexity_tier"
-            )
+            if role == "architect_arch":
+                example = dspy.Example(**payload).with_inputs(
+                    "concept",
+                    "requirements_yaml",
+                    "product_vision",
+                    "complexity_tier",
+                    "stories_yaml",
+                    "epics_yaml",
+                )
+            else:
+                example = dspy.Example(**payload).with_inputs(
+                    "concept", "requirements_yaml", "product_vision", "complexity_tier"
+                )
         else:
             example = dspy.Example(**row)
         examples.append(example)
@@ -100,6 +110,14 @@ def _load_program(role: str) -> Any:
         from dspy_baseline.modules.architect_program import ArchitectProgram
 
         return ArchitectProgram()
+    if role == "architect_stories":
+        from dspy_baseline.modules.architect_stages import StoriesProgram
+
+        return StoriesProgram()
+    if role == "architect_arch":
+        from dspy_baseline.modules.architect_stages import ArchitectureProgramStage
+
+        return ArchitectureProgramStage()
     raise typer.BadParameter(
         f"Unsupported role '{role}'. Expected 'ba', 'qa' or 'product_owner'."
     )
@@ -240,7 +258,7 @@ def main(
         ...,
         "--role",
         "-r",
-        help="Program to optimize: 'ba' or 'qa'.",
+        help="Program to optimize: ba, qa, product_owner, architect, architect_stories, architect_arch",
     ),
     trainset_path: Path = typer.Option(
         ...,
@@ -306,7 +324,18 @@ def main(
         _examples_from_jsonl(valset_path, role=role) if valset_path else None
     )
 
-    metric = _load_metric(metric_path) if metric_path else _default_metric
+    # Default metric per role if not provided
+    if metric_path:
+        metric = _load_metric(metric_path)
+    else:
+        if role == "architect_stories":
+            metric = _load_metric("dspy_baseline.metrics.architect_metrics:stories_epics_metric")
+        elif role == "architect_arch":
+            metric = _load_metric("dspy_baseline.metrics.architect_metrics:architecture_only_metric")
+        elif role == "architect":
+            metric = _load_metric("dspy_baseline.metrics.architect_metrics:architect_metric")
+        else:
+            metric = _default_metric
     stop_metric = _load_metric(stop_metric_path) if stop_metric_path else None
     program = _load_program(role)
 

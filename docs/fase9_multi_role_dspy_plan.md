@@ -162,6 +162,22 @@ Fase 8 demostró que DSPy MIPROv2 es **extremadamente efectivo** para optimizaci
   - `scripts/run_architect.py ba-remaining --ba-path <normalized> --out <remaining> [--subtract-train] [--subtract-val] [--subtract-gold]`
 - Conserva el flujo del rol; el CLI legacy (`scripts/generate_architect_dataset.py`) sigue operativo pero ahora puedes usar el entrypoint unificado.
 
+#### 9.1.G – Integración técnica y fixes (2025‑11‑20)
+
+- Utilidades compartidas extraídas para evitar imports circulares:
+  - Nuevo módulo: `scripts/architect_utils.py`
+  - Funciones: `sanitize_yaml_block()` y `convert_stories_epics_to_yaml()`
+  - Referenciadas desde `scripts/run_architect.py` y `scripts/generate_architect_dataset.py`.
+- Resolución de import circular:
+  - `scripts/generate_architect_dataset.py` ya no importa `run_architect.py` (usaba helpers); ahora importa `architect_utils`.
+  - `run_architect.py` mantiene wrappers de compatibilidad interna para los helpers.
+- Estado MiPROv2 (Architect):
+  - Último run “improved” log: `logs/mipro_architect_improved_YYYYMMDD_HHMMSS.log` (PID previo en `/tmp/mipro_architect.pid`).
+  - Si no aparece `/tmp/mipro_architect.done`, verificar el log; si el proceso terminó sin sentinel, relanzar con watcher configurado (ver comandos más abajo).
+- Watcher/alerta de finalización (terminal):
+  - `FILE=/tmp/mipro_architect.done; while [ ! -f "$FILE" ]; do sleep 3; done; tput bel; echo "MiPROv2 DONE $(date)"; tail -n 30 "$FILE"`
+  - Nota: limpiar el sentinel antes de relanzar: `rm -f /tmp/mipro_architect.done`.
+
 ---
 
 ### 9.2 - Developer Role Optimization
