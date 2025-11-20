@@ -171,11 +171,38 @@ def parse_and_validate_arch_yaml(raw: str) -> Optional[Dict[str, Any]]:
     if not text:
         logger.warning("[architect-dataset] Empty architecture YAML; skipping sample.")
         return None
+    def _normalize_minified_architecture(s: str) -> str:
+        # Insert newlines before top-level keys if they are glued together
+        top = r"backend|frontend|data|integrations|observability|security"
+        s = re.sub(rf"([^\n])((?:{top}):)", r"\1\n\2", s)
+        # Ensure backend/frontend block keys are on their own lines and indented
+        inner = r"framework|api|services|components|features"
+        # Add newline+indent before inner keys when missing
+        s = re.sub(rf"(?<!\n)\s*({inner}):", r"\n  \1:", s)
+        # Ensure backend/frontend markers end with newline and indent
+        s = re.sub(r"backend:\s*", "backend:\n  ", s)
+        s = re.sub(r"frontend:\s*", "frontend:\n  ", s)
+        return s
+
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
-        logger.warning(f"[architect-dataset] Invalid architecture YAML: {exc}")
-        return None
+        # Attempt normalization for minified one-line maps if enabled
+        cfg = load_config() or {}
+        features = cfg.get("features", {}) if isinstance(cfg.get("features", {}), dict) else {}
+        arch_features = features.get("architect", {}) if isinstance(features, dict) else {}
+        normalize_flag = _bool_like(arch_features.get("normalize_minified_arch")) if 'normalize_minified_arch' in arch_features else True
+        if normalize_flag:
+            norm = _normalize_minified_architecture(text)
+            try:
+                data = yaml.safe_load(norm)
+                logger.info("[architect-dataset] Applied minified-arch normalization before YAML parse.")
+            except yaml.YAMLError as exc2:
+                logger.warning(f"[architect-dataset] Invalid architecture YAML after normalization: {exc2}")
+                return None
+        else:
+            logger.warning(f"[architect-dataset] Invalid architecture YAML: {exc}")
+            return None
     if not isinstance(data, dict) or not data:
         logger.warning("[architect-dataset] Architecture YAML must be a non-empty mapping.")
         return None

@@ -143,6 +143,49 @@ def _run_dspy_pipeline(...):
     --min-score 0.6 --max-records 3 --seed 42 --resume
   ```
 
+### Actualización 2025‑11‑20 – Estabilizaciones y mejoras DSPy/Architect
+
+- LM context fijado (evita serialización LM en litellm)
+  - Ahora usamos `with dspy.context(lm=...)` en lugar de pasar `lm=` a `dspy.Predict` (corrige “Object of type LM is not JSON serializable”).
+  - Código: `dspy_baseline/modules/architect.py:70-116`.
+- Caps por módulo desde config (sin hardcode)
+  - `roles.architect.output_caps.stories.tokens=1500`, `architecture.tokens=2000` (ajustables por YAML).
+  - `scripts/dspy_lm_helper.py:get_role_output_cap()` aplica ratio/tokens/min_tokens.
+- Prompt de arquitectura endurecido
+  - `backend`/`frontend` deben ser mapas con `framework: <string>`; el resto (data/integrations/observability/security) con ≤3 bullets cortos.
+  - Código: `dspy_baseline/modules/architect.py` (desc de `architecture_yaml`).
+- Validador de YAML de arquitectura ampliado
+  - Acepta mapas en backend/frontend/data; poda listas anidadas (services/api/features) a 3 elementos en lugar de rechazar; convierte bullets no‑string a strings simples cuando es razonable.
+  - Código: `scripts/generate_architect_dataset.py:200-240, 340-440`.
+- Stubs de stories enriquecidos (modo arch_only)
+  - `priority: P2`, `estimate: S/M/L`, descripción ≥20 chars, 3 bullets estilo Gherkin, cadena de dependencias S2→S1, S3→S2.
+  - Código: `scripts/generate_architect_dataset.py:223-284`.
+- Sanitizador de PO reforzado
+  - Cita bullets que empiezan con caracteres especiales (`%`, `&`, `*`, etc.) para YAML válido.
+  - Código: `scripts/run_product_owner.py` (normalización de bullets).
+- Logging de soporte
+  - Registra provider/model/caps por módulo al iniciar dataset; logs “MODE=arch_only…” para trazabilidad.
+  - Código: `scripts/generate_architect_dataset.py:280-288, 360-380`.
+- Resultados observados
+  - Umbrales alcanzados con estabilidad: ≥0.80, ≥0.85, ≥0.90, gold ≥0.92.
+  - Truncado residual mitigado con `architecture.tokens=2000` + poda a 3.
+
+### Cierre 2025‑11‑20 – Dataset y configuración final
+
+- Dataset (resume)
+  - train (≥0.85): 46 registros
+  - val   (≥0.85): 6 registros
+  - gold train (≥0.92): 8 registros
+  - gold val   (≥0.92): 2 registros
+- Config activa
+  - `features.architect.arch_only: true`, `features.architect.normalize_minified_arch: true`
+  - Caps: `roles.architect.output_caps.stories.tokens=1500`, `architecture.tokens=2000`
+- Feeds BA
+  - Normalizado: `ba_train_plus_more_normalized.jsonl` (esquema unificado `{input: {concept, requirements_yaml}}`)
+  - Restante normalizado: `ba_remaining_normalized.jsonl` (BA − dataset canónico) para minimizar duplicados.
+- Comandos de fill reproducibles (ejemplo ≥0.85)
+  - `PYTHONPATH=. .venv/bin/python scripts/generate_architect_dataset.py --ba-path dspy_baseline/data/production/ba_remaining_normalized.jsonl --out-train dspy_baseline/data/production/architect_train.jsonl --out-val dspy_baseline/data/production/architect_val.jsonl --min-score 0.85 --max-records 23 --seed 5050 --resume`
+
 ## Conclusión
 Aunque la estructura modular ya está implementada, los modelos actuales (Gemini/T4 locales) siguen truncando salidas cuando la generación se hace en una sola llamada. La siguiente iteración deberá dividir efectivamente las llamadas (por ejemplo, stories vs arquitectura) o usar un LM con contexto suficiente (LoRA/Gemini Pro); sólo así podremos producir samples que pasen el filtro del dataset sin cortes.
 

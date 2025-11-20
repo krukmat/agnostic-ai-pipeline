@@ -91,6 +91,68 @@ Fase 8 demostró que DSPy MIPROv2 es **extremadamente efectivo** para optimizaci
   - Mantiene compatibilidad con el pipeline completo; sólo afecta a la ruta de dataset.
   - `roles.architect.output_caps.{architecture,stories}` siguen controlando los límites de tokens por módulo.
 
+#### 9.1.C – Batch “Aggressive” de Generación (en ejecución)
+
+- Propósito: acelerar la recolección de samples de Architect (train) con umbral alto, variando la semilla para cubrir más BA.
+- Script lanzado: `/tmp/generate_architect_aggressive.sh` (PID dinámico; último visto: 85140)
+- Parámetros efectivos por seed:
+  - `PYTHONPATH=. ./.venv/bin/python scripts/generate_architect_dataset.py \
+     --ba-path dspy_baseline/data/production/ba_extra_normalized.jsonl \
+     --out-train dspy_baseline/data/production/architect_train.jsonl \
+     --out-val /dev/null \
+     --min-score 0.87 \
+     --max-records 80 \
+     --seed <SEED> [--resume]`
+  - Seeds: `1111 2222 3333 4444 5555 6666 7777` (primer seed sin `--resume`, resto con `--resume`).
+- Logs: `/tmp/architect_aggressive_generation.log` (+ `logs/pipeline.log` para validaciones/poda/truncados)
+- Condición de parada: llega a ≥80 train y sale; entre seeds imprime conteo actual.
+- Consideraciones:
+  - Usa modo `arch_only` (stubs enriquecidos) y caps desde `config.yaml` (`stories.tokens=1500`, `architecture.tokens=2000`).
+  - Validador poda listas anidadas (services/api/features) a 3 items; no rechaza por longitud salvo strings exagerados.
+  - Si aparecen muchos “Duplicate sample skipped…”, conviene cambiar `--ba-path` a un BA deduplicado o ampliado.
+- Cómo relanzar manualmente el mismo batch:
+  - `bash /tmp/generate_architect_aggressive.sh`
+- Cómo detenerlo:
+  - `kill <PID>` (graceful) y, si persiste, `kill -9 <PID>`; confirmar con `ps -p <PID>`.
+
+#### 9.1.D – Consolidación DSPy/Architect (2025‑11‑20)
+
+- Correcciones de LM/entorno
+  - Uso de `with dspy.context(lm=...)` en los módulos (evita serialización del objeto LM por litellm en errores).
+  - Caps config‑driven: `stories.tokens=1500`, `architecture.tokens=2000` (antes 1300/1600).
+- Prompt y validadores
+  - Arquitectura: `backend`/`frontend` como mapas con `framework`; resto con ≤3 bullets.
+  - Validador YAML: soporte para dicts en backend/frontend/data, poda listas anidadas a 3, coerción de bullets no‑string.
+  - PO sanitizer: cita bullets con `%`, `&`, `*`, etc. para YAML válido.
+- Modo `arch_only` (dataset)
+  - Stubs enriquecidos: prioridad P2, estimate S/M/L, descripción ≥20, 3 Gherkin, dependencias S2→S1, S3→S2.
+  - Resultado: scores estables en 0.85/0.9 y gold 0.92.
+- Operacional
+  - Sentinel y watcher para batches de relleno: `/tmp/architect_fill23.pid|.log|.done`.
+
+#### 9.1.E – Cierre subfase Dataset (2025‑11‑20)
+
+- Umbrales alcanzados
+  - ≥0.85 estable (train/val) y gold ≥0.92 (val de alta exigencia).
+- Conteos finales (resume)
+  - train (≥0.85): 46
+  - val   (≥0.85): 6
+  - gold train (≥0.92): 8
+  - gold val   (≥0.92): 2
+- Config efectiva
+  - `features.architect.arch_only: true`
+  - Caps: `stories.tokens=1500`, `architecture.tokens=2000`
+  - Normalizadores activos: arquitectura minificada (top‑level + backend/frontend), poda de listas a 3, coerción de bullets no‑string.
+- Feeds
+  - BA normalizado y “BA restante” para minimizar duplicados:
+    - `ba_train_plus_more_normalized.jsonl` (unificado a `{input: {concept, requirements_yaml}}`)
+    - `ba_remaining_normalized.jsonl` (BA normalizado − dataset canónico)
+- Comandos reproducibles
+  - Fill (≥0.85):
+    `PYTHONPATH=. .venv/bin/python scripts/generate_architect_dataset.py --ba-path dspy_baseline/data/production/ba_remaining_normalized.jsonl --out-train dspy_baseline/data/production/architect_train.jsonl --out-val dspy_baseline/data/production/architect_val.jsonl --min-score 0.85 --max-records 23 --seed 5050 --resume`
+  - Gold (≥0.92):
+    `PYTHONPATH=. .venv/bin/python scripts/generate_architect_dataset.py --ba-path dspy_baseline/data/production/ba_train_plus_more_normalized.jsonl --out-train dspy_baseline/data/production/architect_train_gold.jsonl --out-val dspy_baseline/data/production/architect_val_gold.jsonl --min-score 0.92 --max-records 10 --seed 314 --resume`
+
 ---
 
 ### 9.2 - Developer Role Optimization

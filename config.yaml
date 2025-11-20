@@ -167,3 +167,4 @@ features:
   use_dspy_architect: true
   architect:
     arch_only: true
+    normalize_minified_arch: true
