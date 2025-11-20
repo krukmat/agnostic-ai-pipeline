@@ -186,6 +186,18 @@ def _run_dspy_pipeline(...):
 - Comandos de fill reproducibles (ejemplo ≥0.85)
   - `PYTHONPATH=. .venv/bin/python scripts/generate_architect_dataset.py --ba-path dspy_baseline/data/production/ba_remaining_normalized.jsonl --out-train dspy_baseline/data/production/architect_train.jsonl --out-val dspy_baseline/data/production/architect_val.jsonl --min-score 0.85 --max-records 23 --seed 5050 --resume`
 
+### CLI integrado para Architect (dataset y BA helpers)
+
+- Nuevo entrypoint unificado en `scripts/run_architect.py` (Typer):
+  - Generar dataset (integrado):
+    `PYTHONPATH=. .venv/bin/python scripts/run_architect.py dataset --ba-path dspy_baseline/data/production/ba_remaining_normalized.jsonl --out-train dspy_baseline/data/production/architect_train.jsonl --out-val dspy_baseline/data/production/architect_val.jsonl --min-score 0.85 --max-records 23 --seed 5050 --resume`
+  - Normalizar BA (esquema unificado):
+    `PYTHONPATH=. .venv/bin/python scripts/run_architect.py ba-normalize dspy_baseline/data/production/ba_train_plus_more_unique.jsonl dspy_baseline/data/production/ba_train_plus_more_normalized.jsonl`
+  - BA restante (resta dataset canónico):
+    `PYTHONPATH=. .venv/bin/python scripts/run_architect.py ba-remaining --ba-path dspy_baseline/data/production/ba_train_plus_more_normalized.jsonl --out dspy_baseline/data/production/ba_remaining_normalized.jsonl --subtract-train --subtract-val --subtract-gold`
+
+- Compatibilidad: el CLI legacy `scripts/generate_architect_dataset.py` sigue operativo y ahora delega internamente en las mismas utilidades/config.
+
 ## Conclusión
 Aunque la estructura modular ya está implementada, los modelos actuales (Gemini/T4 locales) siguen truncando salidas cuando la generación se hace en una sola llamada. La siguiente iteración deberá dividir efectivamente las llamadas (por ejemplo, stories vs arquitectura) o usar un LM con contexto suficiente (LoRA/Gemini Pro); sólo así podremos producir samples que pasen el filtro del dataset sin cortes.
 

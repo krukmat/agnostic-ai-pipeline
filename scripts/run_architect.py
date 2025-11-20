@@ -15,6 +15,9 @@ import typer
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
+from pathlib import Path
+from scripts.generate_architect_dataset import generate as _dataset_generate
+from scripts.normalize_ba_jsonl import normalize as _ba_normalize
 from dspy_baseline.modules.architect import (
     StoriesEpicsModule,
     ArchitectureModule,
@@ -114,6 +117,125 @@ def _run_dspy_pipeline(
         "epics_yaml": epics_yaml,
         "architecture_yaml": architecture_yaml,
     }
+
+
+# -------------------------------
+# CLI integration (dataset helpers)
+# -------------------------------
+
+app = typer.Typer(help="Architect CLI (DSPy + dataset helpers)")
+
+
+@app.command("dataset")
+def cli_dataset(
+    ba_path: Path = typer.Option(..., help="BA outputs JSONL (normalized or mixed)"),
+    out_train: Path = typer.Option(ROOT / "dspy_baseline/data/production/architect_train.jsonl", help="Train JSONL output"),
+    out_val: Path = typer.Option(ROOT / "dspy_baseline/data/production/architect_val.jsonl", help="Validation JSONL output"),
+    min_score: float = typer.Option(0.85, help="Minimum architect_metric score"),
+    max_records: int = typer.Option(20, help="Desired sample count"),
+    seed: int = typer.Option(42, help="Shuffle seed"),
+    resume: bool = typer.Option(False, help="Append to existing JSONL files instead of overwriting"),
+):
+    """Generate Architect dataset using the integrated pipeline.
+
+    This wraps scripts/generate_architect_dataset.generate to keep a single entrypoint
+    for role + dataset tasks. All normalizers/validators/caps and feature flags apply.
+    """
+    _dataset_generate(
+        ba_path=ba_path,
+        out_train=out_train,
+        out_val=out_val,
+        min_score=min_score,
+        max_records=max_records,
+        seed=seed,
+        resume=resume,
+    )
+
+
+@app.command("ba-normalize")
+def cli_ba_normalize(
+    src: Path = typer.Argument(..., help="Input BA JSONL (mixed shapes)"),
+    dst: Path = typer.Argument(..., help="Output normalized BA JSONL"),
+):
+    """Normalize BA JSONL to {input:{concept, requirements_yaml}} with canonical YAML."""
+    _ba_normalize(src, dst)
+
+
+@app.command("ba-remaining")
+def cli_ba_remaining(
+    ba_path: Path = typer.Option(..., help="Normalized BA JSONL path"),
+    out: Path = typer.Option(..., help="Output BA JSONL excluding dataset keys"),
+    subtract_train: bool = typer.Option(True, help="Subtract architect_train.jsonl"),
+    subtract_val: bool = typer.Option(True, help="Subtract architect_val.jsonl"),
+    subtract_gold: bool = typer.Option(True, help="Subtract architect_train/val_gold.jsonl"),
+):
+    """Create a BA feed that excludes keys already present in the dataset (train/val/gold)."""
+    import json
+    import yaml as _yaml
+
+    base = ROOT / "dspy_baseline" / "data" / "production"
+    train = base / "architect_train.jsonl"
+    val = base / "architect_val.jsonl"
+    gtrain = base / "architect_train_gold.jsonl"
+    gval = base / "architect_val_gold.jsonl"
+
+    def canon(yaml_str: str) -> str:
+        try:
+            return _yaml.safe_dump(
+                _yaml.safe_load(yaml_str),
+                sort_keys=True,
+                allow_unicode=True,
+                default_flow_style=False,
+            )
+        except Exception:
+            return yaml_str or ""
+
+    seen = set()
+    sources = []
+    if subtract_train:
+        sources.append(train)
+    if subtract_val:
+        sources.append(val)
+    if subtract_gold:
+        sources.extend([gtrain, gval])
+
+    for p in sources:
+        if not p.exists():
+            continue
+        for ln in p.open(encoding="utf-8"):
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                j = json.loads(ln)
+                inp = j.get("input", j)
+                key = ((inp.get("concept") or "").strip(), canon(inp.get("requirements_yaml") or inp.get("requirements") or ""))
+                seen.add(key)
+            except Exception:
+                continue
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with ba_path.open(encoding="utf-8") as fin, out.open("w", encoding="utf-8") as fout:
+        for ln in fin:
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                j = json.loads(ln)
+                inp = j.get("input", j)
+                key = ((inp.get("concept") or "").strip(), canon(inp.get("requirements_yaml") or inp.get("requirements") or ""))
+                if key in seen:
+                    continue
+                fout.write(json.dumps(j, ensure_ascii=False) + "\n")
+                written += 1
+            except Exception:
+                continue
+    typer.echo(f"[ba-remaining] wrote {written} records to {out}")
+
+
+if __name__ == "__main__":
+    app()
 
 
 def _convert_stories_epics_to_yaml(raw_text: str) -> tuple[str, str]:
