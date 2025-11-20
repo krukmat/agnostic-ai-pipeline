@@ -13,6 +13,8 @@ import dspy
 import typer
 
 from dspy_baseline.optimizers import optimize_program
+from pathlib import Path as _Path
+import yaml as _yaml
 
 app = typer.Typer(help="Optimize DSPy programs with dspy.MIPROv2.")
 
@@ -44,6 +46,21 @@ def _examples_from_jsonl(path: Path, role: str) -> List[dspy.Example]:
             }
             example = dspy.Example(**payload).with_inputs(
                 "concept", "requirements_yaml", "existing_vision"
+            )
+        elif role == "architect":
+            input_block = row.get("input", row)
+            output_block = row.get("output", {})
+            payload = {
+                "concept": input_block.get("concept", ""),
+                "requirements_yaml": input_block.get("requirements_yaml", ""),
+                "product_vision": input_block.get("product_vision", ""),
+                "complexity_tier": str(input_block.get("complexity_tier", "medium")),
+                "stories_yaml": output_block.get("stories_yaml", ""),
+                "epics_yaml": output_block.get("epics_yaml", ""),
+                "architecture_yaml": output_block.get("architecture_yaml", ""),
+            }
+            example = dspy.Example(**payload).with_inputs(
+                "concept", "requirements_yaml", "product_vision", "complexity_tier"
             )
         else:
             example = dspy.Example(**row)
@@ -79,6 +96,10 @@ def _load_program(role: str) -> Any:
         from dspy_baseline.modules.product_owner import ProductOwnerModule
 
         return ProductOwnerModule()
+    if role == "architect":
+        from dspy_baseline.modules.architect_program import ArchitectProgram
+
+        return ArchitectProgram()
     raise typer.BadParameter(
         f"Unsupported role '{role}'. Expected 'ba', 'qa' or 'product_owner'."
     )
@@ -163,10 +184,22 @@ def _configure_lm(
 ) -> dspy.LM:
     provider = provider.lower()
     if provider in {"vertex", "vertex_ai"}:
-        project_id = vertex_project or os.environ.get(
-            "GCP_PROJECT", "agnostic-pipeline-476015"
-        )
-        location = vertex_location or os.environ.get("VERTEX_LOCATION", "us-central1")
+        # Always prefer config.yaml when flags are not provided
+        project_id = vertex_project
+        location = vertex_location
+        if project_id is None or location is None:
+            try:
+                root = _Path(__file__).resolve().parents[1]
+                cfg = _yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8")) or {}
+                providers = cfg.get("providers", {}) if isinstance(cfg.get("providers", {}), dict) else {}
+                vcfg = providers.get("vertex_sdk", {}) if isinstance(providers, dict) else {}
+                project_id = project_id or vcfg.get("project_id")
+                location = location or vcfg.get("location")
+            except Exception:
+                pass
+        # Fallback last to env vars if still missing (no hardcoded defaults)
+        project_id = project_id or os.environ.get("GCP_PROJECT")
+        location = location or os.environ.get("VERTEX_LOCATION")
         return dspy.LM(
             f"vertex_ai/{model}",
             project=project_id,

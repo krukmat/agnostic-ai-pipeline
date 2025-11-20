@@ -50,11 +50,20 @@ def optimize_program(
         seed=seed,
     )
 
+    # Determine minibatch size (must not exceed valset size if provided)
+    mb_size = 10
+    if valset is not None:
+        try:
+            vlen = len(valset)  # valset is typically a list of dspy.Example
+            mb_size = max(1, min(mb_size, vlen))
+        except Exception:
+            mb_size = 2  # safe default when length unknown
+
     compile_args = {
         "trainset": trainset,
         "num_trials": num_trials,
         "max_bootstrapped_demos": max_bootstrapped_demos,
-        "minibatch_size": 10,  # Set to avoid exceeding valset size
+        "minibatch_size": mb_size,
     }
     if valset is not None:
         compile_args["valset"] = valset

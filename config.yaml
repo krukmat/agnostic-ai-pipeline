@@ -168,3 +168,5 @@ features:
   architect:
     arch_only: true
     normalize_minified_arch: true
+    use_optimized_prompt: false
+    prompt_override_file: ""

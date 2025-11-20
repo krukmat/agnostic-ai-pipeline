@@ -198,6 +198,19 @@ def _run_dspy_pipeline(...):
 
 - Compatibilidad: el CLI legacy `scripts/generate_architect_dataset.py` sigue operativo y ahora delega internamente en las mismas utilidades/config.
 
+### Prompt optimizado (flag)
+
+- Se agrega soporte para activar un prompt de Arquitectura optimizado detrás de un flag de configuración:
+  - config.yaml:
+    ```yaml
+    features:
+      architect:
+        use_optimized_prompt: true
+        prompt_override_file: artifacts/dspy/optimizer/architect/architect_optimized.md
+    ```
+  - Si `use_optimized_prompt` es `true` y `prompt_override_file` existe, `run_architect.py` usa ese prompt en vez del baseline (`prompts/architect*.md`).
+  - Si el archivo no existe o el flag está en `false`, se usa el baseline por defecto. Esto permite rollback inmediato sin tocar código.
+
 ## Conclusión
 Aunque la estructura modular ya está implementada, los modelos actuales (Gemini/T4 locales) siguen truncando salidas cuando la generación se hace en una sola llamada. La siguiente iteración deberá dividir efectivamente las llamadas (por ejemplo, stories vs arquitectura) o usar un LM con contexto suficiente (LoRA/Gemini Pro); sólo así podremos producir samples que pasen el filtro del dataset sin cortes.
 

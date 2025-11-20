@@ -281,6 +281,19 @@ def _sanitize_yaml_block(value) -> str:
 def get_architect_prompt(mode: str, tier: str) -> str:
     if mode == "review_adjustment":
         return REVIEW_ADJUSTMENT_PROMPT
+    # Allow optimized prompt override via config
+    cfg = _load_config()
+    features = cfg.get("features", {}) if isinstance(cfg.get("features", {}), dict) else {}
+    arch_features = features.get("architect", {}) if isinstance(features, dict) else {}
+    if arch_features and bool(arch_features.get("use_optimized_prompt")):
+        override_path = str(arch_features.get("prompt_override_file") or "").strip()
+        if override_path:
+            try:
+                p = (ROOT / override_path) if not override_path.startswith("/") else Path(override_path)
+                if p.exists():
+                    return p.read_text(encoding="utf-8")
+            except Exception:
+                pass
     return ARCHITECT_PROMPTS.get(tier, ARCHITECT_PROMPTS["medium"])
 
 

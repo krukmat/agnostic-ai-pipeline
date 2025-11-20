@@ -153,6 +153,15 @@ Fase 8 demostró que DSPy MIPROv2 es **extremadamente efectivo** para optimizaci
   - Gold (≥0.92):
     `PYTHONPATH=. .venv/bin/python scripts/generate_architect_dataset.py --ba-path dspy_baseline/data/production/ba_train_plus_more_normalized.jsonl --out-train dspy_baseline/data/production/architect_train_gold.jsonl --out-val dspy_baseline/data/production/architect_val_gold.jsonl --min-score 0.92 --max-records 10 --seed 314 --resume`
 
+#### 9.1.F – CLI integrado de Architect
+
+- Dataset integrado:
+  - `scripts/run_architect.py dataset --ba-path … --out-train … --out-val … --min-score … --max-records … --seed … --resume`
+- BA helpers:
+  - `scripts/run_architect.py ba-normalize <src> <dst>` (unificar esquema + YAML canónico)
+  - `scripts/run_architect.py ba-remaining --ba-path <normalized> --out <remaining> [--subtract-train] [--subtract-val] [--subtract-gold]`
+- Conserva el flujo del rol; el CLI legacy (`scripts/generate_architect_dataset.py`) sigue operativo pero ahora puedes usar el entrypoint unificado.
+
 ---
 
 ### 9.2 - Developer Role Optimization
@@ -1478,10 +1487,9 @@ seed = 42
 - **Baseline**: `ollama/granite4` (para comparación con legacy)
 - **Optimization**: `vertex_sdk/gemini-2.5-pro` (teacher model para MIPROv2)
 
-**Comando de Optimización**:
+**Comando de Optimización** (usa providers.vertex_sdk de config.yaml):
 ```bash
-PYTHONPATH=. GCP_PROJECT=agnostic-pipeline-476015 VERTEX_LOCATION=us-central1 \
-.venv/bin/python scripts/tune_dspy.py \
+PYTHONPATH=. .venv/bin/python scripts/tune_dspy.py \
   --role architect \
   --trainset dspy_baseline/data/production/architect_train.jsonl \
   --valset dspy_baseline/data/production/architect_val.jsonl \
@@ -1489,6 +1497,7 @@ PYTHONPATH=. GCP_PROJECT=agnostic-pipeline-476015 VERTEX_LOCATION=us-central1 \
   --num-trials 20 \
   --max-bootstrapped-demos 4 \
   --seed 42 \
+  --provider vertex_ai --model gemini-2.5-flash \
   --output artifacts/dspy/architect_optimized_pilot \
   2>&1 | tee /tmp/architect_mipro_optimization.log
 ```
