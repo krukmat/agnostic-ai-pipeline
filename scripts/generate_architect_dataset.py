@@ -252,11 +252,33 @@ def parse_and_validate_arch_yaml(raw: str) -> Optional[Dict[str, Any]]:
             if len(section) > MAX_COMPONENT_POINTS:
                 logger.warning(f"[architect-dataset] Component '{comp}' has too many bullet points.")
                 return None
-            for bullet in section:
-                if not isinstance(bullet, str) or not bullet.strip():
-                    logger.warning(f"[architect-dataset] Component '{comp}' has non-string bullet.")
-                    return None
-                if len(bullet.split()) > 25:
+            for i, bullet in enumerate(list(section)):
+                if isinstance(bullet, str):
+                    text = bullet.strip()
+                else:
+                    # Coerce simple non-string bullets into short strings when possible
+                    text = None
+                    if isinstance(bullet, (int, float, bool)):
+                        text = str(bullet)
+                    elif isinstance(bullet, list):
+                        items = [str(x).strip() for x in bullet if isinstance(x, (str, int, float, bool))]
+                        if items:
+                            text = ", ".join(items[:3])
+                    elif isinstance(bullet, dict):
+                        parts = []
+                        for k, v in bullet.items():
+                            if len(parts) >= 2:
+                                break
+                            if isinstance(k, str) and isinstance(v, (str, int, float, bool)):
+                                kv = f"{k}: {v}"
+                                parts.append(kv)
+                        if parts:
+                            text = "; ".join(parts)
+                    if text is None or not text.strip():
+                        logger.warning(f"[architect-dataset] Component '{comp}' has non-string bullet.")
+                        return None
+                    section[i] = text
+                if len(section[i].split()) > 25:
                     logger.warning(f"[architect-dataset] Component '{comp}' bullet too long.")
                     return None
         elif isinstance(section, str):

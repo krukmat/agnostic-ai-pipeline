@@ -70,7 +70,7 @@ roles:
         tokens: 1500      # increased to reduce JSON truncation
         min_tokens: 600
       architecture:
-        tokens: 1800
+        tokens: 2000
         min_tokens: 600
   dev:
     provider: vertex_sdk
