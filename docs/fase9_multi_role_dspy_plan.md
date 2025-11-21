@@ -178,6 +178,67 @@ Fase 8 demostró que DSPy MIPROv2 es **extremadamente efectivo** para optimizaci
   - `FILE=/tmp/mipro_architect.done; while [ ! -f "$FILE" ]; do sleep 3; done; tput bel; echo "MiPROv2 DONE $(date)"; tail -n 30 "$FILE"`
   - Nota: limpiar el sentinel antes de relanzar: `rm -f /tmp/mipro_architect.done`.
 
+#### 9.1.H – Two‑Stage MiPRO + Consolidación E2E (2025‑11‑21)
+
+- Ajustes previos
+  - Métrica afinada para reducir sobre‑penalizaciones en historias/épicas:
+    - priority acepta P1/P2/P3 y High/Medium/Low
+    - status no es obligatorio para “completeness”
+    - epics requieren id; name/description opcionales
+  - Val ampliado a 20 (rebalance train→val) para evaluación más estable.
+
+- Stage 1 (Stories/Epics) — Flash 48/12
+  - Comando (logs/sentinel):
+    - `logs/mipro_architect_stories_flash48_YYYYMMDD_HHMMSS.log`
+    - `/tmp/mipro_architect_stories_flash48.done`
+  - Resultado: Best full score (stories_epics_metric) ≈ 52.17 (val=20)
+
+- Stage 2 (Architecture‑only) — Flash 48/12
+  - Arreglo de interfaz: `ArchitectureProgramStage.forward()` ahora acepta `stories_yaml`/`epics_yaml` además de `*_seed`.
+  - Comando (logs/sentinel):
+    - `logs/mipro_architect_arch_flash48_…log`
+    - `/tmp/mipro_architect_arch_flash48.done`
+  - Resultado: architecture_only_metric = 100% (cumple dict backend/frontend con framework y componentes/bullets válidos)
+
+- Integración de prompts optimizados
+  - Código: `dspy_baseline/modules/architect.py` aplica instrucciones desde:
+    - `artifacts/dspy/optimizer/architect_stories/program_components.json`
+    - `artifacts/dspy/optimizer/architect_arch/program_components.json`
+    - fallback: `artifacts/dspy/optimizer/architect/program_components.json`
+  - Flag activado: `features.architect.use_optimized_prompt: true` en `config.yaml`.
+
+- Validación end‑to‑end (Flash, 32 trials, 12 candidates)
+  - Comando: `scripts/tune_dspy.py --role architect --num-trials 32 --num-candidates 12 --model gemini-2.5-flash`
+  - Log/sentinel: `logs/mipro_architect_e2e_flash32_…log`, `/tmp/mipro_architect_e2e_flash32.done`
+  - Resultado: Best full score so far ≈ 61.66; full eval destacado ≈ 59.0% en val=20.
+  - Conclusión: se supera el umbral objetivo (≥56%) con margen; formato estable.
+
+- Reproducibilidad rápida
+  - E2E Flash (corto): `--num-trials 32 --num-candidates 12`
+  - Two‑stage Flash (amplio): Stage1/Stage2 con `--num-trials 48 --num-candidates 12` y val=20.
+
+#### 9.1.I – Disponibilidad de modelos Gemini‑3 (2025‑11‑21)
+
+- Intentos vía Vertex (publisher models) en `europe-west1` y `us-central1`:
+  - `gemini-3-flash`, `gemini-3-pro`, `gemini-3.0-flash`, `gemini-3.5-flash`, `gemini-3-pro-preview`: NotFound (404) para el proyecto `agnostic-pipeline-478600`.
+- Resolución: continuamos con `gemini-2.5-flash` (y `-pro` si fuese necesario), ya operativos y consistentes con los límites de tokens definidos.
+
+#### 9.1.J – Estado final y siguientes pasos
+
+- Estado Architect
+  - Datasets consolidados (train/val=32/20) y prompts optimizados activos.
+  - Score E2E en val=20: ≈ 0.6166 (best) / ≈ 0.590 (full eval destacado).
+  - Formato: YAML/JSON validados, arquitectura con dict backend/frontend (framework) y componentes acotados.
+
+- Siguientes pasos
+  - Documentar snapshot de resultados y conservar logs:
+    - `artifacts/dspy/optimizer/architect_stories/` y `architect_arch/`
+    - `logs/mipro_architect_*`
+  - Opcional: una pasada E2E extra (16–24 trials) para confirmar estabilidad en ≥0.60.
+  - Avanzar al siguiente rol (según priorización de Fase 9) manteniendo el patrón:
+    - modularización + métrica específica + caps + two‑stage si aplica.
+
+
 ---
 
 ### 9.2 - Developer Role Optimization

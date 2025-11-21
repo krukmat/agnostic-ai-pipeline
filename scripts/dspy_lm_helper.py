@@ -126,3 +126,31 @@ def get_role_output_cap(
     if tokens is None:
         tokens = int(base_max_tokens * ratio)
     return max(resolved_min, tokens)
+
+
+def get_role_max_tokens(role: str, default: int = 4096) -> int:
+    role_cfg = _get_role_config(role)
+    try:
+        return int(role_cfg.get("max_tokens", default))
+    except Exception:
+        return default
+
+
+def pick_max_tokens_for(role: str, cap_tokens: int) -> int:
+    """Pick max tokens for LM based on context.
+
+    - In MiPRO mode (DSPY_MIPRO_MODE=1), prefer a higher ceiling to avoid truncation:
+      * use env DSPY_MIPRO_MAX_TOKENS if present,
+      * else roles.<role>.max_tokens from config,
+      * else fallback to cap_tokens.
+    - In normal mode, return cap_tokens.
+    """
+    if os.environ.get("DSPY_MIPRO_MODE") == "1":
+        env_tok = os.environ.get("DSPY_MIPRO_MAX_TOKENS")
+        if env_tok:
+            try:
+                return int(env_tok)
+            except Exception:
+                pass
+        return get_role_max_tokens(role, default=cap_tokens)
+    return cap_tokens

@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import dspy
 from logger import logger
-from scripts.dspy_lm_helper import build_lm_for_role, get_role_output_cap
+from pathlib import Path
+import json
+import yaml
+from scripts.dspy_lm_helper import build_lm_for_role, get_role_output_cap, pick_max_tokens_for
 
 
 class StoriesEpicsSignature(dspy.Signature):
@@ -70,13 +73,17 @@ class StoriesEpicsModule(dspy.Module):
 
     def __init__(self, lm: dspy.LM | None = None) -> None:
         super().__init__()
+        # Try to load optimized instructions for Stories stage (if present)
+        _maybe_apply_instructions("stories")
         cap = get_role_output_cap("architect", "stories")
-        self.lm = lm or build_lm_for_role("architect", max_tokens=cap)
+        mtok = pick_max_tokens_for("architect", cap)
+        self.lm = lm or build_lm_for_role("architect", max_tokens=mtok)
         if lm is None:
             logger.info(
-                "[ArchitectDSPy] Stories LM configured: model=%s cap=%s",
+                "[ArchitectDSPy] Stories LM configured: model=%s cap=%s (max_tokens=%s)",
                 getattr(self.lm, "model", "unknown"),
                 cap,
+                getattr(self.lm, "max_tokens", None) or "?",
             )
         self.generate = dspy.Predict(StoriesEpicsSignature)
 
@@ -102,13 +109,17 @@ class ArchitectureModule(dspy.Module):
 
     def __init__(self, lm: dspy.LM | None = None) -> None:
         super().__init__()
+        # Try to load optimized instructions for Architecture stage (if present)
+        _maybe_apply_instructions("architecture")
         cap = get_role_output_cap("architect", "architecture")
-        self.lm = lm or build_lm_for_role("architect", max_tokens=cap)
+        mtok = pick_max_tokens_for("architect", cap)
+        self.lm = lm or build_lm_for_role("architect", max_tokens=mtok)
         if lm is None:
             logger.info(
-                "[ArchitectDSPy] Architecture LM configured: model=%s cap=%s",
+                "[ArchitectDSPy] Architecture LM configured: model=%s cap=%s (max_tokens=%s)",
                 getattr(self.lm, "model", "unknown"),
                 cap,
+                getattr(self.lm, "max_tokens", None) or "?",
             )
         self.generate = dspy.Predict(ArchitectureSignature)
 
@@ -129,3 +140,77 @@ class ArchitectureModule(dspy.Module):
                 complexity_tier=tier_value,
                 stories_epics_json=stories_epics_json,
             )
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _read_yaml(path: Path) -> dict:
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def _load_components_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _extract_instructions(components: dict, key_candidates: list[str]) -> str | None:
+    modules = components.get("modules", {}) if isinstance(components.get("modules"), dict) else {}
+    # Try key candidates first
+    for key in key_candidates:
+        block = modules.get(key)
+        if isinstance(block, dict) and isinstance(block.get("instructions"), str) and block["instructions"].strip():
+            return block["instructions"].strip()
+    # Otherwise, pick first module with instructions
+    for block in modules.values():
+        if isinstance(block, dict) and isinstance(block.get("instructions"), str) and block["instructions"].strip():
+            return block["instructions"].strip()
+    return None
+
+
+def _maybe_apply_instructions(stage: str) -> None:
+    """Load optimized instructions from artifacts and apply to signatures.
+
+    stage: 'stories' or 'architecture'
+    """
+    root = _project_root()
+    cfg = _read_yaml(root / "config.yaml")
+    features = cfg.get("features", {}) if isinstance(cfg.get("features", {}), dict) else {}
+    arch_features = features.get("architect", {}) if isinstance(features, dict) else {}
+    # If a global switch exists and is false, skip
+    use_opt = arch_features.get("use_optimized_prompt")
+    if use_opt is False:
+        return
+
+    # Determine source paths (prefer stage-specific; fallback to end-to-end)
+    sources: list[Path] = []
+    if stage == "stories":
+        sources.append(root / "artifacts/dspy/optimizer/architect_stories/program_components.json")
+    elif stage == "architecture":
+        sources.append(root / "artifacts/dspy/optimizer/architect_arch/program_components.json")
+    sources.append(root / "artifacts/dspy/optimizer/architect/program_components.json")
+
+    # Key candidates by stage
+    key_candidates = ["_stories"] if stage == "stories" else ["_arch"]
+
+    for path in sources:
+        if not path.exists():
+            continue
+        components = _load_components_json(path)
+        instr = _extract_instructions(components, key_candidates)
+        if instr:
+            if stage == "stories":
+                StoriesEpicsSignature.instructions = instr
+                logger.info("[ArchitectDSPy] Applied optimized instructions for Stories from %s", path)
+            else:
+                ArchitectureSignature.instructions = instr
+                logger.info("[ArchitectDSPy] Applied optimized instructions for Architecture from %s", path)
+            return
+    # Nothing applied; proceed silently
+    return

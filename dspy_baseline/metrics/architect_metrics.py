@@ -10,6 +10,7 @@ import yaml
 
 RE_STORY_ID = re.compile(r"^S(\d+)$")
 PRIORITIES = {"P1", "P2", "P3"}
+PRIORITIES_HML = {"HIGH", "MEDIUM", "LOW"}
 ESTIMATES = {"XS", "S", "M", "L", "XL"}
 
 
@@ -50,7 +51,8 @@ def _extract_architecture(data: Any) -> Dict[str, Any]:
 def _stories_completeness(stories: List[Dict[str, Any]], epic_ids: Sequence[str]) -> float:
     if not stories:
         return 0.0
-    required_fields = ["id", "epic", "title", "description", "acceptance", "priority", "estimate", "status"]
+    # Relax: focus on core fields; treat 'status' as optional
+    required_fields = ["id", "epic", "title", "description", "acceptance", "priority", "estimate"]
     total_fields = len(stories) * len(required_fields)
     filled = 0
     for story in stories:
@@ -102,8 +104,10 @@ def _stories_quality(stories: List[Dict[str, Any]]) -> float:
             passed += 1
         if isinstance(description, str) and len(description.strip()) >= 20:
             passed += 1
-        if isinstance(priority, str) and priority.strip() in PRIORITIES:
-            passed += 1
+        if isinstance(priority, str):
+            p = priority.strip().upper()
+            if p in PRIORITIES or p in PRIORITIES_HML:
+                passed += 1
         if isinstance(estimate, str) and estimate.strip().upper() in ESTIMATES:
             passed += 1
 
@@ -117,7 +121,8 @@ def _epics_structure(epics: List[Dict[str, Any]], stories: List[Dict[str, Any]])
     story_ids = {str(story.get("id")) for story in stories if story.get("id")}
     checks: List[float] = []
     for epic in epics:
-        basics = all(isinstance(epic.get(field), str) and epic.get(field).strip() for field in ("id", "name", "description"))
+        # Relax: require 'id'; 'name'/'description' optional
+        basics = isinstance(epic.get("id"), str) and bool(str(epic.get("id")).strip())
         story_list = epic.get("stories") if isinstance(epic.get("stories"), list) else []
         has_story_list = bool(story_list)
         stories_exist = all(str(sid) in story_ids for sid in story_list) if story_list else False

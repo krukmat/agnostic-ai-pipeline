@@ -89,13 +89,19 @@ class ArchitectureProgramStage(dspy.Module):
         complexity_tier: str = "medium",
         stories_yaml_seed: str = "",
         epics_yaml_seed: str = "",
+        # Accept alternative input names to match dataset/example field names
+        stories_yaml: str = "",
+        epics_yaml: str = "",
+        **kwargs,
     ):
         try:
-            stories = yaml.safe_load(stories_yaml_seed) or []
+            seed_stories = stories_yaml_seed or stories_yaml
+            stories = yaml.safe_load(seed_stories) or []
         except Exception:
             stories = []
         try:
-            epics = yaml.safe_load(epics_yaml_seed) or []
+            seed_epics = epics_yaml_seed or epics_yaml
+            epics = yaml.safe_load(seed_epics) or []
         except Exception:
             epics = []
         if not isinstance(stories, list):
@@ -119,4 +125,3 @@ class ArchitectureProgramStage(dspy.Module):
         pred = _Prediction()
         pred.architecture_yaml = getattr(a, "architecture_yaml", "") or ""
         return pred
-

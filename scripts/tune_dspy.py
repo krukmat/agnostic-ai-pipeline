@@ -319,6 +319,10 @@ def main(
     ),
 ) -> None:
     """Compile the selected DSPy program using the provided trainset."""
+    # Signal MiPRO mode so per-module LMs can lift max_tokens beyond small caps
+    os.environ["DSPY_MIPRO_MODE"] = "1"
+    if max_tokens is not None:
+        os.environ["DSPY_MIPRO_MAX_TOKENS"] = str(max_tokens)
     train_examples = _examples_from_jsonl(trainset_path, role=role)
     val_examples: Optional[List[dspy.Example]] = (
         _examples_from_jsonl(valset_path, role=role) if valset_path else None
