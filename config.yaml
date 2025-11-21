@@ -166,7 +166,7 @@ features:
   use_dspy_product_owner: true
   use_dspy_architect: true
   architect:
-    arch_only: true
+    arch_only: false
     normalize_minified_arch: true
     use_optimized_prompt: true
     prompt_override_file: ""

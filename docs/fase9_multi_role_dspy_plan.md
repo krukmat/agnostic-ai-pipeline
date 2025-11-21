@@ -236,7 +236,60 @@ Fase 8 demostró que DSPy MIPROv2 es **extremadamente efectivo** para optimizaci
     - `logs/mipro_architect_*`
   - Opcional: una pasada E2E extra (16–24 trials) para confirmar estabilidad en ≥0.60.
   - Avanzar al siguiente rol (según priorización de Fase 9) manteniendo el patrón:
-    - modularización + métrica específica + caps + two‑stage si aplica.
+    - modularización + métrica específica + caps + two-stage si aplica.
+
+#### 9.1.K – Plan para romper el “techo” (sin cambiar modelo)
+
+- Evidencia actual
+  - MiPRO E2E Flash 32/12 → Best ≈ 61.66 (val=20)
+  - MiPRO E2E Flash 48/12 → Best ≈ 62.36; full evals en 57–62% (val=20)
+  - Truncaciones por max_tokens=2000 eliminadas (LM interno respeta el max_tokens alto en modo MiPRO)
+  - Patrón repetido: los trials encuentran el mismo pico (~62%) aunque aumentemos candidatos/iteraciones.
+
+- Diagnóstico
+  1. **Métrica “todo o nada”**: fallos en IDs secuenciales, referencias de epics o dependencias derriban secciones completas (sin crédito parcial).
+  2. **Dataset limitado**: Train=32/Val=20 sin ejemplos “gold” conocidos; la mayoría ronda 50–60%, dando señal modesta al optimizador.
+  3. **Stories/Epics en un solo paso**: entidades interdependientes que el modelo debe inventar a la vez, aumentando errores combinatorios.
+
+- Plan estructural (manteniendo gemini-2.5-flash)
+  1. **architect_metric v2** (≈2–3 h)
+     - Ajustes técnicos:
+       - Stories completeness: crédito parcial para IDs secuenciales, epic refs y campos obligatorios (0.25 cada uno en lugar de 0/1).
+       - Stories quality: prioridad acepta {P1,P2,P3,High,Medium,Low}; estado deja de penalizar; aceptación requiere ≥3 bullets Gherkin, pero penaliza por bullet faltante y no derriba todo.
+       - Epics: ID obligatorio; name/description opcionales; referencias a stories suman peso proporcional.
+       - Dependencias: otorgar puntos proporcionales a la cantidad de referencias válidas y restar sólo por ciclos detectados.
+     - Objetivo: errores aislados restan una fracción en vez de “apagar” el 25–30% de la métrica.
+     - Pruebas necesarias:
+       - Ajustar tests de `architect_metric` o crear nuevos (con historias/epics incompletas) para garantizar que el score se degrada gradualmente.
+
+  2. **Dataset “gold” (~50 muestras)** (≈4–6 h)
+     - Generación técnica:
+       - Usar `scripts/run_architect.py dataset` con min_score ≥0.85 (nueva métrica) y val=20+.
+       - Fuentes: BA normalization dedupe + seeds (Flash o PRO para bootstrap). Si se usa PRO sólo para generar el set gold, la pipeline final sigue corriendo en Flash.
+     - Validación automática:
+       - Aprovechar validadores existentes (stories JSON, architecture YAML) y la métrica v2 para descartar outputs <0.85.
+       - Spot check manual de 5–10 muestras para asegurar que historias/épics cumplen el contrato (IDs, Gherkin, dependencies) y que la arquitectura está alineada.
+     - Uso:
+       - Mezclar este set como train/val “alto puntaje” y congelarlo en artifacts/dspy/optimizer/architect_gold/.
+       - Mantener los samples existentes como “regular” para robustez, pero usar el gold como base para tuning.
+
+  3. **Retuning Flash**
+     - Repetir dos-stage y E2E con val≥20 y métrica v2.
+     - Esperado: subir la banda de 60–62% hacia 70% sin mover de modelo.
+
+- Extras opcionales
+  - **Normalizador post-predicción (stories/épics)**:
+    - Script liviano que corrige/complete:
+      - IDs: renombrar a S1..Sn en orden de aparición, actualizar epic references en consecuencia.
+      - Priority/estimate: asignar defaults (P2/M) si faltan, dentro del set permitido.
+      - Acceptance: completar hasta 3 bullets Gherkin (“Given… When… Then…”) si han quedado 2 o menos.
+      - Epic stories: eliminar referencias inexistentes, asegurar al menos 1 story asignada.
+    - Esto reduce el costo en tokens (no hace call adicional) y hace que la métrica vea datos “limpios”.
+
+  - **Rerank n_candidates**:
+    - Modificar `run_architect.py` (modo DSPy) para generar N candidatos (ej. N=3) con seeds distintos y calificar cada uno con `architect_metric`.
+    - Seleccionar el mejor sin llamadas externas costosas.
+    - Ventaja: sube 2–3 puntos en promedio sin tocar el modelo ni el costo de prompts (sólo multiplica el runtime local).
 
 
 ---

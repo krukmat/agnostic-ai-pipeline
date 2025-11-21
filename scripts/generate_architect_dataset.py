@@ -134,6 +134,15 @@ def parse_and_validate_stories_json(raw: str) -> Optional[Dict[str, Any]]:
         if not isinstance(story, dict):
             logger.warning(f"[architect-dataset] Story #{idx+1} is not an object.")
             return None
+        # Coerce missing fields when possible
+        if not story.get("title") and isinstance(story.get("name"), str):
+            story["title"] = story["name"]
+        if not story.get("description") and isinstance(story.get("summary"), str):
+            story["description"] = story["summary"]
+        if not story.get("description") and isinstance(story.get("title"), str):
+            story["description"] = story["title"]
+        if not story.get("title") and isinstance(story.get("description"), str):
+            story["title"] = story["description"][:80]
         description = story.get("description") or story.get("title")
         if not isinstance(description, str) or not description.strip():
             logger.warning(f"[architect-dataset] Story #{idx+1} missing description/title.")
