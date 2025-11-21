@@ -139,48 +139,66 @@ def _extract_program_components(compiled_program: Any, role: str) -> Dict[str, A
         "modules": {},
     }
 
-    # Extract components from each predictive module
-    for attr_name in dir(compiled_program):
-        attr = getattr(compiled_program, attr_name, None)
-        if attr is None:
-            continue
+    visited: set[int] = set()
 
-        # Check if this is a dspy.Predict or similar module
-        if hasattr(attr, "signature") and hasattr(attr, "demos"):
-            module_data: Dict[str, Any] = {
-                "type": type(attr).__name__,
-            }
+    def _walk(obj: Any, prefix: str = "") -> None:
+        if obj is None:
+            return
+        if id(obj) in visited:
+            return
+        visited.add(id(obj))
+        for attr_name in dir(obj):
+            if attr_name.startswith("__"):
+                continue
+            attr = getattr(obj, attr_name, None)
+            if attr is None:
+                continue
+            key = f"{prefix}{attr_name}" if prefix else attr_name
 
-            # Extract signature information
-            sig = attr.signature
-            if hasattr(sig, "instructions"):
-                module_data["instructions"] = sig.instructions
-            if hasattr(sig, "fields"):
-                # Extract field names and descriptions
-                fields_data = {}
-                for field_name, field_info in sig.fields.items():
-                    fields_data[field_name] = {
-                        "type": "input" if field_info.json_schema_extra.get("__dspy_field_type") == "input" else "output",
-                        "desc": field_info.json_schema_extra.get("desc", ""),
-                    }
-                module_data["fields"] = fields_data
+            if hasattr(attr, "signature") and hasattr(attr, "demos"):
+                module_data: Dict[str, Any] = {
+                    "type": type(attr).__name__,
+                }
+                sig = attr.signature
+                if hasattr(sig, "instructions"):
+                    module_data["instructions"] = sig.instructions
+                if hasattr(sig, "fields"):
+                    fields_data = {}
+                    for field_name, field_info in sig.fields.items():
+                        fields_data[field_name] = {
+                            "type": (
+                                "input"
+                                if field_info.json_schema_extra.get("__dspy_field_type") == "input"
+                                else "output"
+                            ),
+                            "desc": field_info.json_schema_extra.get("desc", ""),
+                        }
+                    module_data["fields"] = fields_data
 
-            # Extract demos (few-shot examples)
-            if attr.demos:
-                demos_data = []
-                for demo in attr.demos:
-                    demo_dict = {}
-                    if hasattr(demo, "inputs"):
-                        demo_dict["inputs"] = demo.inputs()
-                    if hasattr(demo, "outputs"):
-                        demo_dict["outputs"] = demo.outputs()
-                    elif hasattr(demo, "_store"):
-                        # Fallback: extract from internal store
-                        demo_dict = {k: v for k, v in demo._store.items()}
-                    demos_data.append(demo_dict)
-                module_data["demos"] = demos_data
+                if attr.demos:
+                    demos_data = []
+                    for demo in attr.demos:
+                        demo_dict = {}
+                        if hasattr(demo, "inputs"):
+                            try:
+                                demo_dict["inputs"] = demo.inputs()
+                            except Exception:
+                                pass
+                        if hasattr(demo, "outputs"):
+                            try:
+                                demo_dict["outputs"] = demo.outputs()
+                            except Exception:
+                                pass
+                        if not demo_dict and hasattr(demo, "_store"):
+                            demo_dict = {k: v for k, v in demo._store.items()}
+                        demos_data.append(demo_dict)
+                    module_data["demos"] = demos_data
 
-            components["modules"][attr_name] = module_data
+                components["modules"][key] = module_data
+            elif isinstance(attr, dspy.Module):
+                _walk(attr, prefix=f"{key}.")
+
+    _walk(compiled_program)
 
     return components
 
@@ -201,6 +219,14 @@ def _configure_lm(
     temperature: Optional[float] = None,
 ) -> dspy.LM:
     provider = provider.lower()
+    def _stamp_max_tokens(lm_obj: dspy.LM) -> dspy.LM:
+        if max_tokens is not None:
+            try:
+                setattr(lm_obj, "max_tokens", max_tokens)
+            except Exception:
+                pass
+        return lm_obj
+
     if provider in {"vertex", "vertex_ai"}:
         # Always prefer config.yaml when flags are not provided
         project_id = vertex_project
@@ -218,12 +244,14 @@ def _configure_lm(
         # Fallback last to env vars if still missing (no hardcoded defaults)
         project_id = project_id or os.environ.get("GCP_PROJECT")
         location = location or os.environ.get("VERTEX_LOCATION")
-        return dspy.LM(
-            f"vertex_ai/{model}",
-            project=project_id,
-            location=location,
-            max_tokens=max_tokens,
-            temperature=temperature,
+        return _stamp_max_tokens(
+            dspy.LM(
+                f"vertex_ai/{model}",
+                project=project_id,
+                location=location,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
         )
     if provider == "ollama":
         base_url = (
@@ -231,23 +259,29 @@ def _configure_lm(
             or os.environ.get("OLLAMA_BASE_URL")
             or "http://localhost:11434"
         )
-        return dspy.LM(
-            f"ollama/{model}",
-            base_url=base_url,
-            max_tokens=max_tokens,
-            temperature=temperature,
+        return _stamp_max_tokens(
+            dspy.LM(
+                f"ollama/{model}",
+                base_url=base_url,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
         )
     if provider == "openai":
-        return dspy.LM(
-            f"openai/{model}",
-            max_tokens=max_tokens,
-            temperature=temperature,
+        return _stamp_max_tokens(
+            dspy.LM(
+                f"openai/{model}",
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
         )
     if provider == "claude_cli":
-        return dspy.LM(
-            f"anthropic/{model}",
-            max_tokens=max_tokens,
-            temperature=temperature,
+        return _stamp_max_tokens(
+            dspy.LM(
+                f"anthropic/{model}",
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
         )
     raise typer.BadParameter(f"Unsupported provider '{provider}'.")
 
@@ -366,6 +400,40 @@ def main(
         stop_metric=stop_metric,
     )
 
+    eval_summary: Dict[str, Any] = {}
+    if val_examples:
+        val_scores: List[float] = []
+        per_sample: List[Dict[str, Any]] = []
+        for idx, example in enumerate(val_examples, start=1):
+            inputs = example.inputs()
+            try:
+                prediction = compiled(**inputs)
+                score = metric(example, prediction)
+            except Exception as exc:
+                typer.echo(f"⚠️  Validation example #{idx} raised {exc}; score=0.")
+                score = 0.0
+            val_scores.append(score)
+            per_sample.append(
+                {
+                    "index": idx,
+                    "concept": inputs.get("concept", ""),
+                    "score": score,
+                }
+            )
+        if val_scores:
+            avg_score = sum(val_scores) / len(val_scores)
+            typer.echo(
+                f"📊 Validation average: {avg_score * 100:.2f}% "
+                f"(min {min(val_scores) * 100:.2f}%, max {max(val_scores) * 100:.2f}%)"
+            )
+            eval_summary = {
+                "average_score": avg_score,
+                "min_score": min(val_scores),
+                "max_score": max(val_scores),
+                "num_examples": len(val_scores),
+                "samples": per_sample,
+            }
+
     role_dir = output_dir / role
     role_dir.mkdir(parents=True, exist_ok=True)
     metadata = {
@@ -383,8 +451,18 @@ def main(
         "provider": provider,
         "model": model,
     }
+    if eval_summary:
+        metadata["eval_summary"] = {
+            "average_score": eval_summary["average_score"],
+            "min_score": eval_summary["min_score"],
+            "max_score": eval_summary["max_score"],
+            "num_examples": eval_summary["num_examples"],
+        }
     metadata_path = role_dir / "metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    if eval_summary:
+        eval_path = role_dir / "eval_summary.json"
+        eval_path.write_text(json.dumps(eval_summary, indent=2), encoding="utf-8")
 
     # Try multiple serialization strategies
     program_path = role_dir / "program.pkl"

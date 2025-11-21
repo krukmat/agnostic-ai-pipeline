@@ -164,9 +164,9 @@ a2a:
 features:
   use_dspy_ba: true
   use_dspy_product_owner: true
-  use_dspy_architect: true
+  use_dspy_architect: false
   architect:
     arch_only: false
     normalize_minified_arch: true
-    use_optimized_prompt: true
+    use_optimized_prompt: false
     prompt_override_file: ""

@@ -139,6 +139,9 @@ def cli_dataset(
     max_records: int = typer.Option(20, help="Desired sample count"),
     seed: int = typer.Option(42, help="Shuffle seed"),
     resume: bool = typer.Option(False, help="Append to existing JSONL files instead of overwriting"),
+    metric_path: Optional[str] = typer.Option(
+        None, help="Optional metric override 'module:function' (default architect_metric)."
+    ),
 ):
     """Generate Architect dataset using the integrated pipeline.
 
@@ -153,6 +156,7 @@ def cli_dataset(
         max_records=max_records,
         seed=seed,
         resume=resume,
+        metric_path=metric_path,
     )
 
 

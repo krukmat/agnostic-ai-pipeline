@@ -97,6 +97,40 @@ This keeps every agent on locally hosted models while the pipeline remains ready
 
 ---
 
+## Legacy vs DSPy Workflow
+
+The pipeline intentionally supports two execution styles:
+
+1. **Legacy mode** – the original role scripts (`scripts/run_product_owner.py`, `scripts/run_architect.py`, etc.) call the selected models with static prompts. Use this mode to bootstrap or refresh datasets because it reflects the “factory baseline” and never depends on optimized instructions.
+2. **DSPy + MiPROv2 mode** – each role also has a DSPy program (`dspy_baseline/modules/...`). When you want better quality you run:
+   ```bash
+   PYTHONPATH=. .venv/bin/python scripts/tune_dspy.py --role <role> --trainset <train.jsonl> --valset <val.jsonl> --metric <metric> [...]
+   ```
+   MiPROv2 will discover improved instructions and few‑shot demos, write them under `artifacts/dspy/optimizer/<role>/`, and record the validation score.
+
+### Recommended workflow
+
+1. **Generate or clean data in legacy mode.**  
+   - Run the role’s legacy script to produce JSONL outputs.  
+   - Normalize them (helpers live under `scripts/` such as `normalize_ba_jsonl.py`).  
+   - Split into `train/val` and store them in `dspy_baseline/data/production/` or `artifacts/synthetic/<role>/`.
+2. **Run MiPROv2 on the DSPy program.**  
+   - Launch `scripts/tune_dspy.py` with those JSONL files and the role metric (e.g., `dspy_baseline.metrics.architect_metrics:architect_metric_v2`).  
+   - The optimizer prints the validation average and stores `program_components.json` plus `eval_summary.json`.
+3. **Activate the optimized prompt.**  
+   - Update `config.yaml` → `features.<role>.use_optimized_prompt: true` and point `prompt_override_file` to the generated `program_components.json`.  
+   - From now on, running the role (either via `make <ROLE>` or `scripts/run_<role>.py`) automatically uses the tuned DSPy instructions.
+
+### When to switch back to legacy
+
+- **New data** – if you need more examples or radically different concepts, return to legacy mode to generate/clean them, then run MiPRO again.  
+- **New model/provider** – any time you swap the underlying LLM, re-run MiPRO because the old prompt was optimized for the previous model.  
+- Otherwise keep executing in DSPy mode; legacy is only your “springboard” for data refreshes.
+
+> **Architect note:** `features.architect.arch_only` controls whether the Architect role skips story generation and uses stubbed JSON just to produce architectures. Keep it `false` for the full BA→PO→Architect→Dev→QA pipeline (stories + architecture). Only set it to `true` when you are intentionally collecting architecture-only datasets, knowing that Dev/QA will not receive real stories in that mode.
+
+---
+
 ## GitHub Pages Reference
 
 Need a shareable, read-only view of the pipeline? The repository publishes the latest marketing/overview docs to GitHub Pages.

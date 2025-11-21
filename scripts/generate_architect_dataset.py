@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import random
 import re
@@ -34,6 +35,12 @@ DEFAULT_OUTPUT_TRAIN = ROOT / "dspy_baseline" / "data" / "production" / "archite
 DEFAULT_OUTPUT_VAL = ROOT / "dspy_baseline" / "data" / "production" / "architect_val.jsonl"
 
 app = typer.Typer(help="Generate Architect synthetic dataset (requires BA/PO/Architect providers).")
+_METRIC_FUNC = architect_metric
+
+
+def _set_metric_func(func):
+    global _METRIC_FUNC
+    _METRIC_FUNC = func
 
 
 @dataclass
@@ -445,7 +452,7 @@ def metric_score(stories: str, epics: str, architecture: str) -> float:
             self.epics_yaml = e
             self.architecture_yaml = a
 
-    return architect_metric(None, Prediction(stories, epics, architecture))
+    return _METRIC_FUNC(None, Prediction(stories, epics, architecture))
 
 
 def split_train_val(samples: List[Dict], val_ratio: float = 0.2) -> tuple[List[Dict], List[Dict]]:
@@ -480,6 +487,9 @@ def generate(
     max_records: int = typer.Option(200, help="Desired sample count"),
     seed: int = typer.Option(42, help="Shuffle seed"),
     resume: bool = typer.Option(False, help="Append to existing JSONL files instead of overwriting"),
+    metric_path: Optional[str] = typer.Option(
+        None, help="Optional metric override 'module:function' (default architect_metric)."
+    ),
 ) -> None:
     payloads = load_ba_examples(ba_path)
     if not payloads:
@@ -488,6 +498,20 @@ def generate(
 
     random.seed(seed)
     random.shuffle(payloads)
+
+    metric_func = architect_metric
+    if metric_path:
+        if ":" not in metric_path:
+            logger.error("[architect-dataset] metric_path must be 'module:function'.")
+            raise typer.Exit(code=1)
+        module_name, func_name = metric_path.split(":", 1)
+        try:
+            metric_module = importlib.import_module(module_name)
+            metric_func = getattr(metric_module, func_name)
+        except Exception as exc:
+            logger.error(f"[architect-dataset] Unable to load metric '{metric_path}': {exc}")
+            raise typer.Exit(code=1)
+    _set_metric_func(metric_func)
 
     po_client = Client(role="product_owner")
     # Read feature toggle for architecture-only mode

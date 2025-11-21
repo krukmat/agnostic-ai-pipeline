@@ -90,7 +90,13 @@ def build_lm_for_role(role: str, **override_kwargs) -> dspy.LM:
         lm_kwargs["base_url"] = base_url
         lm_spec = f"ollama/{model}"
 
-    return dspy.LM(lm_spec, **lm_kwargs)
+    lm = dspy.LM(lm_spec, **lm_kwargs)
+    if lm_kwargs.get("max_tokens") is not None:
+        try:
+            setattr(lm, "max_tokens", lm_kwargs["max_tokens"])
+        except Exception:
+            pass
+    return lm
 
 
 def get_role_output_cap(

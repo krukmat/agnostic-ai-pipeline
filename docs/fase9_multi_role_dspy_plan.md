@@ -277,6 +277,15 @@ Fase 8 demostró que DSPy MIPROv2 es **extremadamente efectivo** para optimizaci
      - Repetir dos-stage y E2E con val≥20 y métrica v2.
      - Esperado: subir la banda de 60–62% hacia 70% sin mover de modelo.
 
+##### 9.1.K.1 – Avance 2025-11-21
+
+- **Dataset gold listo**: `scripts/run_architect.py dataset --metric-path dspy_baseline.metrics.architect_metrics:architect_metric_v2 --min-score 0.85 --max-records 50` (arch_only, Flash 2.5). Resultado: 40 train / 10 val (`artifacts/synthetic/architect/architect_*_gold_v2.jsonl`) con `metadata.score ≥ 0.85`. Log principal: `logs/dataset_architect_gold_v2_20251121_143558.log`.
+- **MiPROv2 en dataset gold**: `scripts/tune_dspy.py ... --max-tokens 8000 --output artifacts/dspy/optimizer/architect_gold_v2` (12×32 trials). Serialización via `program_components.json` por fallo de dill. Log: `logs/mipro_architect_gold_v2_20251121_150330.log`.
+- **Seguimiento**: el log sólo mostró bootstrapping + minibatches (~49%) y no imprimió “Full eval scores” ni “Best full score”. Próximas acciones:
+  1. Rerun con logging más verboso o menos trials para forzar flush del resumen.
+  2. Alternativa: rehidratar `program_components.json` y evaluar manualmente contra `architect_val_gold_v2.jsonl` para medir uplift vs. 62.36%.
+- Hasta tener ese score documentado no se activa `features.architect.use_optimized_prompt` con este programa.
+
 - Extras opcionales
   - **Normalizador post-predicción (stories/épics)**:
     - Script liviano que corrige/complete:

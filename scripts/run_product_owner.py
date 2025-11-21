@@ -45,13 +45,12 @@ def _normalize_po_yaml(content: str) -> str:
         if stripped.startswith("-"):
             payload = stripped[1:].lstrip()
             if payload:
+                needs_quote = False
                 # Quote bullets that start with special characters that YAML treats as directives/tokens
                 if payload[0] in ("%", "&", "*", "#", "!", "?", "@", "[", "]", "{", "}", ","):
-                    payload_q = payload.replace('"', '\\"')
-                    line = " " * indent + f"- \"{payload_q}\""
+                    needs_quote = True
                 elif payload[0] in (">", "<"):
-                    payload = payload.replace('"', '\\"')
-                    line = " " * indent + f"- \"{payload}\""
+                    needs_quote = True
                 else:
                     colon_idx = payload.find(":")
                     if colon_idx != -1:
@@ -61,8 +60,16 @@ def _normalize_po_yaml(content: str) -> str:
                         key_has_unicode = any(ord(ch) > 127 for ch in key_part)
                         key_is_simple = re.fullmatch(r"[\w-]+", key_part.strip() or "") is not None
                         if remainder and (key_has_spaces or key_has_unicode) and not key_is_simple:
-                            quoted = payload.replace('"', '\\"')
-                            line = " " * indent + f"- \"{quoted}\""
+                            needs_quote = True
+
+                # Percent tokens anywhere in the first word also need quoting (YAML treats `%` as directive)
+                first_token = payload.split()[0] if payload.split() else ""
+                if "%" in first_token:
+                    needs_quote = True
+
+                if needs_quote:
+                    payload_q = payload.replace('"', '\\"')
+                    line = " " * indent + f"- \"{payload_q}\""
         else:
             if stripped and stripped[0] in (">", "<"):
                 payload = stripped.replace('"', '\\"')
