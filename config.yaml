@@ -162,8 +162,8 @@ a2a:
   authentication:
     mode: none
 features:
-  use_dspy_ba: true
-  use_dspy_product_owner: true
+  use_dspy_ba: false
+  use_dspy_product_owner: false
   use_dspy_architect: false
   architect:
     arch_only: false
