@@ -15,6 +15,9 @@ import typer
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
+
+# Task: database-layer - Import dual-write support
+from src.db import get_current_context
 from pathlib import Path
 from scripts.generate_architect_dataset import generate as _dataset_generate
 from scripts.normalize_ba_jsonl import normalize as _ba_normalize
@@ -531,6 +534,27 @@ async def run_architect_job(
         (PLANNING / "architecture.yaml").write_text(outputs["architecture_yaml"], encoding="utf-8")
         if outputs.get("prd_yaml"):
             (PLANNING / "prd_generated.yaml").write_text(outputs["prd_yaml"], encoding="utf-8")
+
+        # Task: database-layer - Save architect artifacts to DB
+        db_ctx = get_current_context()
+        if db_ctx and db_ctx.enabled:
+            db_ctx.save_artifact("architect", "stories", outputs["stories_yaml"])
+            db_ctx.save_artifact("architect", "epics", outputs["epics_yaml"])
+            db_ctx.save_artifact("architect", "architecture", outputs["architecture_yaml"])
+            if outputs.get("prd_yaml"):
+                db_ctx.save_artifact("architect", "prd", outputs["prd_yaml"])
+            # Parse and create stories in DB
+            try:
+                stories_data = yaml.safe_load(outputs["stories_yaml"])
+                if isinstance(stories_data, list):
+                    db_ctx.create_stories_from_list(stories_data)
+                elif isinstance(stories_data, dict) and "stories" in stories_data:
+                    db_ctx.create_stories_from_list(stories_data["stories"])
+            except Exception as e:
+                logger.warning(f"[ARCHITECT] Could not sync stories to DB: {e}")
+            db_ctx.log_event("artifact_created", "Architect artifacts generated (DSPy)", role="architect")
+            logger.debug("[ARCHITECT] Artifacts saved to database")
+
         print("✓ Architect DSPy pipeline completed.")
         return {
             "mode": "dspy",

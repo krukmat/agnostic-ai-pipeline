@@ -8,6 +8,12 @@ from .repository import (
     RoleArtifactRepository,
     EventLogRepository,
 )
+from .dual_write import (
+    DualWriteContext,
+    get_current_context,
+    set_current_context,
+    db_enabled,
+)
 
 __all__ = [
     "Database",
@@ -21,4 +27,8 @@ __all__ = [
     "StoryAttemptRepository",
     "RoleArtifactRepository",
     "EventLogRepository",
+    "DualWriteContext",
+    "get_current_context",
+    "set_current_context",
+    "db_enabled",
 ]

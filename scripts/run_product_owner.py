@@ -11,6 +11,9 @@ from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from llm import Client
 from logger import logger # Import the logger
 
+# Task: database-layer - Import dual-write support
+from src.db import get_current_context
+
 CONFIG_PATH = ROOT / "config.yaml"
 
 DSPY_CACHE_DIR = Path(os.environ.get("DSPY_CACHEDIR", "/tmp/dspy_cache"))
@@ -282,6 +285,16 @@ async def main() -> None:
     else:
         logger.warning("[PO] REVIEW block missing in LLM response")
 
+    # Task: database-layer - Save artifacts to DB
+    db_ctx = get_current_context()
+    if db_ctx and db_ctx.enabled:
+        if vision_yaml:
+            db_ctx.save_artifact("po", "product_vision", sanitized_vision)
+        if review_yaml:
+            db_ctx.save_artifact("po", "product_owner_review", sanitized_review)
+        db_ctx.log_event("artifact_created", "PO artifacts generated", role="po")
+        logger.debug("[PO] Artifacts saved to database")
+
 
 async def run_dspy_program(requirements_content: str, concept: str, existing_vision: str) -> None:
     program_dir = ROOT / "artifacts" / "dspy" / "po_optimized_full_snapshot_20251117T105427" / "product_owner"
@@ -342,6 +355,16 @@ async def run_dspy_program(requirements_content: str, concept: str, existing_vis
         logger.info("[PO][DSPY] ✓ product_owner_review.yaml updated from DSPy snapshot")
     else:
         logger.warning("[PO][DSPY] Missing product_owner_review output from snapshot")
+
+    # Task: database-layer - Save artifacts to DB (DSPy path)
+    db_ctx = get_current_context()
+    if db_ctx and db_ctx.enabled:
+        if vision_yaml:
+            db_ctx.save_artifact("po", "product_vision", sanitized_vision)
+        if review_yaml:
+            db_ctx.save_artifact("po", "product_owner_review", sanitized_review)
+        db_ctx.log_event("artifact_created", "PO artifacts generated (DSPy)", role="po")
+        logger.debug("[PO][DSPY] Artifacts saved to database")
 
 
 if __name__ == "__main__":
