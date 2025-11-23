@@ -412,6 +412,167 @@ config.yaml                # Agregar sección database
 
 ---
 
+## Implementación Fase 1 (Completada)
+
+### Resumen
+**Branch:** `feature/database-layer`
+**Commit:** `077954b`
+**Fecha:** 2025-11-23
+
+### Archivos Creados
+
+#### 1. `src/db/storage.py` - Database Singleton
+Implementa el patrón singleton para la conexión SQLite con:
+- **WAL mode**: Permite lecturas concurrentes mientras se escribe
+- **Foreign keys**: Habilitadas para integridad referencial
+- **Busy timeout**: 5000ms para evitar errores de bloqueo
+- **Transaction helper**: Context manager `with db.transaction():`
+
+```python
+# Uso básico
+from src.db import get_db
+db = get_db()
+
+# Transacción
+with db.transaction():
+    db.execute("INSERT INTO projects ...")
+    db.execute("INSERT INTO iterations ...")
+```
+
+#### 2. `src/db/schema.py` - Definiciones DDL
+Contiene:
+- **7 tablas**: `projects`, `iterations`, `stories`, `story_attempts`, `role_artifacts`, `event_log`, `model_stats`, `schema_version`
+- **7 índices**: Para optimizar queries frecuentes en `event_log`, `stories`, `story_attempts`, `role_artifacts`
+- **Versionado**: `SCHEMA_VERSION = 1` para migraciones futuras
+
+```python
+# Crear schema
+from src.db.schema import create_schema
+create_schema(db)
+```
+
+#### 3. `src/db/repository.py` - Repositorios CRUD
+6 clases de repositorio, cada una con operaciones específicas:
+
+| Repositorio | Métodos Principales |
+|-------------|---------------------|
+| `ProjectRepository` | `create()`, `get()`, `get_by_name()`, `list_all()`, `update_status()` |
+| `IterationRepository` | `create()`, `get()`, `get_latest()`, `update_status()`, `increment_loops()` |
+| `StoryRepository` | `create()`, `get()`, `get_by_story_id()`, `list_by_iteration()`, `list_by_status()`, `update_status()`, `update_metadata()`, `count_by_status()` |
+| `StoryAttemptRepository` | `create()`, `list_by_story()`, `get_last_attempt()`, `count_attempts()` |
+| `RoleArtifactRepository` | `create()` (auto-versiona), `get_latest()`, `list_by_project()` |
+| `EventLogRepository` | `log()`, `list_recent()`, `list_by_type()`, `list_errors()` |
+
+```python
+# Ejemplo de uso
+from src.db import get_db, ProjectRepository, StoryRepository
+
+db = get_db()
+projects = ProjectRepository(db)
+stories = StoryRepository(db)
+
+pid = projects.create("mi-proyecto", "Concepto de negocio")
+# ... crear iteration ...
+stories.create(iteration_id, "S1", "Primera historia", priority="P1")
+```
+
+#### 4. `src/db/__init__.py` - Exports
+Expone la API pública del módulo:
+```python
+from src.db import (
+    Database, get_db,
+    ProjectRepository, IterationRepository, StoryRepository,
+    StoryAttemptRepository, RoleArtifactRepository, EventLogRepository
+)
+```
+
+#### 5. `scripts/db_migrate.py` - CLI de Migración
+Script ejecutable para gestionar el schema:
+
+```bash
+# Crear schema (primera vez)
+python scripts/db_migrate.py
+
+# Verificar versión actual
+python scripts/db_migrate.py --check
+
+# Forzar recreación (desarrollo)
+python scripts/db_migrate.py --force
+
+# Usar path alternativo
+python scripts/db_migrate.py --db-path /tmp/test.db
+```
+
+#### 6. `tests/test_db_repository.py` - Tests Unitarios
+17 tests cubriendo todos los repositorios:
+
+| Clase Test | Tests | Cobertura |
+|------------|-------|-----------|
+| `TestProjectRepository` | 4 | create, get, get_by_name, list_all, update_status |
+| `TestIterationRepository` | 3 | create, get_latest, increment_loops |
+| `TestStoryRepository` | 4 | create, list_by_iteration, update_status, count_by_status |
+| `TestStoryAttemptRepository` | 2 | create_and_list, count_attempts |
+| `TestRoleArtifactRepository` | 2 | versioning, list_by_project |
+| `TestEventLogRepository` | 2 | log_and_list, list_errors |
+
+```bash
+# Ejecutar tests
+PYTHONPATH=. .venv/bin/pytest tests/test_db_repository.py -v
+# Resultado: 17 passed in 0.10s
+```
+
+### Configuración Adicional
+
+#### `.gitignore` actualizado
+```
+data/pipeline.db
+data/pipeline.db-wal
+data/pipeline.db-shm
+```
+
+### Diagrama de Dependencias
+
+```
+src/db/
+├── __init__.py          # Re-exports públicos
+├── storage.py           # Database singleton (sin deps)
+├── schema.py            # DDL (depende de storage)
+└── repository.py        # CRUD (depende de storage)
+
+scripts/
+└── db_migrate.py        # CLI (depende de storage + schema)
+
+tests/
+└── test_db_repository.py  # Tests (depende de todo)
+```
+
+### Validación
+
+```bash
+# 1. Crear DB desde cero
+$ python scripts/db_migrate.py --force
+Database: data/pipeline.db
+Current version: 0
+Target version: 1
+Creating schema...
+Schema migrated to version 1
+Tables created: ['event_log', 'iterations', 'model_stats', 'projects',
+                 'role_artifacts', 'schema_version', 'sqlite_sequence',
+                 'stories', 'story_attempts']
+
+# 2. Verificar schema
+$ python scripts/db_migrate.py --check
+Current schema version: 1
+Target schema version: 1
+Schema is up to date
+
+# 3. Correr tests
+$ PYTHONPATH=. .venv/bin/pytest tests/test_db_repository.py -v
+17 passed in 0.10s
+```
+
+---
+
 ## Referencias
 
 - SQLite Best Practices: https://sqlite.org/whentouse.html
