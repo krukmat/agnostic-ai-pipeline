@@ -521,7 +521,24 @@ PYTHONPATH=. .venv/bin/pytest tests/test_db_repository.py -v
 # Resultado: 17 passed in 0.10s
 ```
 
-### Configuración Adicional
+### Configuración en `config.yaml`
+
+```yaml
+database:
+  enabled: false  # Cambiar a true para activar dual-write
+  path: data/pipeline.db
+  wal_mode: true
+  busy_timeout_ms: 5000
+  backup_on_iteration_end: true
+```
+
+| Parámetro | Tipo | Default | Descripción |
+|-----------|------|---------|-------------|
+| `enabled` | bool | `false` | Activa/desactiva la capa de DB |
+| `path` | string | `data/pipeline.db` | Ruta al archivo SQLite |
+| `wal_mode` | bool | `true` | Habilita WAL para lecturas concurrentes |
+| `busy_timeout_ms` | int | `5000` | Timeout de espera si DB está bloqueada |
+| `backup_on_iteration_end` | bool | `true` | Copia DB a artifacts al finalizar iteración |
 
 #### `.gitignore` actualizado
 ```

@@ -5,16 +5,52 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
-_DB_PATH = Path("data/pipeline.db")
+import yaml
+
 _lock = threading.Lock()
 _instance: Optional["Database"] = None
+_config: Optional[dict] = None
+
+
+def _load_config() -> dict:
+    """Load database config from config.yaml."""
+    global _config
+    if _config is None:
+        config_path = Path("config.yaml")
+        if config_path.exists():
+            with open(config_path) as f:
+                full_config = yaml.safe_load(f)
+                _config = full_config.get("database", {})
+        else:
+            _config = {}
+    return _config
+
+
+def get_db_config() -> dict:
+    """Get database configuration with defaults."""
+    config = _load_config()
+    return {
+        "enabled": config.get("enabled", False),
+        "path": Path(config.get("path", "data/pipeline.db")),
+        "wal_mode": config.get("wal_mode", True),
+        "busy_timeout_ms": config.get("busy_timeout_ms", 5000),
+        "backup_on_iteration_end": config.get("backup_on_iteration_end", True),
+    }
+
+
+def is_db_enabled() -> bool:
+    """Check if database is enabled in config."""
+    return get_db_config()["enabled"]
 
 
 class Database:
     """SQLite database singleton with WAL mode."""
 
-    def __init__(self, db_path: Path = _DB_PATH):
-        self.db_path = db_path
+    def __init__(self, db_path: Path = None, wal_mode: bool = True, busy_timeout_ms: int = 5000):
+        config = get_db_config()
+        self.db_path = db_path or config["path"]
+        self.wal_mode = wal_mode if db_path else config["wal_mode"]
+        self.busy_timeout_ms = busy_timeout_ms if db_path else config["busy_timeout_ms"]
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn: Optional[sqlite3.Connection] = None
 
@@ -26,10 +62,11 @@ class Database:
                 isolation_level=None,  # autocommit, we manage transactions manually
             )
             self._conn.row_factory = sqlite3.Row
-            # Enable WAL mode for concurrent reads
-            self._conn.execute("PRAGMA journal_mode=WAL")
+            # Enable WAL mode for concurrent reads (if configured)
+            if self.wal_mode:
+                self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
-            self._conn.execute("PRAGMA busy_timeout=5000")
+            self._conn.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
         return self._conn
 
     @property
@@ -76,14 +113,15 @@ def get_db(db_path: Optional[Path] = None) -> Database:
     global _instance
     with _lock:
         if _instance is None:
-            _instance = Database(db_path or _DB_PATH)
+            _instance = Database(db_path)
         return _instance
 
 
 def reset_db():
     """Reset the singleton (for testing)."""
-    global _instance
+    global _instance, _config
     with _lock:
         if _instance:
             _instance.close()
         _instance = None
+        _config = None
