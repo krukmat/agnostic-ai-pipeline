@@ -405,7 +405,12 @@ config.yaml                # Agregar sección database
    - `src/db/repository.py` - 6 repositorios CRUD
 4. ✅ **Fase 1**: Tests unitarios para repositorios (17 tests passing)
 5. ✅ **Fase 1**: `scripts/db_migrate.py` - CLI de migración
-6. **Fase 2**: Dual-write en orchestrator y roles
+6. ✅ **Fase 2**: Dual-write en orchestrator y roles
+   - `src/db/dual_write.py` - DualWriteContext centralizado
+   - `scripts/orchestrate.py` - project/iteration, story attempts, status
+   - `scripts/run_ba.py` - requirements artifact
+   - `scripts/run_product_owner.py` - vision/review artifacts
+   - `scripts/run_architect.py` - stories/epics/architecture artifacts
 7. **Fase 3**: Script de verificación y 5+ iteraciones de prueba
 8. **Fase 4**: Cut-over a DB como source of truth
 9. **Fase 5**: CLI de observabilidad y backups automáticos
@@ -586,6 +591,104 @@ Schema is up to date
 # 3. Correr tests
 $ PYTHONPATH=. .venv/bin/pytest tests/test_db_repository.py -v
 17 passed in 0.10s
+```
+
+---
+
+## Implementación Fase 2 (Completada)
+
+### Resumen
+**Branch:** `feature/database-layer`
+**Commit:** `ee3e198`
+**Fecha:** 2025-11-23
+
+### Componente Principal: `src/db/dual_write.py`
+
+Clase `DualWriteContext` que centraliza todas las operaciones de dual-write:
+
+```python
+from src.db import DualWriteContext, db_enabled
+
+if db_enabled():
+    with DualWriteContext(project_name, concept) as ctx:
+        # Iniciar iteración
+        ctx.start_iteration(loops_requested=5, config_snapshot=config)
+
+        # Guardar artifacts
+        ctx.save_artifact("ba", "requirements", data)
+        ctx.save_artifact("po", "product_vision", vision_yaml)
+
+        # Crear stories desde lista
+        ctx.create_stories_from_list(stories)
+
+        # Registrar intentos
+        ctx.log_attempt(
+            story_id="S1", role="dev",
+            provider="vertex_sdk", model="gemini-2.5-pro",
+            status="success", tokens_in=100, tokens_out=500
+        )
+
+        # Actualizar status
+        ctx.update_story_status("S1", "done")
+
+        # Logging de eventos
+        ctx.log_event("role_start", "BA started", role="ba")
+```
+
+### Integración por Componente
+
+| Componente | Archivo | Operaciones DB |
+|------------|---------|----------------|
+| **Orchestrator** | `scripts/orchestrate.py` | Crea project/iteration, sincroniza stories, registra dev/qa attempts, actualiza status |
+| **BA** | `scripts/run_ba.py` | Guarda `requirements` en `role_artifacts` |
+| **PO** | `scripts/run_product_owner.py` | Guarda `product_vision`, `product_owner_review` |
+| **Architect** | `scripts/run_architect.py` | Guarda `stories`, `epics`, `architecture`, crea stories en tabla |
+| **Dev** | via orchestrator | Registra attempts con tokens/duración/error |
+| **QA** | via orchestrator | Registra attempts con resultado/error |
+
+### Activación
+
+```yaml
+# config.yaml
+database:
+  enabled: true  # Cambiar a true para activar
+  path: data/pipeline.db
+  wal_mode: true
+```
+
+### Flujo de Datos
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CON database.enabled: true               │
+└─────────────────────────────────────────────────────────────┘
+
+  Orchestrator Start
+      │
+      ├─→ DualWriteContext.__enter__()
+      │     ├─→ get_or_create project
+      │     └─→ start_iteration
+      │
+      ├─→ BA ejecuta
+      │     └─→ save_artifact("ba", "requirements", ...)
+      │
+      ├─→ PO ejecuta
+      │     └─→ save_artifact("po", "product_vision", ...)
+      │
+      ├─→ Architect ejecuta
+      │     ├─→ save_artifact("architect", "stories", ...)
+      │     └─→ create_stories_from_list(...)
+      │
+      ├─→ Dev loop por story
+      │     ├─→ log_attempt(story_id, role="dev", ...)
+      │     └─→ update_story_status(sid, status)
+      │
+      ├─→ QA loop por story
+      │     ├─→ log_attempt(story_id, role="qa", ...)
+      │     └─→ update_story_status(sid, status)
+      │
+      └─→ DualWriteContext.__exit__()
+            └─→ end_iteration("completed")
 ```
 
 ---
