@@ -146,8 +146,30 @@ Status: Planned (gated by hardware)
 | P3.2  | embedded/zephyr_c.yaml (Zephyr)        | Completed   | YAML + templates (CMakeLists, prj.conf, main.c). BUG-006 Fixed |
 | P3.3  | Dev embedded toolchain detection       | Completed   | `run_dev.py:413-456`, `drivers/detect.py`. Flags: `run_build`, `run_test` |
 | P3.4  | QA embedded toolchain detection        | Completed   | `run_qa.py:469-503`. Flag: `run_test`. Logs in `artifacts/qa/<story>/` |
+| P3.5  | Embedded CI stubs (safe, no flashing)  | Deferred    | Moved to end of roadmap per decision; implement after P6 |
+| P3.6  | Driver Docs + Examples                 | Completed   | `docs/DRIVER_EXAMPLES.md`, enriched YAML comments, `DRIVER_LAYER_GUIDE.md` links |
 
 We will update this table as tasks move to In Progress / Completed, adding incidents and adjustments as needed.
+
+---
+
+## Roadmap Update (Ordering Change)
+
+Decision: Move P3.5 (Embedded CI Stubs) to the end of the roadmap. This defers CI wiring for embedded until after higher‑value items are complete.
+
+Updated execution order (next milestones):
+- P3.6 — Driver Docs + Examples (hello‑world ESP32‑C3 FreeRTOS; hello‑world Zephyr; enrich YAML comments)
+- P4.1 — GPU Driver Refinement (cuda_jetson build/test hooks; detection via nvcc/nvidia‑smi; safe skips)
+- P4.2 — Cross‑Driver Conventions (unify command names and artifact paths; schema lint rules)
+- P5.1 — Registry/CLI Enhancements (list/show, dry‑run execution plan, explain decisions)
+- P5.2 — Templates Catalog (optional scaffold packs per driver; guarded application during Dev)
+- P6   — Documentation + Test Coverage (integration tests with mocked toolchains; troubleshooting matrix)
+- P3.5 — Embedded CI Stubs (last) (GitHub Actions examples guarded by detection; no flashing)
+
+Rationale:
+- Prioritize developer experience, parity across drivers, and documentation before CI wiring.
+- Reduce CI churn while embedded hooks stabilize locally (P3.3/P3.4 done).
+- Maintain safety: no flashing/USB interactions until the very end.
 
 ---
 
