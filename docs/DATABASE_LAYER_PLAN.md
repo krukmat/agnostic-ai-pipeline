@@ -411,9 +411,17 @@ config.yaml                # Agregar sección database
    - `scripts/run_ba.py` - requirements artifact
    - `scripts/run_product_owner.py` - vision/review artifacts
    - `scripts/run_architect.py` - stories/epics/architecture artifacts
-7. **Fase 3**: Script de verificación y 5+ iteraciones de prueba
-8. **Fase 4**: Cut-over a DB como source of truth
-9. **Fase 5**: CLI de observabilidad y backups automáticos
+7. ✅ **Fase 3**: Script de verificación y tests
+   - `scripts/db_verify.py` - CLI de verificación dual-write
+   - `tests/test_db_verify.py` - 11 tests unitarios
+8. ✅ **Fase 3**: Iteración de prueba validada (26 stories, integridad OK)
+9. ✅ **Fase 4**: Cut-over a DB como source of truth
+   - `load_stories()` ahora prioriza DB
+   - `save_stories()` sincroniza a ambos
+   - Export automático y backup al final de iteración
+10. ✅ **Fase 5**: CLI de observabilidad
+    - `scripts/db_stats.py` - CLI de estadísticas
+    - Makefile targets: `db-stats`, `db-models`, `db-costs`, `db-verify`, `db-migrate`
 
 ---
 
@@ -689,6 +697,285 @@ database:
       │
       └─→ DualWriteContext.__exit__()
             └─→ end_iteration("completed")
+```
+
+---
+
+## Implementación Fase 3 (En Progreso)
+
+### Resumen
+**Branch:** `feature/database-layer`
+**Fecha:** 2025-11-23
+
+### Script de Verificación: `scripts/db_verify.py`
+
+CLI para comparar datos entre YAML files y base de datos SQLite:
+
+```bash
+# Verificar última iteración
+python scripts/db_verify.py
+
+# Verificar iteración específica
+python scripts/db_verify.py --iteration-id 5
+
+# Verificar proyecto por nombre
+python scripts/db_verify.py --project mi-proyecto
+
+# Output JSON
+python scripts/db_verify.py --json
+
+# Verbose
+python scripts/db_verify.py -v
+```
+
+### Funciones de Verificación
+
+| Función | Propósito |
+|---------|-----------|
+| `verify_stories()` | Compara stories entre `planning/stories.yaml` y tabla `stories` |
+| `verify_artifacts()` | Compara artifacts entre archivos y `role_artifacts` |
+| `verify_integrity()` | Verifica integridad referencial (orphans) |
+| `run_verification()` | Ejecuta verificación completa y genera reporte |
+
+### Output del Reporte
+
+```
+============================================================
+DUAL-WRITE VERIFICATION REPORT
+============================================================
+Project ID: 1
+Iteration ID: 3
+Overall Status: OK
+
+STORIES:
+  Status: ok
+  YAML count: 5
+  DB count: 5
+
+INTEGRITY:
+  Status: ok
+  Orphan iterations: 0
+  Orphan stories: 0
+  Orphan attempts: 0
+
+============================================================
+```
+
+### Tests: `tests/test_db_verify.py`
+
+11 tests cubriendo todas las funciones de verificación:
+
+| Clase Test | Tests | Cobertura |
+|------------|-------|-----------|
+| `TestVerifyStories` | 5 | matching, missing_in_db, missing_in_yaml, status_mismatch, yaml_not_found |
+| `TestVerifyArtifacts` | 2 | matching, content_mismatch |
+| `TestVerifyIntegrity` | 2 | fk_integrity, detect_orphans |
+| `TestFullVerification` | 2 | full_report, empty_iteration |
+
+```bash
+# Ejecutar tests
+PYTHONPATH=. .venv/bin/pytest tests/test_db_verify.py -v
+# Resultado: 11 passed in 0.15s
+```
+
+### Total Tests DB Layer
+
+```bash
+PYTHONPATH=. .venv/bin/pytest tests/test_db*.py tests/test_dual_write.py -v
+# Resultado: 44 passed
+```
+
+| Suite | Tests |
+|-------|-------|
+| `test_db_repository.py` | 17 |
+| `test_dual_write.py` | 16 |
+| `test_db_verify.py` | 11 |
+| **Total** | **44** |
+
+### Próximo Paso: Iteraciones de Prueba
+
+Para completar Fase 3, ejecutar al menos 5 iteraciones con `database.enabled: true`:
+
+```bash
+# 1. Habilitar dual-write
+# En config.yaml: database.enabled: true
+
+# 2. Ejecutar iteración
+make iteration CONCEPT="Prueba dual-write 1"
+
+# 3. Verificar consistencia
+python scripts/db_verify.py -v
+
+# 4. Repetir 5 veces con diferentes conceptos
+```
+
+---
+
+## Implementación Fase 4 (Completada)
+
+### Resumen
+**Branch:** `feature/database-layer`
+**Fecha:** 2025-11-24
+
+### Cut-over: DB como Source of Truth
+
+El orchestrator ahora usa la base de datos como fuente primaria de verdad para stories:
+
+1. **`load_stories()`** - Prioridad: DB > YAML
+   - Primero intenta cargar desde DB si está habilitado
+   - Fallback a YAML si DB falla o no tiene datos
+   - Mantiene recovery automático de YAML corrupto
+
+2. **`save_stories()`** - Escribe a ambos
+   - Siempre guarda YAML (backwards compatibility)
+   - Sincroniza cambios de status a DB
+
+3. **Export automático al final de iteración**
+   - Exporta stories de DB a YAML
+   - Crea backup de DB en `artifacts/db_backups/`
+
+### Nuevas Funciones en `src/db/dual_write.py`
+
+| Función | Propósito |
+|---------|-----------|
+| `load_stories_from_db(iteration_id)` | Carga stories de DB en formato YAML-compatible |
+| `export_stories_to_yaml(iteration_id, path)` | Exporta stories de DB a archivo YAML |
+| `backup_db_to_artifacts(artifacts_dir)` | Crea backup timestamped de la DB |
+
+### Flujo de Datos Actualizado
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│            FASE 4: DB como Source of Truth                   │
+└─────────────────────────────────────────────────────────────┘
+
+  load_stories()
+      │
+      ├─→ ¿DB enabled + iteration_id?
+      │     ├─→ SÍ: load_stories_from_db()
+      │     │         └─→ return DB stories
+      │     └─→ NO: continue to YAML
+      │
+      └─→ Load from planning/stories.yaml
+            └─→ YAML recovery if needed
+
+  save_stories()
+      │
+      ├─→ Write to planning/stories.yaml (always)
+      │
+      └─→ ¿DB enabled?
+            └─→ SÍ: update_story_status() for each story
+
+  End of iteration
+      │
+      ├─→ export_stories_to_yaml() → planning/stories.yaml
+      │
+      └─→ backup_db_to_artifacts() → artifacts/db_backups/
+```
+
+### Configuración
+
+```yaml
+# config.yaml
+database:
+  enabled: true  # Fase 4 activa
+  path: data/pipeline.db
+  wal_mode: true
+  busy_timeout_ms: 5000
+  backup_on_iteration_end: true
+```
+
+### Verificación
+
+```bash
+# Ejecutar orchestrator
+PYTHONPATH=. CONCEPT="Test" .venv/bin/python scripts/orchestrate.py
+
+# Verificar DB vs YAML
+python scripts/db_verify.py -v
+
+# Check backups
+ls -la artifacts/db_backups/
+```
+
+### Total Tests: 44 passing
+
+```bash
+PYTHONPATH=. .venv/bin/pytest tests/test_db*.py tests/test_dual_write.py -v
+# 44 passed
+```
+
+---
+
+## Implementación Fase 5 (Completada)
+
+### Resumen
+**Branch:** `feature/database-layer`
+**Fecha:** 2025-11-24
+
+### CLI de Observabilidad: `scripts/db_stats.py`
+
+```bash
+# Resumen general
+python scripts/db_stats.py
+make db-stats
+
+# Estadísticas por proyecto
+python scripts/db_stats.py --project simple_calculator_api
+
+# Estadísticas por modelo
+python scripts/db_stats.py --models
+make db-models
+
+# Resumen de costos
+python scripts/db_stats.py --costs
+make db-costs
+
+# Eventos recientes
+python scripts/db_stats.py --events 20
+
+# Output JSON
+python scripts/db_stats.py --json
+```
+
+### Makefile Targets
+
+| Target | Descripción |
+|--------|-------------|
+| `make db-stats` | Muestra resumen general de la DB |
+| `make db-models` | Estadísticas por provider/modelo |
+| `make db-costs` | Resumen de tokens y costos |
+| `make db-verify` | Verifica consistencia DB vs YAML |
+| `make db-migrate` | Ejecuta migración de schema |
+
+### Funciones de Estadísticas
+
+| Función | Propósito |
+|---------|-----------|
+| `get_overview_stats()` | Conteos de projects, iterations, stories, attempts |
+| `get_project_stats()` | Stats detalladas de un proyecto |
+| `get_model_stats()` | Attempts, success rate, tokens por modelo |
+| `get_cost_summary()` | Tokens y costos por provider/role |
+| `get_recent_events()` | Últimos eventos del event_log |
+
+### Ejemplo de Output
+
+```
+============================================================
+DATABASE STATISTICS OVERVIEW
+============================================================
+
+Projects: 1
+Iterations: 1
+
+Stories: 26
+  - todo: 26
+
+Attempts: 0
+  - Successful: 0
+  - Success Rate: 0%
+
+============================================================
 ```
 
 ---

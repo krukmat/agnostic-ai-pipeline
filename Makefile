@@ -90,6 +90,27 @@ loop-dev:
 fix-stories:
 	$(PY) scripts/fix_stories.py
 
+# Database observability targets (Fase 5)
+db-stats:
+	@echo "==> Database Statistics"
+	PYTHONPATH=. $(PY) scripts/db_stats.py
+
+db-models:
+	@echo "==> Model Statistics"
+	PYTHONPATH=. $(PY) scripts/db_stats.py --models
+
+db-costs:
+	@echo "==> Cost Summary"
+	PYTHONPATH=. $(PY) scripts/db_stats.py --costs
+
+db-verify:
+	@echo "==> Verifying DB vs YAML consistency"
+	PYTHONPATH=. $(PY) scripts/db_verify.py -v
+
+db-migrate:
+	@echo "==> Running database migration"
+	PYTHONPATH=. $(PY) scripts/db_migrate.py
+
 show-config:
 	$(PY) -c "import yaml,sys;print(yaml.safe_load(open('config.yaml').read()))"
 

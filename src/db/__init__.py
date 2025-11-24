@@ -13,6 +13,9 @@ from .dual_write import (
     get_current_context,
     set_current_context,
     db_enabled,
+    load_stories_from_db,
+    export_stories_to_yaml,
+    backup_db_to_artifacts,
 )
 
 __all__ = [
@@ -31,4 +34,7 @@ __all__ = [
     "get_current_context",
     "set_current_context",
     "db_enabled",
+    "load_stories_from_db",
+    "export_stories_to_yaml",
+    "backup_db_to_artifacts",
 ]

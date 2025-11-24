@@ -10,7 +10,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 # Database dual-write support
-from src.db import DualWriteContext, get_current_context, set_current_context, db_enabled
+from src.db import (
+    DualWriteContext, get_current_context, set_current_context, db_enabled,
+    load_stories_from_db, export_stories_to_yaml, backup_db_to_artifacts,
+)
 
 from a2a.executors import get_executor, RoleExecutor
 from a2a.metrics import save_metrics, instrumented
@@ -170,7 +173,23 @@ NOTES_P = PLAN / "notes.md"
 DEV_FAILED_REPORT = ROOT / "artifacts" / "dev" / "failed_stories.md"
 
 def load_stories():
-    """Load stories with automatic YAML error recovery"""
+    """Load stories with DB-first strategy when enabled.
+
+    Task: database-layer - Fase 4 cut-over
+    Priority: DB > YAML with recovery
+    """
+    # Fase 4: Try DB first if enabled and we have an iteration
+    db_ctx = get_current_context()
+    if db_ctx and db_ctx.enabled and db_ctx.iteration_id:
+        try:
+            db_stories = load_stories_from_db(db_ctx.iteration_id)
+            if db_stories:
+                logger.debug(f"[loop] Loaded {len(db_stories)} stories from DB")
+                return db_stories
+        except Exception as e:
+            logger.warning(f"[loop] DB load failed, falling back to YAML: {e}")
+
+    # Fallback to YAML
     if not STORIES_P.exists():
         logger.info("[loop] planning/stories.yaml not found.")
         return []
@@ -210,8 +229,25 @@ def load_stories():
             return []
 
 def save_stories(stories):
+    """Save stories to both DB (if enabled) and YAML.
+
+    Task: database-layer - Fase 4 cut-over
+    """
+    # Always save to YAML for backwards compatibility
     STORIES_P.write_text(yaml.safe_dump(stories, sort_keys=False, allow_unicode=True), encoding="utf-8")
     logger.debug("[loop] Stories saved to planning/stories.yaml")
+
+    # Sync status changes to DB if enabled
+    db_ctx = get_current_context()
+    if db_ctx and db_ctx.enabled and db_ctx.iteration_id:
+        for s in stories:
+            story_id = s.get("id")
+            status = s.get("status", "todo")
+            if story_id:
+                try:
+                    db_ctx.update_story_status(story_id, status)
+                except Exception as e:
+                    logger.warning(f"[loop] Failed to sync story {story_id} to DB: {e}")
 
 def recover_yaml_automatic(text: str) -> list:
     """Try to recover YAML automatically with repair strategies"""
@@ -1060,6 +1096,17 @@ async def main():
             final_counts = db_ctx.get_story_counts()
             db_ctx.log_event("orchestrator_end", f"Orchestrator finished. Story counts: {final_counts}", role="orchestrator")
             db_ctx.end_iteration("completed")
+
+            # Task: database-layer - Fase 4: Export YAML and backup DB
+            if db_ctx.iteration_id:
+                export_stories_to_yaml(db_ctx.iteration_id, STORIES_P)
+                logger.info("[loop] Exported stories from DB to YAML")
+
+                # Backup DB to artifacts
+                artifacts_dir = ROOT / "artifacts"
+                backup_path = backup_db_to_artifacts(artifacts_dir)
+                if backup_path:
+                    logger.info(f"[loop] DB backed up to {backup_path}")
 
     except Exception as e:
         if db_ctx:

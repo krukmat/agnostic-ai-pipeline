@@ -156,6 +156,26 @@ class DualWriteContext:
             iteration_id=self._iteration_id,
         )
 
+    def _normalize_priority(self, priority: str) -> Optional[str]:
+        """Normalize priority to P0-P3 format."""
+        if not priority:
+            return None
+        p = str(priority).strip().upper()
+        # Accept P0, P1, P2, P3 directly
+        if p in ("P0", "P1", "P2", "P3"):
+            return p
+        # Map numeric priorities
+        if p in ("0", "1", "2", "3"):
+            return f"P{p}"
+        # Map high/medium/low
+        priority_map = {
+            "HIGH": "P1", "ALTA": "P1",
+            "MEDIUM": "P2", "MED": "P2", "MEDIA": "P2",
+            "LOW": "P3", "BAJA": "P3",
+            "CRITICAL": "P0", "CRITICA": "P0",
+        }
+        return priority_map.get(p, None)  # Return None for unknown
+
     def create_story(
         self,
         story_id: str,
@@ -170,12 +190,15 @@ class DualWriteContext:
         if not self._enabled or not self._stories or not self._iteration_id:
             return None
 
+        # Task: database-layer - Normalize priority to match CHECK constraint
+        normalized_priority = self._normalize_priority(priority)
+
         return self._stories.create(
             iteration_id=self._iteration_id,
             story_id=story_id,
             title=title,
             description=description,
-            priority=priority,
+            priority=normalized_priority,
             estimate=estimate,
             acceptance_criteria=acceptance_criteria,
             depends_on=depends_on,
@@ -296,3 +319,94 @@ def set_current_context(ctx: Optional[DualWriteContext]) -> None:
 def db_enabled() -> bool:
     """Check if database dual-write is enabled."""
     return is_db_enabled()
+
+
+def load_stories_from_db(iteration_id: int) -> List[Dict]:
+    """Load stories from database for a given iteration.
+
+    Task: database-layer - Fase 4 cut-over
+
+    Returns list of story dicts compatible with YAML format.
+    """
+    if not is_db_enabled():
+        return []
+
+    db = get_db()
+    stories_repo = StoryRepository(db)
+    db_stories = stories_repo.list_by_iteration(iteration_id)
+
+    result = []
+    for s in db_stories:
+        story = {
+            "id": s["story_id"],
+            "title": s["title"],
+            "status": s["status"] or "todo",
+        }
+        if s.get("description"):
+            story["description"] = s["description"]
+        if s.get("priority"):
+            story["priority"] = s["priority"]
+        if s.get("estimate"):
+            story["estimate"] = s["estimate"]
+        if s.get("acceptance_criteria"):
+            try:
+                story["acceptance"] = json.loads(s["acceptance_criteria"])
+            except:
+                story["acceptance"] = s["acceptance_criteria"]
+        if s.get("depends_on"):
+            try:
+                story["depends_on"] = json.loads(s["depends_on"])
+            except:
+                story["depends_on"] = s["depends_on"]
+        result.append(story)
+
+    return result
+
+
+def export_stories_to_yaml(iteration_id: int, output_path: Path) -> bool:
+    """Export stories from DB to YAML file.
+
+    Task: database-layer - Fase 4 cut-over
+
+    Returns True if export succeeded.
+    """
+    import yaml
+
+    stories = load_stories_from_db(iteration_id)
+    if not stories:
+        return False
+
+    output_path.write_text(
+        yaml.safe_dump(stories, sort_keys=False, allow_unicode=True),
+        encoding="utf-8"
+    )
+    return True
+
+
+def backup_db_to_artifacts(artifacts_dir: Path) -> Optional[Path]:
+    """Backup database to artifacts directory.
+
+    Task: database-layer - Fase 4 cut-over
+
+    Returns path to backup file if successful.
+    """
+    import shutil
+
+    if not is_db_enabled():
+        return None
+
+    config = get_db_config()
+    db_path = config["path"]
+
+    if not db_path.exists():
+        return None
+
+    # Create timestamped backup
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = artifacts_dir / "db_backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    backup_path = backup_dir / f"pipeline_{timestamp}.db"
+    shutil.copy2(db_path, backup_path)
+
+    return backup_path
