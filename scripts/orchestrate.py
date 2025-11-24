@@ -9,6 +9,12 @@ from logger import logger # Import the logger
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# Database dual-write support
+from src.db import (
+    DualWriteContext, get_current_context, set_current_context, db_enabled,
+    load_stories_from_db, export_stories_to_yaml, backup_db_to_artifacts,
+)
+
 from a2a.executors import get_executor, RoleExecutor
 from a2a.metrics import save_metrics, instrumented
 from scripts.run_ba import generate_requirements
@@ -167,7 +173,23 @@ NOTES_P = PLAN / "notes.md"
 DEV_FAILED_REPORT = ROOT / "artifacts" / "dev" / "failed_stories.md"
 
 def load_stories():
-    """Load stories with automatic YAML error recovery"""
+    """Load stories with DB-first strategy when enabled.
+
+    Task: database-layer - Fase 4 cut-over
+    Priority: DB > YAML with recovery
+    """
+    # Fase 4: Try DB first if enabled and we have an iteration
+    db_ctx = get_current_context()
+    if db_ctx and db_ctx.enabled and db_ctx.iteration_id:
+        try:
+            db_stories = load_stories_from_db(db_ctx.iteration_id)
+            if db_stories:
+                logger.debug(f"[loop] Loaded {len(db_stories)} stories from DB")
+                return db_stories
+        except Exception as e:
+            logger.warning(f"[loop] DB load failed, falling back to YAML: {e}")
+
+    # Fallback to YAML
     if not STORIES_P.exists():
         logger.info("[loop] planning/stories.yaml not found.")
         return []
@@ -207,8 +229,25 @@ def load_stories():
             return []
 
 def save_stories(stories):
+    """Save stories to both DB (if enabled) and YAML.
+
+    Task: database-layer - Fase 4 cut-over
+    """
+    # Always save to YAML for backwards compatibility
     STORIES_P.write_text(yaml.safe_dump(stories, sort_keys=False, allow_unicode=True), encoding="utf-8")
     logger.debug("[loop] Stories saved to planning/stories.yaml")
+
+    # Sync status changes to DB if enabled
+    db_ctx = get_current_context()
+    if db_ctx and db_ctx.enabled and db_ctx.iteration_id:
+        for s in stories:
+            story_id = s.get("id")
+            status = s.get("status", "todo")
+            if story_id:
+                try:
+                    db_ctx.update_story_status(story_id, status)
+                except Exception as e:
+                    logger.warning(f"[loop] Failed to sync story {story_id} to DB: {e}")
 
 def recover_yaml_automatic(text: str) -> list:
     """Try to recover YAML automatically with repair strategies"""
@@ -676,6 +715,7 @@ async def _process_story(
 ) -> None:
     """Process a single story through Dev and QA (or Dev only if skip_qa=True)."""
     sid = story["id"]
+    db_ctx = get_current_context()  # Task: database-layer - Get DB context
 
     # Task: recovery-system - Check if recovery budget exceeded
     current_recovery_attempts = story.get("metadata", {}).get("recovery_attempts", 0)
@@ -710,6 +750,22 @@ async def _process_story(
             "status": dev_status
         })
         logger.debug(f"[loop] Registered model attempt in history: {model_info.get('provider')}/{model_info.get('model')}")
+
+        # Task: database-layer - Log dev attempt to DB
+        if db_ctx:
+            db_ctx.log_attempt(
+                story_id=sid,
+                role="dev",
+                provider=model_info.get("provider", "unknown"),
+                model=model_info.get("model", "unknown"),
+                status="success" if dev_status == "ok" else "error",
+                duration_ms=dev_result.get("duration_ms"),
+                tokens_in=dev_result.get("tokens_in"),
+                tokens_out=dev_result.get("tokens_out"),
+                error_message=dev_result.get("error") if dev_status != "ok" else None,
+                artifacts_path=dev_result.get("artifacts_dir"),
+            )
+            db_ctx.update_story_status(sid, "in_progress")
 
     if dev_status != "ok":
         dev_attempt_count = story_dev_attempts.get(sid, 0)
@@ -794,6 +850,14 @@ async def _process_story(
         story_arch_attempts.pop(sid, None)
         logger.info(f"[loop] {sid} -> done (QA pass)")
         append_note(f"- {sid} aprobado por QA.")
+        # Task: database-layer - Update story status and log QA attempt
+        if db_ctx:
+            db_ctx.log_attempt(
+                story_id=sid, role="qa", provider="qa", model="qa",
+                status="success",
+            )
+            db_ctx.update_story_status(sid, "done")
+            db_ctx.log_event("story_done", f"Story {sid} completed", role="qa")
         return
 
     if qa_status == "no_tests":
@@ -846,6 +910,17 @@ async def _process_story(
         story["status"] = "in_review"
     
     logger.info(f"[loop] {sid} -> {story['status']} (QA fail - severity: {severity})")
+
+    # Task: database-layer - Log QA failure and update status
+    if db_ctx:
+        db_ctx.log_attempt(
+            story_id=sid, role="qa", provider="qa", model="qa",
+            status="error",
+            error_message=failure_analysis.get("details"),
+            error_category=severity,
+        )
+        db_ctx.update_story_status(sid, story["status"])
+        db_ctx.update_story_metadata(sid, story.get("metadata", {}))
 
 
 async def _process_iteration(
@@ -977,20 +1052,71 @@ async def main():
 
     cleanup_artifacts()
 
-    for it in range(1, max_loops + 1):
-        stories = load_stories()
-        should_continue = await _process_iteration(
-            it,
-            stories,
-            allow_no_tests=allow_no_tests,
-            enable_architect_intervention=enable_architect_intervention,
-            status_no_tests=status_no_tests,
-            skip_qa=skip_qa,
-            max_recovery_attempts=max_recovery_attempts,
-        )
-        if not should_continue:
-            save_metrics()
-            return 0
+    # Task: database-layer - Initialize dual-write context if enabled
+    concept = os.environ.get("CONCEPT", "unknown")
+    project_name = os.environ.get("PROJECT_NAME", concept[:50].replace(" ", "_").lower())
+
+    db_ctx = None
+    if db_enabled():
+        logger.info("[loop] Database dual-write enabled. Initializing context.")
+        db_ctx = DualWriteContext(project_name, concept)
+        db_ctx.__enter__()
+        set_current_context(db_ctx)
+        db_ctx.start_iteration(loops_requested=max_loops, config_snapshot=config)
+        db_ctx.log_event("orchestrator_start", f"Starting orchestrator with {max_loops} loops", role="orchestrator")
+
+    try:
+        for it in range(1, max_loops + 1):
+            stories = load_stories()
+
+            # Task: database-layer - Sync stories to DB on first loop
+            if db_ctx and it == 1 and stories:
+                db_ctx.create_stories_from_list(stories)
+                db_ctx.log_event("stories_synced", f"Synced {len(stories)} stories to DB")
+
+            should_continue = await _process_iteration(
+                it,
+                stories,
+                allow_no_tests=allow_no_tests,
+                enable_architect_intervention=enable_architect_intervention,
+                status_no_tests=status_no_tests,
+                skip_qa=skip_qa,
+                max_recovery_attempts=max_recovery_attempts,
+            )
+
+            # Task: database-layer - Increment loop counter
+            if db_ctx:
+                db_ctx.increment_loop()
+
+            if not should_continue:
+                break
+
+        # Task: database-layer - End iteration
+        if db_ctx:
+            final_counts = db_ctx.get_story_counts()
+            db_ctx.log_event("orchestrator_end", f"Orchestrator finished. Story counts: {final_counts}", role="orchestrator")
+            db_ctx.end_iteration("completed")
+
+            # Task: database-layer - Fase 4: Export YAML and backup DB
+            if db_ctx.iteration_id:
+                export_stories_to_yaml(db_ctx.iteration_id, STORIES_P)
+                logger.info("[loop] Exported stories from DB to YAML")
+
+                # Backup DB to artifacts
+                artifacts_dir = ROOT / "artifacts"
+                backup_path = backup_db_to_artifacts(artifacts_dir)
+                if backup_path:
+                    logger.info(f"[loop] DB backed up to {backup_path}")
+
+    except Exception as e:
+        if db_ctx:
+            db_ctx.log_event("orchestrator_error", str(e), role="orchestrator", severity="error")
+            db_ctx.end_iteration("failed")
+        raise
+    finally:
+        if db_ctx:
+            db_ctx.__exit__(None, None, None)
+            set_current_context(None)
 
     save_metrics()
     return 0

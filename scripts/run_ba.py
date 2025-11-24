@@ -20,6 +20,9 @@ from common import ensure_dirs, PLANNING
 from logger import logger
 import importlib.util
 
+# Task: database-layer - Import dual-write support
+from src.db import get_current_context
+
 from dspy_baseline.modules.ba_requirements import (
     generate_requirements as dsp_generate,
 )
@@ -67,6 +70,14 @@ def _run_dspy(concept: str) -> dict[str, str]:
         encoding="utf-8",
     )
     logger.info("✓ requirements.yaml written via DSPy baseline")
+
+    # Task: database-layer - Save artifact to DB if context available
+    db_ctx = get_current_context()
+    if db_ctx and db_ctx.enabled:
+        db_ctx.save_artifact("ba", "requirements", data)
+        db_ctx.log_event("artifact_created", "BA requirements generated", role="ba")
+        logger.debug("[BA] Artifact saved to database")
+
     return {"requirements_path": str(output_path)}
 
 

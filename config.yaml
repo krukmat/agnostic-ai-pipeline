@@ -170,3 +170,9 @@ features:
     normalize_minified_arch: true
     use_optimized_prompt: false
     prompt_override_file: ""
+database:
+  enabled: true  # Fase 3: dual-write activado para pruebas
+  path: data/pipeline.db
+  wal_mode: true
+  busy_timeout_ms: 5000
+  backup_on_iteration_end: true

@@ -188,6 +188,9 @@ logs/
 # Databases
 *.sqlite
 *.db
+data/pipeline.db
+data/pipeline.db-wal
+data/pipeline.db-shm
 
 # Reportes y logs del pipeline
 artifacts/dev/test_*
