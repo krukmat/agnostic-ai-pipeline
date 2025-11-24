@@ -170,6 +170,24 @@ If the primary model fails, the developer role can automatically requeue the sto
 - **Observability**: check `planning/stories.yaml` for `recovery_attempts`, `last_failure_reason`, `model_history`, and any active overrides.
 - **Limits**: cap the number of recovery attempts via `pipeline.max_recovery_attempts` in `config.yaml` (default: `2`). Stories exceeding the budget move to `status: blocked_recovery_budget`.
 
+### Database Layer (SQLite, optional)
+
+The pipeline now ships with an experimental SQLite layer that mirrors the YAML artifacts (projects, iterations, stories, role outputs) inside `data/pipeline.db`. You can enable or disable it from `config.yaml`:
+
+```yaml
+database:
+  enabled: true          # set to false to stay file-only
+  path: data/pipeline.db
+  wal_mode: true
+  busy_timeout_ms: 5000
+  backup_on_iteration_end: true
+```
+
+- **Migrations**: run `make db-migrate` (wraps `scripts/db_migrate.py`) to create or upgrade the schema.  
+- **Stats & health checks**: `make db-stats`, `make db-models`, `make db-costs`, `make db-verify` use `scripts/db_stats.py` / `scripts/db_verify.py` to inspect the data.  
+- **Backups**: when `backup_on_iteration_end` is true the orchestrator exports a `.dump` alongside each iteration snapshot. You can also manually copy `data/pipeline.db`.
+- **Docs**: see `docs/DATABASE_LAYER_PLAN.md` for the full schema (projects, role_artifacts, stories, story_attempts, event_log, model_stats) and the rollout plan (dual-write → cut-over). The layer is still optional, so you may keep `database.enabled: false` in environments that only need the YAML files.
+
 ### DSPy-Driven Planning & QA (New Feature)
 
 Purpose
