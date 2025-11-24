@@ -74,13 +74,20 @@ Risks/Mitigations
 
 ### Phase 2 – Dev/QA integration (after Phase 1)
 Deliverables
-- P2.1: Dev role: template expansion (copy driver templates to `project/`), execute driver build/test.
-- P2.2: QA role: run the driver’s test runner; persist reports under driver‑aware paths.
+- P2.1: Dev role: template expansion (copy driver templates to `project/`), then execute driver build/test.
+- P2.2: QA role: run the driver's test runner; persist reports under driver‑aware paths.
 
 Acceptance Criteria
 - Sample project with FastAPI + Next.js builds and tests via driver commands inside `make iteration`/`make loop`.
 
-Status: Planned
+Status: Partial (P2.1 Complete, P2.2 Incomplete)
+Notes:
+- **P2.1 ✅ Complete**: `scripts/run_dev.py` (lines 384-413) aplica plantillas al inicio y (lines 485-547) ejecuta `build/test/lint` del driver (best‑effort, con logs en `artifacts/dev/<story>/run-<ts>/`).
+  - Template expansion: copies driver templates if they don't exist (lines 398-408)
+  - Command execution: runs driver build/test/lint commands for backend/frontend (lines 519-544)
+  - Best-effort: warnings logged, RC captured, never blocks development
+  - Behind feature flag: only when `drivers.enabled: true`
+- **P2.2 ❌ Not Implemented**: QA role (`scripts/run_qa.py`) does NOT yet use driver test runners. No driver integration found in QA script.
 
 ---
 
@@ -118,8 +125,10 @@ Status: Planned (gated by hardware)
 | D0.4  | Feature flag in config.yaml            | Completed   | `drivers.enabled` default false |
 | P1.0  | Orchestrator payload wiring            | Completed   | Attaches `drivers` map behind flag |
 | P1.1  | fastapi/next_js drivers (MVP)          | Completed   | Templates + commands added |
-| P1.2  | Registry CLI validate                  | Completed   | `drivers.registry validate --all` + `make drivers-validate`. **BUG-004**: `load` command fails (see below) |
-| P1.3  | Orchestrator wiring (behind flag)      | Pending     | Attach driver objects to context |
+| P1.2  | Registry CLI validate                  | Completed   | `drivers.registry validate --all` + `make drivers-validate`. BUG-004 Fixed |
+| P1.3  | Orchestrator wiring (behind flag)      | Completed   | Attach driver objects to context; `make drivers-show` prints resolved targets |
+| P2.1  | Dev role template expansion + build/test | Completed   | `scripts/run_dev.py` (lines 384-547): templates + driver commands (best-effort) |
+| P2.2  | QA role driver test runner integration | Pending     | `scripts/run_qa.py` does NOT yet use driver test runners |
 
 We will update this table as tasks move to In Progress / Completed, adding incidents and adjustments as needed.
 
@@ -149,7 +158,28 @@ import dataclasses
 print(yaml.safe_dump(dataclasses.asdict(drv), sort_keys=False, allow_unicode=True))
 ```
 
-**Status**: Open
+**Status**: Fixed (registry v1.1)
+**Change**: CLI now serializes drivers with `dataclasses.asdict(drv)` to ensure nested dataclasses are YAML‑safe.
+
+---
+
+### FINDING-P2: P2.2 (QA Role) Not Implemented
+
+**Severity**: Medium (blocks full Phase 2 completion)
+
+**Issue**: Phase 2 marked as "Completed" but P2.2 is not implemented.
+
+**Current State**:
+- P2.1 ✅ Complete: Dev role applies templates and executes driver build/test/lint commands
+- P2.2 ❌ Not Implemented: QA role does not use driver test runners
+
+**Required for P2.2**:
+- `scripts/run_qa.py` should check `drivers.enabled` and load driver for each category
+- QA should run driver's test runner command (backend/frontend)
+- Test reports should be persisted under driver-aware paths (e.g., `artifacts/qa/<story>/drivers/<category>/test.log`)
+- Should integrate with existing QA loop without breaking current behavior
+
+**Status**: Documented as pending (corrected in this review)
 
 ---
 
