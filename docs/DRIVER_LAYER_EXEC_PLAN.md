@@ -105,10 +105,10 @@ Deliverables
 Acceptance Criteria
 - Host validation without device: detect toolchain presence; run host unit tests or skip with notice.
 
-Status: Partial (YAMLs exist, templates missing)
+Status: Completed
 Notes:
-- **P3.1**: YAML exists and validates (`make drivers-validate` ✅). Commands defined (build, flash, monitor, test). **BUG-005**: `templates: []` is empty - deliverable specifies "templates for FreeRTOS app".
-- **P3.2**: YAML exists and validates (`make drivers-validate` ✅). Commands defined (west build/flash, twister). **BUG-006**: `templates: []` is empty - deliverable specifies "templates".
+- **P3.1**: Templates added (ESP‑IDF FreeRTOS): `CMakeLists.txt`, `main/CMakeLists.txt`, `main/main.c`. YAML valida (`make drivers-validate` ✅).
+- **P3.2**: Templates added (Zephyr): `CMakeLists.txt`, `prj.conf`, `src/main.c`. YAML valida (`make drivers-validate` ✅).
 
 ---
 
@@ -138,8 +138,8 @@ Status: Planned (gated by hardware)
 | P1.3  | Orchestrator wiring (behind flag)      | Completed   | Attach driver objects to context; `make drivers-show` prints resolved targets |
 | P2.1  | Dev role template expansion + build/test | Completed   | `scripts/run_dev.py` (lines 384-547): templates + driver commands (best-effort) |
 | P2.2  | QA role driver test runner integration | Completed   | `scripts/run_qa.py` (lines 392-404, 437-451): runs driver test/lint commands. Fixed missing import |
-| P3.1  | embedded/esp32c3_riscv.yaml (ESP-IDF)  | Partial     | YAML exists + validates. BUG-005: templates empty |
-| P3.2  | embedded/zephyr_c.yaml (Zephyr)        | Partial     | YAML exists + validates. BUG-006: templates empty |
+| P3.1  | embedded/esp32c3_riscv.yaml (ESP-IDF)  | Completed   | YAML + templates (CMakeLists, main.c). BUG-005 Fixed |
+| P3.2  | embedded/zephyr_c.yaml (Zephyr)        | Completed   | YAML + templates (CMakeLists, prj.conf, main.c). BUG-006 Fixed |
 
 We will update this table as tasks move to In Progress / Completed, adding incidents and adjustments as needed.
 
@@ -182,7 +182,8 @@ print(yaml.safe_dump(dataclasses.asdict(drv), sort_keys=False, allow_unicode=Tru
 
 **Expected**: Templates for a basic FreeRTOS application scaffold (e.g., main.c, CMakeLists.txt, sdkconfig.defaults).
 
-**Status**: Open
+**Status**: Fixed
+**Resolution**: Templates added in `drivers/embedded/esp32c3_riscv/templates/` (CMakeLists.txt, main/CMakeLists.txt, main/main.c). YAML updated with template references.
 
 ---
 
@@ -194,7 +195,8 @@ print(yaml.safe_dump(dataclasses.asdict(drv), sort_keys=False, allow_unicode=Tru
 
 **Expected**: Templates for a basic Zephyr application scaffold (e.g., main.c, CMakeLists.txt, prj.conf).
 
-**Status**: Open
+**Status**: Fixed
+**Resolution**: Templates added in `drivers/embedded/zephyr_c/templates/` (CMakeLists.txt, prj.conf, src/main.c). YAML updated with template references.
 
 ---
 
