@@ -144,6 +144,18 @@ Need a shareable, read-only view of the pipeline? The repository publishes the l
 - **Entry point**: https://krukmat.github.io/agnostic-ai-pipeline/00-vision-ok/ renders `docs/00-vision-ok/index.html`, the primary landing page curated for stakeholders.
 - **Updating it**: refresh or add HTML assets under `docs/`, commit them, and GitHub Pages will redeploy automatically on the next push to the default branch.
 
+Medium series (high‑level concepts and rationale)
+- Part 1 — Why an Agentic, Model‑Agnostic Pipeline: replacing brittle scripts with a choreographed multi‑role loop that survives provider changes and scales with needs.  
+  https://medium.com/@iotforce/why-an-agentic-model-agnostic-pipeline-beats-a-pile-of-scripts-b57661276505
+- Part 2 — Inside the AI Development Team: how BA, Architect, Dev and QA hand off artifacts, enforce quality, and keep the cycle moving.  
+  https://medium.com/@iotforce/inside-the-ai-development-team-ba-architect-developer-qa-e7631503f0d9
+- Part 3 — Smart Routing for 89% Cost Reduction: choosing strong vs. local models per task to optimize spend without losing coverage.  
+  https://medium.com/@iotforce/how-i-cut-ai-costs-by-89-using-smart-routing-and-local-models-d58258a14802
+- Part 4 — Automatic Recovery from Model Failures: resilience patterns (fallbacks, retries, budgets) that keep releases on track.  
+  https://iotforce.medium.com/how-my-ai-pipeline-automatically-recovered-from-8-model-failures-b39cb09c6ae0
+- Part 5 — Scaling Agents with DSPy + MiPROv2: from manual prompts to automated program optimization with measurable metrics.  
+  https://medium.com/@iotforce/scaling-ai-agents-with-dspy-and-miprov2-from-manual-prompts-to-automated-optimization-6a88f993f2b2
+
 ---
 
 Additional reading
