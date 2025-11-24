@@ -200,6 +200,58 @@ print(yaml.safe_dump(dataclasses.asdict(drv), sort_keys=False, allow_unicode=Tru
 
 ---
 
+### BUG-007: Silent `except Exception: pass` blocks hide driver errors
+
+**Severity**: High (errors silently ignored, debugging difficult)
+
+**Issue**: Multiple locations use `except Exception: pass` without any logging, completely hiding errors from the driver layer.
+
+**Affected locations**:
+
+1. **`scripts/orchestrate.py:176-178`**
+   ```python
+   except Exception:
+       # Never block role execution due to driver layer
+       pass
+   ```
+   Context: Driver resolution in `execute_role()`. Config errors, import failures, typos silenced.
+
+2. **`scripts/run_dev.py:430-432`**
+   ```python
+   except Exception:
+       # Never block development due to driver layer
+       pass
+   ```
+   Context: Template expansion block. Template load failures, config errors silenced.
+
+3. **`scripts/run_dev.py:564-566`**
+   ```python
+   except Exception:
+       # Never block development due to driver layer
+       pass
+   ```
+   Context: Driver command execution block. Build/test/lint execution errors silenced.
+
+4. **`scripts/run_qa.py:363-364`**
+   ```python
+   except Exception:
+       cfg = {}
+   ```
+   Context: Loading `config.yaml`. YAML syntax errors cause QA to run with empty config without warning.
+
+**Risk**: Configuration errors, missing imports, typos, and other issues pass silently. Users get unexpected behavior with no indication of what went wrong.
+
+**Fix required**: Replace `pass` with at minimum `logger.debug()` or `logger.warning()` to capture errors:
+```python
+except Exception as e:
+    logger.warning(f"[CONTEXT] Driver layer error (non-fatal): {e}")
+    # Continue with fallback behavior
+```
+
+**Status**: Open
+
+---
+
 ### P2.2 – QA role driver runner (Completed)
 
 **What changed**:
