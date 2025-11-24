@@ -80,14 +80,20 @@ Deliverables
 Acceptance Criteria
 - Sample project with FastAPI + Next.js builds and tests via driver commands inside `make iteration`/`make loop`.
 
-Status: Partial (P2.1 Complete, P2.2 Incomplete)
+Status: Complete (P2.1 and P2.2)
 Notes:
-- **P2.1 ✅ Complete**: `scripts/run_dev.py` (lines 384-413) aplica plantillas al inicio y (lines 485-547) ejecuta `build/test/lint` del driver (best‑effort, con logs en `artifacts/dev/<story>/run-<ts>/`).
-  - Template expansion: copies driver templates if they don't exist (lines 398-408)
-  - Command execution: runs driver build/test/lint commands for backend/frontend (lines 519-544)
+- **P2.1 ✅ Complete**: `scripts/run_dev.py` applies driver templates and executes build/test/lint commands.
+  - Template expansion (lines 384-413): copies driver templates if they don't exist (lines 398-408)
+  - Command execution (lines 485-547): runs driver build/test/lint commands for backend/frontend (lines 519-544)
   - Best-effort: warnings logged, RC captured, never blocks development
   - Behind feature flag: only when `drivers.enabled: true`
-- **P2.2 ❌ Not Implemented**: QA role (`scripts/run_qa.py`) does NOT yet use driver test runners. No driver integration found in QA script.
+  - **Tested**: Templates applied, commands executed with logs in `artifacts/dev/S1/run-20251124-110012/`
+- **P2.2 ✅ Complete**: QA role (`scripts/run_qa.py`) runs driver test runners.
+  - Backend (lines 392-404): runs driver test and lint commands if available
+  - Frontend (lines 437-451): runs driver build, test, and lint commands if available
+  - Fixed missing import: added `from drivers.registry import load_driver` (line 9)
+  - Logs persisted under `artifacts/qa/<story>/` as `<category>_<id>_<command>.log`
+  - **Tested**: Backend test/lint executed, logs captured in `artifacts/qa/S1/`
 
 ---
 
@@ -128,7 +134,7 @@ Status: Planned (gated by hardware)
 | P1.2  | Registry CLI validate                  | Completed   | `drivers.registry validate --all` + `make drivers-validate`. BUG-004 Fixed |
 | P1.3  | Orchestrator wiring (behind flag)      | Completed   | Attach driver objects to context; `make drivers-show` prints resolved targets |
 | P2.1  | Dev role template expansion + build/test | Completed   | `scripts/run_dev.py` (lines 384-547): templates + driver commands (best-effort) |
-| P2.2  | QA role driver test runner integration | Pending     | `scripts/run_qa.py` does NOT yet use driver test runners |
+| P2.2  | QA role driver test runner integration | Completed   | `scripts/run_qa.py` (lines 392-404, 437-451): runs driver test/lint commands. Fixed missing import |
 
 We will update this table as tasks move to In Progress / Completed, adding incidents and adjustments as needed.
 
@@ -169,6 +175,17 @@ print(yaml.safe_dump(dataclasses.asdict(drv), sort_keys=False, allow_unicode=Tru
 - `scripts/run_qa.py` ahora detecta `drivers.enabled` y resuelve `project.targets`. Si hay driver para backend/frontend, ejecuta `build/test/lint` declarados por el driver (best‑effort) y guarda los logs bajo `artifacts/qa/<story>/` (ej. `backend_fastapi_test.log`, `frontend_next_js_build.log`). Si el driver no está configurado o el flag está apagado, mantiene el comportamiento legacy (pytest/npm sobre rutas por defecto).
 
 **Status**: Completed
+
+**Testing Results** (2025-11-24):
+- Test config: `drivers.enabled: true`, `project.targets.backend: fastapi`, `project.targets.frontend: next_js`
+- Dev execution:
+  - ✅ Templates scaffolded (main.py, package.json, next.config.js, pages/index.js)
+  - ✅ Commands executed: `backend_fastapi_test`, `backend_fastapi_lint`, `frontend_next_js_build`, `frontend_next_js_test`, `frontend_next_js_lint`
+  - ✅ Logs persisted: `artifacts/dev/S1/run-20251124-110012/<cmd>.log`
+- QA execution:
+  - ✅ Backend driver test/lint executed: `artifacts/qa/S1/backend_fastapi_test.log`, `backend_fastapi_lint.log`
+  - ✅ Commands properly detected and invoked
+- Conclusion: Phase 2 fully functional when `drivers.enabled: true`
 
 ---
 
