@@ -139,10 +139,7 @@ When to switch back to legacy
 
 ## Docs & Articles
 
-Need a shareable, read-only view of the pipeline? The repository publishes the latest marketing/overview docs to GitHub Pages.
-
-- **Entry point**: https://krukmat.github.io/agnostic-ai-pipeline/00-vision-ok/ renders `docs/00-vision-ok/index.html`, the primary landing page curated for stakeholders.
-- **Updating it**: refresh or add HTML assets under `docs/`, commit them, and GitHub Pages will redeploy automatically on the next push to the default branch.
+Project documentation lives under `docs/` inside this repository. For high‑level context and rationale, refer to the Medium series below.
 
 Medium series (high‑level concepts and rationale)
 - Part 1 — Why an Agentic, Model‑Agnostic Pipeline: replacing brittle scripts with a choreographed multi‑role loop that survives provider changes and scales with needs.  
