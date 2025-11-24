@@ -101,6 +101,8 @@ Notes:
 Deliverables
 - P3.1: `embedded/esp32c3_riscv.yaml` (ESP‑IDF) – idf.py build/flash/monitor; templates for FreeRTOS app.
 - P3.2: `embedded/zephyr_c.yaml` – west build/flash; `twister` tests; templates.
+- P3.3: Dev role embedded toolchain detection + optional build/test execution.
+- P3.4: QA role embedded toolchain detection + optional test execution.
 
 Acceptance Criteria
 - Host validation without device: detect toolchain presence; run host unit tests or skip with notice.
@@ -109,6 +111,8 @@ Status: Completed
 Notes:
 - **P3.1**: Templates added (ESP‑IDF FreeRTOS): `CMakeLists.txt`, `main/CMakeLists.txt`, `main/main.c`. YAML valida (`make drivers-validate` ✅).
 - **P3.2**: Templates added (Zephyr): `CMakeLists.txt`, `prj.conf`, `src/main.c`. YAML valida (`make drivers-validate` ✅).
+- **P3.3**: Dev role (`run_dev.py:413-456`) detects ESP-IDF (`has_idf()`) and Zephyr (`has_west()`) toolchains. Optional build/test execution controlled by `drivers.embedded.run_build` and `drivers.embedded.run_test` flags. Logs in `artifacts/dev/<story>/run-<ts>/embedded_<id>_<cmd>.log`.
+- **P3.4**: QA role (`run_qa.py:469-503`) detects toolchains and optionally runs test when `drivers.embedded.run_test: true`. Logs in `artifacts/qa/<story>/embedded_<id>_test.log`.
 
 ---
 
@@ -140,6 +144,8 @@ Status: Planned (gated by hardware)
 | P2.2  | QA role driver test runner integration | Completed   | `scripts/run_qa.py` (lines 392-404, 437-451): runs driver test/lint commands. Fixed missing import |
 | P3.1  | embedded/esp32c3_riscv.yaml (ESP-IDF)  | Completed   | YAML + templates (CMakeLists, main.c). BUG-005 Fixed |
 | P3.2  | embedded/zephyr_c.yaml (Zephyr)        | Completed   | YAML + templates (CMakeLists, prj.conf, main.c). BUG-006 Fixed |
+| P3.3  | Dev embedded toolchain detection       | Completed   | `run_dev.py:413-456`, `drivers/detect.py`. Flags: `run_build`, `run_test` |
+| P3.4  | QA embedded toolchain detection        | Completed   | `run_qa.py:469-503`. Flag: `run_test`. Logs in `artifacts/qa/<story>/` |
 
 We will update this table as tasks move to In Progress / Completed, adding incidents and adjustments as needed.
 
@@ -248,7 +254,11 @@ except Exception as e:
     # Continue with fallback behavior
 ```
 
-**Status**: Open
+**Status**: Fixed
+**Change**:
+- `scripts/orchestrate.py`: ahora registra `logger.warning` ante errores de wiring.
+- `scripts/run_dev.py`: registra `logger.warning` ante fallos de scaffold o ejecución de comandos del driver.
+- `scripts/run_qa.py`: si falla la carga de `config.yaml`, registra `logger.warning` y continúa con config vacío.
 
 ---
 
