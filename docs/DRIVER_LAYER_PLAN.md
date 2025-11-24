@@ -105,6 +105,62 @@ $ python drivers/registry.py validate --all
 ✅ gpu/cuda_jetson.yaml
 ```
 
+### Bugs Detectados en Fase 0
+
+#### BUG-001: Campos YAML ignorados silenciosamente
+
+El `Driver` dataclass no captura campos específicos de embedded/GPU que **sí existen** en los YAMLs:
+
+| Driver | Campo en YAML | Valor | ¿Capturado? |
+|--------|---------------|-------|-------------|
+| `embedded/esp32c3_riscv.yaml` | `board` | `esp32c3` | ❌ Ignorado |
+| `embedded/esp32c3_riscv.yaml` | `flash` | `{command: ...}` | ❌ Ignorado |
+| `gpu/cuda_jetson.yaml` | `arch` | `sm_87` | ❌ Ignorado |
+
+**Impacto**: Los roles que necesiten `board`, `flash_command`, o `gpu_arch` no tendrán acceso a estos valores.
+
+**Fix requerido** (Fase 1):
+```python
+@dataclass
+class Driver:
+    # ... campos existentes ...
+
+    # Embedded-specific (agregar)
+    board: Optional[str] = None
+    flash_command: Optional[str] = None
+    monitor_command: Optional[str] = None
+
+    # GPU-specific (agregar)
+    gpu_arch: Optional[str] = None
+    profiler_command: Optional[str] = None
+```
+
+Y en `load_driver()`:
+```python
+return Driver(
+    # ... campos existentes ...
+    board=data.get("board"),
+    flash_command=data.get("flash", {}).get("command") if isinstance(data.get("flash"), dict) else data.get("flash_command"),
+    gpu_arch=data.get("arch") or data.get("gpu_arch"),
+)
+```
+
+#### BUG-002: Nombres de campos inconsistentes entre YAML y plan
+
+| YAML actual | Plan documenta | Corrección |
+|-------------|----------------|------------|
+| `flash: {command: ...}` | `flash_command: str` | Migrar YAML a `flash_command` |
+| `arch: sm_87` | `gpu_arch: sm_87` | Migrar YAML a `gpu_arch` |
+
+**Decisión requerida**: ¿Mantener compatibilidad con ambos nombres o migrar YAMLs?
+
+#### BUG-003: Sin validación de campos embedded/GPU
+
+La función `_validate_dict()` no valida:
+- `board` debe ser string si presente
+- `flash` / `flash_command` estructura válida
+- `arch` / `gpu_arch` formato válido (ej: `sm_XX`, `gfxXXXX`)
+
 ---
 
 ## Driver Taxonomy
