@@ -147,6 +147,11 @@ Status: Planned (gated by hardware)
 | P3.3  | Dev embedded toolchain detection       | Completed   | `run_dev.py:413-456`, `drivers/detect.py`. Flags: `run_build`, `run_test` |
 | P3.4  | QA embedded toolchain detection        | Completed   | `run_qa.py:469-503`. Flag: `run_test`. Logs in `artifacts/qa/<story>/` |
 | P3.5  | Embedded CI stubs (safe, no flashing)  | Deferred    | Moved to end of roadmap per decision; implement after P6 |
+| P4.1  | GPU driver refinement (cuda_jetson)     | Planned     | Add nvcc/nvidia-smi detection, safe build/test hooks |
+| P4.2  | Cross-driver conventions + lint         | Completed   | ID regex, non-empty commands, unified log names; docs updated |
+| P5.1  | Registry/CLI enhancements               | Completed   | list/show/plan subcommands in drivers.registry; guide updated |
+| P5.2  | Templates catalog + scaffold flag       | Completed   | docs/DRIVER_TEMPLATES_CATALOG.md, make drivers-scaffold, drivers.templates.apply flag |
+| P6    | Docs + Test coverage                    | Completed   | Troubleshooting + tests/driver_layer; make drivers-test. BUG-009 Fixed |
 | P3.6  | Driver Docs + Examples                 | Completed   | `docs/DRIVER_EXAMPLES.md`, enriched YAML comments, `DRIVER_LAYER_GUIDE.md` links |
 
 We will update this table as tasks move to In Progress / Completed, adding incidents and adjustments as needed.
@@ -284,6 +289,22 @@ except Exception as e:
 
 ---
 
+### BUG-008: Backend tests fail to import `app` (PYTHONPATH in subprocess)
+
+**Severity**: Medium (backend tests can fail under Dev/QA subprocesses)
+
+**Issue**: When backend tests run via subprocess from repo root, Python cannot find the `app` package under `project/backend-fastapi` → `ModuleNotFoundError: app`.
+
+**Resolution**:
+- Add `project/backend-fastapi` to `PYTHONPATH` for backend driver commands in Dev/QA.
+- Files changed:
+  - `scripts/run_dev.py`: injects backend path into `PYTHONPATH` when running `backend_*` commands.
+  - `scripts/run_qa.py`: same injection inside `run_shell()` for backend driver commands.
+
+**Status**: Fixed
+
+---
+
 ### P2.2 – QA role driver runner (Completed)
 
 **What changed**:
@@ -301,6 +322,45 @@ except Exception as e:
   - ✅ Backend driver test/lint executed: `artifacts/qa/S1/backend_fastapi_test.log`, `backend_fastapi_lint.log`
   - ✅ Commands properly detected and invoked
 - Conclusion: Phase 2 fully functional when `drivers.enabled: true`
+
+---
+
+### BUG-009: test_registry_cli.py falla por ROOT incorrecto en subprocess
+
+**Severity**: Medium (tests fallan, CI afectado)
+
+**Reproduction**:
+```bash
+make drivers-test
+# Error: ModuleNotFoundError: No module named 'drivers'
+# 2 failed tests
+```
+
+**Cause**: `tests/driver_layer/test_registry_cli.py` usa `ROOT = Path(__file__).resolve().parents[1]` que apunta a `tests/` en lugar del root del proyecto. Además, no pasa `PYTHONPATH` al subprocess.
+
+**Affected file**: `tests/driver_layer/test_registry_cli.py:12,17`
+```python
+ROOT = Path(__file__).resolve().parents[1]  # Apunta a tests/, no al repo root
+
+def _run_cli(args: list[str], env: dict | None = None) -> str:
+    cmd = [sys.executable, "-m", "drivers.registry", *args]
+    res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env=env)  # env puede ser None
+```
+
+**Fix required**:
+```python
+ROOT = Path(__file__).resolve().parents[2]  # Repo root
+
+def _run_cli(args: list[str], env: dict | None = None) -> str:
+    cmd = [sys.executable, "-m", "drivers.registry", *args]
+    run_env = env.copy() if env else os.environ.copy()
+    run_env["PYTHONPATH"] = str(ROOT)
+    res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env=run_env)
+```
+
+**Status**: Fixed
+**Resolution**:
+- tests/driver_layer/test_registry_cli.py: usa `parents[2]` para resolver ROOT al repo y exporta `PYTHONPATH=ROOT` al env del subprocess. `pytest -q tests/driver_layer` pasa (2 tests).
 
 ---
 

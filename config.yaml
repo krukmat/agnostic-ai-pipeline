@@ -178,6 +178,10 @@ database:
   backup_on_iteration_end: true
 drivers:
   enabled: false  # Feature flag: driver layer off by default
+  embedded:
+    run_build: false   # allow embedded build if toolchain present
+    run_test: false    # allow embedded tests if toolchain present
+    run_flash: false   # never flash by default
 project:
   targets:
     backend: null   # e.g., fastapi

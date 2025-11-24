@@ -173,9 +173,9 @@ async def execute_role(role: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             if resolved:
                 payload = dict(payload)
                 payload["drivers"] = resolved
-    except Exception:
+    except Exception as e:
         # Never block role execution due to driver layer
-        pass
+        logger.warning(f"[drivers] Non-fatal driver wiring error: {e}")
     executor = _get_executor_for_role(role)
 
     @instrumented(role)
