@@ -793,6 +793,143 @@ db_ctx.log_attempt(
 
 ---
 
+## Integración con Developer Role (Fase 3)
+
+### Estado Actual
+
+El Developer (`scripts/run_dev.py`) actualmente:
+- ❌ No usa drivers
+- ❌ Tiene path hardcodeado `project/backend-fastapi/` en `prompts/developer.md`
+- ❌ No ejecuta build/test commands después de generar código
+- ❌ No aplica templates de scaffold
+
+### Cambios Requeridos
+
+#### 1. `scripts/run_dev.py`
+
+| Cambio | Descripción |
+|--------|-------------|
+| Importar registry | `from drivers.registry import load_driver` |
+| Cargar driver desde config | Leer `config.yaml` → `project.targets.backend` |
+| Paths dinámicos | Usar `driver.artifact_paths[0]` en vez de hardcoded |
+| Scaffold templates | Aplicar `driver.templates` antes de generar código |
+| Ejecutar build/test | Correr `driver.build.command` y `driver.test.command` post-generación |
+
+#### 2. `prompts/developer.md`
+
+| Línea | Actual | Requerido |
+|-------|--------|-----------|
+| 5 | `project/backend-fastapi/app/my_module.py` | `{{project_path}}/app/my_module.py` |
+
+El prompt tiene hardcodeado:
+```
+path must be relative to the project root (for example `project/backend-fastapi/app/my_module.py`)
+```
+
+Debería usar placeholder o inyectar dinámicamente el path del driver.
+
+#### 3. `config.yaml`
+
+Agregar sección (no existe actualmente):
+```yaml
+project:
+  targets:
+    backend: fastapi      # → drivers/backend/fastapi.yaml
+    frontend: next_js     # → drivers/frontend/next_js.yaml
+    embedded: none
+    gpu: none
+```
+
+### Flujo Propuesto
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Developer Role                           │
+├─────────────────────────────────────────────────────────────┤
+│ 1. Load config.yaml → project.targets.backend = "fastapi"   │
+│ 2. load_driver("backend", "fastapi") → Driver               │
+│ 3. Apply driver.templates → scaffold project/               │
+│ 4. Build prompt with driver paths                           │
+│ 5. Generate code via LLM                                    │
+│ 6. Write files to driver.artifact_paths[0]                  │
+│ 7. Run driver.build.command                                 │
+│ 8. Run driver.test.command                                  │
+│ 9. Report results to orchestrator                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Funciones a Implementar
+
+```python
+# Pseudocódigo - NO implementar aún
+
+def get_target_driver(category: str = "backend") -> Driver:
+    """Load driver based on config.yaml project.targets."""
+    config = load_config()
+    driver_id = config.get("project", {}).get("targets", {}).get(category)
+    if not driver_id or driver_id == "none":
+        return None
+    return load_driver(category, driver_id)
+
+def scaffold_project(driver: Driver) -> List[str]:
+    """Apply driver templates to create project structure."""
+    created = []
+    for template in driver.templates:
+        # Copy template.source → template.path
+        created.append(template.path)
+    return created
+
+def run_driver_command(cmd: Command, label: str) -> dict:
+    """Execute a driver command (build/test/lint)."""
+    result = subprocess.run(cmd.command, shell=True, capture_output=True)
+    return {
+        "label": label,
+        "success": result.returncode == 0,
+        "stdout": result.stdout.decode(),
+        "stderr": result.stderr.decode()
+    }
+
+def build_dev_prompt(driver: Driver, story: dict) -> str:
+    """Inject driver paths into developer prompt."""
+    prompt = DEV_PROMPT.read_text()
+    project_path = f"project/{driver.category}-{driver.framework}"
+    return prompt.replace("project/backend-fastapi", project_path)
+```
+
+---
+
+## Integración con QA Role (Fase 3)
+
+### Estado Actual
+
+El QA (`scripts/run_qa.py`) actualmente:
+- ❌ No usa drivers
+- ❌ Tiene test commands hardcodeados o inferidos
+
+### Cambios Requeridos
+
+| Cambio | Descripción |
+|--------|-------------|
+| Cargar driver | Obtener `driver.test.command` |
+| Ejecutar tests | Usar comando del driver en vez de hardcoded |
+| Reportar driver_id | Incluir en QA reports para trazabilidad |
+
+### Flujo Propuesto
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       QA Role                                │
+├─────────────────────────────────────────────────────────────┤
+│ 1. Load driver from config                                  │
+│ 2. Run driver.test.command                                  │
+│ 3. Run driver.lint.command (if exists)                      │
+│ 4. Check driver.quality_gates.min_coverage                  │
+│ 5. Generate report with driver_id for traceability          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Archivos a Crear
 
 ```
