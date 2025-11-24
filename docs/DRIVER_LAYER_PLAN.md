@@ -9,12 +9,101 @@ Provide a uniform way to describe supported stacks (backend, frontend, mobile, e
 
 | Fase | Descripción | Estado |
 |------|-------------|--------|
-| **Fase 1** | Infraestructura (registry, dataclasses, schema) | ⏳ Pendiente |
-| **Fase 2** | Drivers backend/frontend básicos | ⏳ Pendiente |
+| **Fase 0** | Implementación inicial (MVP) | ✅ Completada |
+| **Fase 1** | Infraestructura completa (caching, quality_gates, CommandSpec extendido) | ⏳ Pendiente |
+| **Fase 2** | Drivers backend/frontend con templates | ⏳ Pendiente |
 | **Fase 3** | Integración con orchestrator y roles | ⏳ Pendiente |
-| **Fase 4** | Drivers embedded (ESP32, Zephyr) | ⏳ Pendiente |
-| **Fase 5** | Drivers GPU (CUDA, ROCm) | ⏳ Pendiente |
+| **Fase 4** | Drivers embedded (ESP32, Zephyr) completos | ⏳ Pendiente |
+| **Fase 5** | Drivers GPU (CUDA, ROCm) completos | ⏳ Pendiente |
 | **Fase 6** | Tests y documentación | ⏳ Pendiente |
+
+---
+
+## Fase 0: Implementación Inicial (Completada)
+
+### Archivos Creados
+
+```
+drivers/
+├── __init__.py              # Package marker (vacío)
+├── registry.py              # Registry MVP con validación básica
+├── backend/
+│   └── fastapi.yaml         # Driver FastAPI
+├── frontend/
+│   └── next_js.yaml         # Driver Next.js
+├── embedded/
+│   └── esp32c3_riscv.yaml   # Driver ESP32-C3
+└── gpu/
+    └── cuda_jetson.yaml     # Driver CUDA Jetson
+```
+
+### Características Implementadas
+
+| Feature | Estado | Notas |
+|---------|--------|-------|
+| `Driver` dataclass | ✅ | Campos básicos: id, category, language, framework, templates, build, test, lint |
+| `Command` dataclass | ✅ | Solo `command: str` (sin working_dir, env, timeout) |
+| `Template` dataclass | ✅ | path + source |
+| `load_driver()` | ✅ | Carga y valida YAMLs |
+| `validate_all()` | ✅ | CLI para validar todos los drivers |
+| Validación de schema | ✅ | Campos requeridos y tipos |
+| CLI (`python -m drivers.registry`) | ✅ | Subcomandos: validate, load |
+
+### Gaps vs Plan Completo
+
+| Aspecto | Fase 0 (Actual) | Plan Completo |
+|---------|-----------------|---------------|
+| **Caching** | ❌ Sin cache | Cache por `{category}/{driver_id}` |
+| **CommandSpec** | Solo `command` | `command`, `working_dir`, `env`, `timeout_seconds` |
+| **QualityGates** | ❌ No existe | `min_coverage`, `max_complexity`, `required_tests` |
+| **Excepciones** | `FileNotFoundError`, `ValueError` | `DriverNotFoundError`, `DriverValidationError` |
+| **Embedded fields** | `board` presente, `flash` en driver | `board`, `flash_command`, `monitor_command` en dataclass |
+| **GPU fields** | `arch` en YAML | `gpu_arch`, `profiler_command` en dataclass |
+| **Templates** | Vacíos (`[]`) | Con archivos de scaffold |
+| **Path conventions** | Inconsistente | `{category}-{framework}` estandarizado |
+
+### Inconsistencias Detectadas en YAMLs
+
+#### `drivers/frontend/next_js.yaml`
+```yaml
+# Actual
+artifact_paths:
+  - project/web-frontend    # ❌ Inconsistente
+
+# Debería ser (según convención)
+artifact_paths:
+  - project/frontend-nextjs  # ✅ {category}-{framework}
+```
+
+#### `drivers/embedded/esp32c3_riscv.yaml`
+```yaml
+# Actual
+flash:
+  command: idf.py -p {{serial_port}} flash monitor  # ❌ Key es "flash"
+
+# Debería ser (según dataclass)
+flash_command: idf.py -p /dev/ttyUSB0 flash  # ✅ Campo en Driver
+monitor_command: idf.py -p /dev/ttyUSB0 monitor  # ✅ Separado
+```
+
+#### `drivers/gpu/cuda_jetson.yaml`
+```yaml
+# Actual
+arch: sm_87  # ❌ Key es "arch"
+
+# Debería ser (según dataclass)
+gpu_arch: sm_87  # ✅ Campo en Driver
+```
+
+### Validación Actual
+
+```bash
+$ python drivers/registry.py validate --all
+✅ backend/fastapi.yaml
+✅ embedded/esp32c3_riscv.yaml
+✅ frontend/next_js.yaml
+✅ gpu/cuda_jetson.yaml
+```
 
 ---
 
@@ -681,12 +770,26 @@ db_ctx.log_attempt(
 
 ## Próximos Pasos
 
-1. ⏳ **Fase 1**: Crear `drivers/registry.py` con dataclasses y validación
-2. ⏳ **Fase 2**: Implementar drivers `fastapi` y `nextjs` como prueba de concepto
-3. ⏳ **Fase 3**: Integrar registry en orchestrator y roles (Dev, QA)
-4. ⏳ **Fase 4**: Agregar drivers embedded (`esp32c3`, `zephyr_nrf52`)
-5. ⏳ **Fase 5**: Agregar drivers GPU (`cuda_jetson`, `rocm_edge`)
-6. ⏳ **Fase 6**: Tests unitarios e integración, documentación
+1. ✅ **Fase 0**: Implementación inicial MVP (registry básico + 4 drivers)
+2. ⏳ **Fase 1**: Mejorar infraestructura
+   - Agregar caching a `load_driver()`
+   - Extender `CommandSpec` con `working_dir`, `env`, `timeout_seconds`
+   - Agregar `QualityGates` dataclass
+   - Crear excepciones específicas (`DriverNotFoundError`, `DriverValidationError`)
+   - Agregar campos embedded/GPU a `Driver` dataclass
+3. ⏳ **Fase 2**: Completar drivers backend/frontend
+   - Corregir path conventions (ej: `web-frontend` → `frontend-nextjs`)
+   - Agregar templates de scaffold
+   - Agregar `quality_gates` a cada driver
+4. ⏳ **Fase 3**: Integrar registry en orchestrator y roles (Dev, QA)
+5. ⏳ **Fase 4**: Completar drivers embedded
+   - Corregir `flash` → `flash_command` + `monitor_command`
+   - Agregar driver `zephyr_nrf52`
+6. ⏳ **Fase 5**: Completar drivers GPU
+   - Corregir `arch` → `gpu_arch`
+   - Agregar `profiler_command`
+   - Agregar driver `rocm_edge`
+7. ⏳ **Fase 6**: Tests unitarios e integración, documentación
 
 ---
 

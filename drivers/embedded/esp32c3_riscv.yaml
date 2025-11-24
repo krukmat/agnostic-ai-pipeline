@@ -1,0 +1,19 @@
+id: esp32c3_riscv
+schema_version: 1
+category: embedded
+language: c
+framework: esp-idf
+board: esp32c3
+templates: []
+build:
+  command: idf.py set-target esp32c3 && idf.py build
+flash:
+  command: idf.py -p {{serial_port}} flash monitor
+test:
+  command: idf.py unit-test-app
+artifact_paths:
+  - project/embedded-esp32c3
+metadata:
+  architecture: riscv32imc
+  rtos: freertos
+

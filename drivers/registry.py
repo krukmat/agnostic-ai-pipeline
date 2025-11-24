@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+"""Minimal driver registry for loading and validating driver YAMLs.
+
+Schema v1 (stable keys):
+- id: str
+- schema_version: int (default 1)
+- category: one of backend|frontend|mobile|embedded|gpu
+- language: str
+- framework: str
+- templates: list[{path:str, source:str}] (optional)
+- build: {command:str} (optional)
+- test: {command:str} (optional)
+- lint: {command:str} (optional)
+- artifact_paths: list[str] (optional)
+- metadata: dict (optional)
+"""
+
+import argparse
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
+
+DRIVERS_ROOT = Path(__file__).resolve().parent
+VALID_CATEGORIES = {"backend", "frontend", "mobile", "embedded", "gpu"}
+
+
+@dataclass
+class Command:
+    command: str
+
+
+@dataclass
+class Template:
+    path: str
+    source: str
+
+
+@dataclass
+class Driver:
+    id: str
+    category: str
+    language: str
+    framework: str
+    schema_version: int = 1
+    templates: List[Template] = field(default_factory=list)
+    build: Optional[Command] = None
+    test: Optional[Command] = None
+    lint: Optional[Command] = None
+    artifact_paths: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+def _require(d: Dict[str, Any], key: str, typ):
+    if key not in d:
+        raise ValueError(f"missing required key '{key}'")
+    if not isinstance(d[key], typ):
+        raise ValueError(f"key '{key}' must be {typ}, got {type(d[key])}")
+
+
+def _validate_dict(d: Dict[str, Any]) -> None:
+    _require(d, "id", str)
+    _require(d, "category", str)
+    _require(d, "language", str)
+    _require(d, "framework", str)
+    if d["category"] not in VALID_CATEGORIES:
+        raise ValueError(f"invalid category '{d['category']}'")
+    if "templates" in d:
+        if not isinstance(d["templates"], list):
+            raise ValueError("templates must be a list")
+        for t in d["templates"]:
+            if not isinstance(t, dict) or "path" not in t or "source" not in t:
+                raise ValueError("each template must be a dict with 'path' and 'source'")
+    for k in ("build", "test", "lint"):
+        if k in d:
+            if not isinstance(d[k], dict) or "command" not in d[k] or not isinstance(d[k]["command"], str):
+                raise ValueError(f"{k} must be a dict with 'command': str")
+    if "artifact_paths" in d and not isinstance(d["artifact_paths"], list):
+        raise ValueError("artifact_paths must be a list of strings")
+
+
+def load_driver(category: str, driver_id: str) -> Driver:
+    path = DRIVERS_ROOT / category / f"{driver_id}.yaml"
+    if not path.exists():
+        raise FileNotFoundError(str(path))
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError("driver YAML must be a mapping")
+    _validate_dict(data)
+    templates = [Template(**t) for t in data.get("templates", [])]
+    def _cmd(name: str) -> Optional[Command]:
+        c = data.get(name)
+        return Command(**c) if isinstance(c, dict) and "command" in c else None
+    return Driver(
+        id=data["id"],
+        category=data["category"],
+        language=data["language"],
+        framework=data["framework"],
+        schema_version=int(data.get("schema_version", 1)),
+        templates=templates,
+        build=_cmd("build"),
+        test=_cmd("test"),
+        lint=_cmd("lint"),
+        artifact_paths=list(data.get("artifact_paths", []) or []),
+        metadata=dict(data.get("metadata", {}) or {}),
+    )
+
+
+def validate_all() -> int:
+    errors = 0
+    for cat in VALID_CATEGORIES:
+        d = DRIVERS_ROOT / cat
+        if not d.exists():
+            continue
+        for yml in sorted(d.glob("*.yaml")):
+            try:
+                _ = load_driver(cat, yml.stem)
+                print(f"✅ {cat}/{yml.name}")
+            except Exception as e:
+                print(f"❌ {cat}/{yml.name}: {e}")
+                errors += 1
+    return errors
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Driver registry CLI")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_val = sub.add_parser("validate", help="Validate drivers")
+    p_val.add_argument("--all", action="store_true", help="Validate all drivers")
+    p_load = sub.add_parser("load", help="Load a specific driver")
+    p_load.add_argument("category", choices=sorted(VALID_CATEGORIES))
+    p_load.add_argument("driver_id")
+
+    args = parser.parse_args(argv)
+    if args.cmd == "validate":
+        if args.all:
+            return validate_all()
+        parser.error("--all required for now")
+    elif args.cmd == "load":
+        drv = load_driver(args.category, args.driver_id)
+        print(yaml.safe_dump(drv.__dict__, sort_keys=False, allow_unicode=True))
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

@@ -1,0 +1,18 @@
+id: next_js
+schema_version: 1
+category: frontend
+language: javascript
+framework: next_js
+templates: []
+build:
+  command: npm run build --prefix project/web-frontend
+test:
+  command: npm test --prefix project/web-frontend -- --passWithNoTests
+lint:
+  command: npm run lint --prefix project/web-frontend
+artifact_paths:
+  - project/web-frontend
+metadata:
+  package_manager: npm
+  test_runner: jest
+
