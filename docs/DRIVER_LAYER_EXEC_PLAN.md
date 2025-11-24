@@ -163,23 +163,12 @@ print(yaml.safe_dump(dataclasses.asdict(drv), sort_keys=False, allow_unicode=Tru
 
 ---
 
-### FINDING-P2: P2.2 (QA Role) Not Implemented
+### P2.2 – QA role driver runner (Completed)
 
-**Severity**: Medium (blocks full Phase 2 completion)
+**What changed**:
+- `scripts/run_qa.py` ahora detecta `drivers.enabled` y resuelve `project.targets`. Si hay driver para backend/frontend, ejecuta `build/test/lint` declarados por el driver (best‑effort) y guarda los logs bajo `artifacts/qa/<story>/` (ej. `backend_fastapi_test.log`, `frontend_next_js_build.log`). Si el driver no está configurado o el flag está apagado, mantiene el comportamiento legacy (pytest/npm sobre rutas por defecto).
 
-**Issue**: Phase 2 marked as "Completed" but P2.2 is not implemented.
-
-**Current State**:
-- P2.1 ✅ Complete: Dev role applies templates and executes driver build/test/lint commands
-- P2.2 ❌ Not Implemented: QA role does not use driver test runners
-
-**Required for P2.2**:
-- `scripts/run_qa.py` should check `drivers.enabled` and load driver for each category
-- QA should run driver's test runner command (backend/frontend)
-- Test reports should be persisted under driver-aware paths (e.g., `artifacts/qa/<story>/drivers/<category>/test.log`)
-- Should integrate with existing QA loop without breaking current behavior
-
-**Status**: Documented as pending (corrected in this review)
+**Status**: Completed
 
 ---
 

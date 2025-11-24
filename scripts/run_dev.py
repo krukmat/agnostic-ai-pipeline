@@ -15,6 +15,8 @@ import yaml
 from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
 from logger import logger # Import the logger
+from drivers.registry import load_driver
+import subprocess
 
 # --- Paths ---
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -379,6 +381,36 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
 
 
 async def implement_story(story_id: str | None = None, retries: int = 3) -> dict:
+    # Phase 2: Apply driver templates (behind feature flag via config)
+    try:
+        from common import load_config
+        cfg = load_config()
+        drv_cfg = (cfg.get("drivers") or {}) if isinstance(cfg, dict) else {}
+        if bool(drv_cfg.get("enabled", False)):
+            targets = (cfg.get("project") or {}).get("targets") or {}
+            for cat in ("backend", "frontend"):
+                sel = targets.get(cat)
+                if not sel or str(sel).lower() == "none":
+                    continue
+                try:
+                    drv = load_driver(cat, sel)
+                    # Copy templates if they don't exist yet
+                    for t in drv.templates:
+                        dest = ROOT / t.path
+                        if not dest.exists():
+                            src = ROOT / t.source
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            try:
+                                content = src.read_text(encoding="utf-8")
+                                dest.write_text(content, encoding="utf-8")
+                                logger.info(f"[DEV] Scaffolded from driver {cat}/{sel}: {t.path}")
+                            except Exception as e:
+                                logger.warning(f"[DEV] Failed to scaffold {t.path} from {t.source}: {e}")
+                except Exception as e:
+                    logger.warning(f"[DEV] Driver load failed for {cat}/{sel}: {e}")
+    except Exception:
+        # Never block development due to driver layer
+        pass
     stories = load_stories()
     story = pick_story(stories, story_id if story_id else None)
     if not story:
@@ -449,6 +481,70 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     logger.info(f"✓ wrote {len(written)} files under project/ (story {sid})")
     for w in written:
         logger.info(f" - {w}")
+
+    # Phase 2 (complete): execute driver build/test commands (best-effort)
+    try:
+        from common import load_config
+        cfg = load_config()
+        drv_cfg = (cfg.get("drivers") or {}) if isinstance(cfg, dict) else {}
+        if bool(drv_cfg.get("enabled", False)):
+            targets = (cfg.get("project") or {}).get("targets") or {}
+
+            def _run(cmd: str, name: str) -> int:
+                if not cmd or not isinstance(cmd, str):
+                    return 0
+                logf = run_dir / f"{name}.log"
+                logger.info(f"[DEV] Running driver command '{name}': {cmd}")
+                try:
+                    res = subprocess.run(
+                        cmd,
+                        shell=True,
+                        cwd=str(ROOT),
+                        capture_output=True,
+                        text=True,
+                    )
+                    logf.write_text((res.stdout or "") + ("\n" + (res.stderr or "") if res.stderr else ""), encoding="utf-8")
+                    if res.returncode != 0:
+                        logger.warning(f"[DEV] Driver command '{name}' returned code {res.returncode} (see {logf})")
+                    else:
+                        logger.info(f"[DEV] Driver command '{name}' completed (see {logf})")
+                    return res.returncode
+                except FileNotFoundError as e:
+                    logger.warning(f"[DEV] Driver command not found for '{name}': {e}")
+                    return 127
+                except Exception as e:
+                    logger.warning(f"[DEV] Driver command '{name}' failed: {e}")
+                    return 1
+
+            # Backend
+            sel_be = targets.get("backend")
+            if sel_be and str(sel_be).lower() != "none":
+                try:
+                    be = load_driver("backend", sel_be)
+                    # Prefer running tests for backend (build often is a server)
+                    if getattr(be, "test", None):
+                        _run(be.test.command, f"backend_{be.id}_test")
+                    if getattr(be, "lint", None):
+                        _run(be.lint.command, f"backend_{be.id}_lint")
+                except Exception as e:
+                    logger.warning(f"[DEV] Backend driver execution skipped: {e}")
+
+            # Frontend
+            sel_fe = targets.get("frontend")
+            if sel_fe and str(sel_fe).lower() != "none":
+                try:
+                    fe = load_driver("frontend", sel_fe)
+                    if getattr(fe, "build", None):
+                        _run(fe.build.command, f"frontend_{fe.id}_build")
+                    if getattr(fe, "test", None):
+                        _run(fe.test.command, f"frontend_{fe.id}_test")
+                    if getattr(fe, "lint", None):
+                        _run(fe.lint.command, f"frontend_{fe.id}_lint")
+                except Exception as e:
+                    logger.warning(f"[DEV] Frontend driver execution skipped: {e}")
+    except Exception:
+        # Never block development due to driver layer
+        pass
 
     return {
         "story_id": sid,

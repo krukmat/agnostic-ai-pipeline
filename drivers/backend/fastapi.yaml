@@ -3,7 +3,9 @@ schema_version: 1
 category: backend
 language: python
 framework: fastapi
-templates: []
+templates:
+  - path: project/backend-fastapi/app/main.py
+    source: drivers/backend/fastapi/templates/app/main.py
 build:
   command: uvicorn app.main:app --reload
 test:
@@ -15,4 +17,3 @@ artifact_paths:
 metadata:
   db_support: postgres
   test_runner: pytest
-

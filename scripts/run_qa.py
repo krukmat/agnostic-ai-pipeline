@@ -6,6 +6,7 @@ import yaml
 import typer
 from common import ensure_dirs, ROOT
 from logger import logger # Import the logger
+from drivers.registry import load_driver  # P2.2: Driver integration for QA
 
 QA_ART_DIR = ROOT / "artifacts" / "qa"
 QA_ART_DIR.mkdir(parents=True, exist_ok=True)
@@ -353,56 +354,114 @@ def main():
     else:
         logger.debug("[QA] No developer snapshot available. Running full QA suite.")
 
+    # Resolve driver settings if enabled
+    cfg = {}
+    try:
+        with open(ROOT / "config.yaml", "r", encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+    except Exception:
+        cfg = {}
+    drv_cfg = (cfg.get("drivers") or {}) if isinstance(cfg, dict) else {}
+    drivers_enabled = bool(drv_cfg.get("enabled", False))
+    targets = (cfg.get("project") or {}).get("targets") or {}
+
+    def run_shell(cmd: str, name: str) -> int:
+        if not cmd:
+            return 0
+        logf = story_art_dir / f"{name}.log"
+        logger.info(f"[QA] Running driver command '{name}': {cmd}")
+        try:
+            res = subprocess.run(cmd, shell=True, cwd=str(ROOT), capture_output=True, text=True)
+            logf.write_text((res.stdout or "") + ("\n" + (res.stderr or "") if res.stderr else ""), encoding="utf-8")
+            if res.returncode != 0:
+                logger.warning(f"[QA] Driver command '{name}' returned {res.returncode} (see {logf})")
+            else:
+                logger.info(f"[QA] Driver command '{name}' completed (see {logf})")
+            return res.returncode
+        except FileNotFoundError as e:
+            logger.error(f"[QA] Driver command not found for '{name}': {e}")
+            return 127
+        except Exception as e:
+            logger.error(f"[QA] Driver command '{name}' failed: {e}")
+            return 1
+
     # Backend
-    be_root = ROOT / "project" / "backend-fastapi"
-    be_tests = be_root / "tests"
-    be_has = has_any_test(be_tests)
     be_rc = None
     if not run_backend_tests:
         be_rc = 0
         logger.info("[QA] Skipping backend tests for story %s (no backend changes detected).", story_id)
-    elif be_has:
-        logger.info(f"[QA] Backend has tests in {be_tests}. Running pytest...")
-        # Use project-level virtual environment pytest
-        pytest_bin = ROOT / ".venv" / "bin" / "pytest"
-        if pytest_bin.exists():
-            be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], story_art_dir=story_art_dir, cwd=str(be_root))
-            if be_rc not in (0, 10):
-                logger.warning(f"[QA] Pytest returned {be_rc}. Checking for import errors...")
-                missing = log_contains_import_error(story_art_dir)
-                if any(m.startswith("backend_fastapi") or "backend-fastapi" in m for m in missing):
-                    if fix_backend_test_imports(be_tests):
-                        logger.info("[QA] Auto-corrected backend test imports. Re-running pytest.")
-                        be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], story_art_dir=story_art_dir, cwd=str(be_root))
-                    else:
-                        logger.warning("[QA] Could not auto-correct backend test imports.")
-                else:
-                    logger.debug("[QA] No backend-fastapi related import errors found.")
-        else:
-            be_rc = 127  # venv/pytest not available in project .venv
-            logger.error(f"[QA] Pytest binary not found: {pytest_bin}. Setting backend return code to {be_rc}.")
+    elif drivers_enabled and targets.get("backend"):
+        try:
+            be = load_driver("backend", targets.get("backend"))
+            if getattr(be, "test", None):
+                be_rc = run_shell(be.test.command, f"backend_{be.id}_test")
+            else:
+                be_rc = 10
+                logger.info("[QA] Backend driver has no test command. Returning 10 (no tests).")
+            if getattr(be, "lint", None):
+                _ = run_shell(be.lint.command, f"backend_{be.id}_lint")
+        except Exception as e:
+            logger.warning(f"[QA] Backend driver test skipped: {e}")
+            be_rc = 10
     else:
-        be_rc = 10  # no tests
-        logger.info("[QA] No backend tests found. Setting backend return code to 10.")
-
+        be_root = ROOT / "project" / "backend-fastapi"
+        be_tests = be_root / "tests"
+        be_has = has_any_test(be_tests)
+        if be_has:
+            logger.info(f"[QA] Backend has tests in {be_tests}. Running pytest...")
+            pytest_bin = ROOT / ".venv" / "bin" / "pytest"
+            if pytest_bin.exists():
+                be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], story_art_dir=story_art_dir, cwd=str(be_root))
+                if be_rc not in (0, 10):
+                    logger.warning(f"[QA] Pytest returned {be_rc}. Checking for import errors...")
+                    missing = log_contains_import_error(story_art_dir)
+                    if any(m.startswith("backend_fastapi") or "backend-fastapi" in m for m in missing):
+                        if fix_backend_test_imports(be_tests):
+                            logger.info("[QA] Auto-corrected backend test imports. Re-running pytest.")
+                            be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], story_art_dir=story_art_dir, cwd=str(be_root))
+                        else:
+                            logger.warning("[QA] Could not auto-correct backend test imports.")
+                    else:
+                        logger.debug("[QA] No backend-fastapi related import errors found.")
+            else:
+                be_rc = 127
+                logger.error(f"[QA] Pytest binary not found: {pytest_bin}. Setting backend return code to {be_rc}.")
+        else:
+            be_rc = 10
+            logger.info("[QA] No backend tests found. Setting backend return code to 10.")
 
     # Web
-    web_root = ROOT / "project" / "web-express"
-    web_tests = has_any_web_test(web_root)
     web_rc = None
     if not run_web_tests:
         web_rc = 0
         logger.info("[QA] Skipping web tests for story %s (no web changes detected).", story_id)
-    elif not (web_root / "package.json").exists():
-        web_rc = 10 # no tests / not applicable
-        logger.info("[QA] No package.json found for web project. Skipping web tests.")
-    elif web_tests:
-        logger.info(f"[QA] Web has tests in {web_root}. Running npm test...")
-        # Use npm for compatibility
-        web_rc = run_cmd(["npm", "test", "--silent", "--", "--passWithNoTests"], story_art_dir=story_art_dir, cwd=str(web_root))
+    elif drivers_enabled and targets.get("frontend"):
+        try:
+            fe = load_driver("frontend", targets.get("frontend"))
+            if getattr(fe, "build", None):
+                _ = run_shell(fe.build.command, f"frontend_{fe.id}_build")
+            if getattr(fe, "test", None):
+                web_rc = run_shell(fe.test.command, f"frontend_{fe.id}_test")
+            else:
+                web_rc = 10
+                logger.info("[QA] Frontend driver has no test command. Returning 10 (no tests).")
+            if getattr(fe, "lint", None):
+                _ = run_shell(fe.lint.command, f"frontend_{fe.id}_lint")
+        except Exception as e:
+            logger.warning(f"[QA] Frontend driver test skipped: {e}")
+            web_rc = 10
     else:
-        web_rc = 10  # no tests
-        logger.info("[QA] No web tests found. Setting web return code to 10.")
+        web_root = ROOT / "project" / "web-express"
+        web_tests = has_any_web_test(web_root)
+        if not (web_root / "package.json").exists():
+            web_rc = 10 # no tests / not applicable
+            logger.info("[QA] No package.json found for web project. Skipping web tests.")
+        elif web_tests:
+            logger.info(f"[QA] Web has tests in {web_root}. Running npm test...")
+            web_rc = run_cmd(["npm", "test", "--silent", "--", "--passWithNoTests"], story_art_dir=story_art_dir, cwd=str(web_root))
+        else:
+            web_rc = 10  # no tests
+            logger.info("[QA] No web tests found. Setting web return code to 10.")
 
 
     # Future extensions: mobile etc. (omitted for now)

@@ -119,18 +119,18 @@ El `Driver` dataclass no captura campos específicos de embedded/GPU que **sí e
 
 **Impacto**: Los roles que necesiten `board`, `flash_command`, o `gpu_arch` no tendrán acceso a estos valores.
 
-**Fix requerido** (Fase 1):
+**Fix aplicado** (Registry v1.1):
 ```python
 @dataclass
 class Driver:
     # ... campos existentes ...
 
-    # Embedded-specific (agregar)
+    # Embedded-specific (agregado)
     board: Optional[str] = None
     flash_command: Optional[str] = None
     monitor_command: Optional[str] = None
 
-    # GPU-specific (agregar)
+    # GPU-specific (agregado)
     gpu_arch: Optional[str] = None
     profiler_command: Optional[str] = None
 ```
@@ -140,8 +140,8 @@ Y en `load_driver()`:
 return Driver(
     # ... campos existentes ...
     board=data.get("board"),
-    flash_command=data.get("flash", {}).get("command") if isinstance(data.get("flash"), dict) else data.get("flash_command"),
-    gpu_arch=data.get("arch") or data.get("gpu_arch"),
+    flash_command=data.get("flash_command") or (data.get("flash", {}) or {}).get("command"),
+    gpu_arch=data.get("gpu_arch") or data.get("arch"),
 )
 ```
 
@@ -152,14 +152,18 @@ return Driver(
 | `flash: {command: ...}` | `flash_command: str` | Migrar YAML a `flash_command` |
 | `arch: sm_87` | `gpu_arch: sm_87` | Migrar YAML a `gpu_arch` |
 
-**Decisión requerida**: ¿Mantener compatibilidad con ambos nombres o migrar YAMLs?
+**Decisión**: Soportar ambos nombres en el loader (transición), y migrar YAMLs a los nombres canónicos (`flash_command`, `gpu_arch`).
 
 #### BUG-003: Sin validación de campos embedded/GPU
 
-La función `_validate_dict()` no valida:
-- `board` debe ser string si presente
-- `flash` / `flash_command` estructura válida
-- `arch` / `gpu_arch` formato válido (ej: `sm_XX`, `gfxXXXX`)
+**Solución**: `_validate_dict()` ahora verifica:
+- `board: str` si está presente.
+- `flash: {command:str}` o `flash_command: str` y `monitor_command: str` si existen.
+- `gpu_arch` (o `arch`) con formato heurístico (`sm_XX` / `gfxXXXX`).
+
+### YAMLs Migrados
+- `embedded/esp32c3_riscv.yaml`: `flash_command` y `monitor_command` (antes `flash: {command: ...}`).
+- `gpu/cuda_jetson.yaml`: `gpu_arch` (antes `arch`).
 
 ---
 

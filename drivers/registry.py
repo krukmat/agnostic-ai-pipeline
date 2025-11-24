@@ -17,7 +17,7 @@ Schema v1 (stable keys):
 """
 
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -51,6 +51,13 @@ class Driver:
     lint: Optional[Command] = None
     artifact_paths: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Embedded‑specific (optional)
+    board: Optional[str] = None
+    flash_command: Optional[str] = None
+    monitor_command: Optional[str] = None
+    # GPU‑specific (optional)
+    gpu_arch: Optional[str] = None
+    profiler_command: Optional[str] = None
 
 
 def _require(d: Dict[str, Any], key: str, typ):
@@ -79,6 +86,28 @@ def _validate_dict(d: Dict[str, Any]) -> None:
                 raise ValueError(f"{k} must be a dict with 'command': str")
     if "artifact_paths" in d and not isinstance(d["artifact_paths"], list):
         raise ValueError("artifact_paths must be a list of strings")
+    # Embedded: board/flash_command/monitor_command
+    if d.get("category") == "embedded":
+        if "board" in d and not isinstance(d["board"], str):
+            raise ValueError("embedded.board must be a string")
+        if "flash" in d:
+            # transitional support: flash: {command: ...}
+            if not isinstance(d["flash"], dict) or not isinstance(d["flash"].get("command"), str):
+                raise ValueError("embedded.flash must be a dict with 'command': str")
+        if "flash_command" in d and not isinstance(d["flash_command"], str):
+            raise ValueError("embedded.flash_command must be a string")
+        if "monitor_command" in d and not isinstance(d["monitor_command"], str):
+            raise ValueError("embedded.monitor_command must be a string")
+    # GPU: gpu_arch/profiler_command
+    if d.get("category") == "gpu":
+        arch = d.get("gpu_arch") or d.get("arch")
+        if arch is not None and not isinstance(arch, str):
+            raise ValueError("gpu.gpu_arch must be a string")
+        if arch and not (arch.startswith("sm_") or arch.startswith("gfx")):
+            # heuristic validation; allow empty to stay optional
+            raise ValueError("gpu.gpu_arch seems invalid (expected 'sm_XX' or 'gfxXXXX')")
+        if "profiler_command" in d and not isinstance(d["profiler_command"], str):
+            raise ValueError("gpu.profiler_command must be a string")
 
 
 def load_driver(category: str, driver_id: str) -> Driver:
@@ -93,6 +122,20 @@ def load_driver(category: str, driver_id: str) -> Driver:
     def _cmd(name: str) -> Optional[Command]:
         c = data.get(name)
         return Command(**c) if isinstance(c, dict) and "command" in c else None
+    # Transitional mapping for embedded/gpu fields
+    flash_cmd = None
+    mon_cmd = None
+    if isinstance(data.get("flash"), dict):
+        cmd = data.get("flash", {}).get("command")
+        # Some legacy flash entries included both flash+monitor; keep as-is
+        if isinstance(cmd, str):
+            # naive split if user included both actions in one line
+            if " monitor" in cmd:
+                parts = cmd.split(" monitor", 1)
+                flash_cmd = parts[0].strip()
+                mon_cmd = ("idf.py monitor" if "idf.py" in cmd else "monitor").strip()
+            else:
+                flash_cmd = cmd
     return Driver(
         id=data["id"],
         category=data["category"],
@@ -105,6 +148,11 @@ def load_driver(category: str, driver_id: str) -> Driver:
         lint=_cmd("lint"),
         artifact_paths=list(data.get("artifact_paths", []) or []),
         metadata=dict(data.get("metadata", {}) or {}),
+        board=data.get("board"),
+        flash_command=data.get("flash_command") or flash_cmd,
+        monitor_command=data.get("monitor_command") or mon_cmd,
+        gpu_arch=data.get("gpu_arch") or data.get("arch"),
+        profiler_command=data.get("profiler_command"),
     )
 
 
@@ -141,11 +189,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.error("--all required for now")
     elif args.cmd == "load":
         drv = load_driver(args.category, args.driver_id)
-        print(yaml.safe_dump(drv.__dict__, sort_keys=False, allow_unicode=True))
+        print(yaml.safe_dump(asdict(drv), sort_keys=False, allow_unicode=True))
         return 0
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

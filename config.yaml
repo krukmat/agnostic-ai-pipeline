@@ -176,3 +176,12 @@ database:
   wal_mode: true
   busy_timeout_ms: 5000
   backup_on_iteration_end: true
+drivers:
+  enabled: false  # Feature flag: driver layer off by default
+project:
+  targets:
+    backend: null   # e.g., fastapi
+    frontend: null  # e.g., next_js
+    mobile: null    # e.g., react_native
+    embedded: null  # e.g., esp32c3_riscv
+    gpu: null       # e.g., cuda_jetson

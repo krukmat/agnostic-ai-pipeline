@@ -3,7 +3,13 @@ schema_version: 1
 category: frontend
 language: javascript
 framework: next_js
-templates: []
+templates:
+  - path: project/web-frontend/package.json
+    source: drivers/frontend/next_js/templates/package.json
+  - path: project/web-frontend/next.config.js
+    source: drivers/frontend/next_js/templates/next.config.js
+  - path: project/web-frontend/pages/index.js
+    source: drivers/frontend/next_js/templates/pages/index.js
 build:
   command: npm run build --prefix project/web-frontend
 test:
@@ -15,4 +21,3 @@ artifact_paths:
 metadata:
   package_manager: npm
   test_runner: jest
-

@@ -111,6 +111,14 @@ db-migrate:
 	@echo "==> Running database migration"
 	PYTHONPATH=. $(PY) scripts/db_migrate.py
 
+drivers-validate:
+	@echo "==> Validating driver definitions"
+	PYTHONPATH=. $(PY) -m drivers.registry validate --all
+
+drivers-show:
+	@echo "==> Resolving drivers from config.yaml (behind feature flag)"
+	PYTHONPATH=. $(PY) scripts/drivers_show.py
+
 show-config:
 	$(PY) -c "import yaml,sys;print(yaml.safe_load(open('config.yaml').read()))"
 

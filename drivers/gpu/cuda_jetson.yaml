@@ -3,7 +3,7 @@ schema_version: 1
 category: gpu
 language: cpp
 framework: cuda
-arch: sm_87
+gpu_arch: sm_87
 templates: []
 build:
   command: make -C project/gpu-samples
@@ -16,4 +16,3 @@ metadata:
   runtime_dependencies:
     - cuda_toolkit>=12
     - tensorrt (optional)
-
