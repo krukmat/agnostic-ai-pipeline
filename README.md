@@ -1,6 +1,18 @@
-# Loop Release Workflow – AGNOSTIC AI PIPELINE 🏗️
+# AGNOSTIC AI PIPELINE 🏗️
 
-**Deliver finished products through repeatable development cycles: BA → Product Owner → Architect → Dev → QA.**
+Ship product increments through repeatable cycles: BA → PO → Architect → Dev → QA.
+
+Learn more (Medium): Why an Agentic, Model‑Agnostic Pipeline beats a pile of scripts → https://medium.com/@iotforce/why-an-agentic-model-agnostic-pipeline-beats-a-pile-of-scripts-b57661276505
+
+## Contents
+- [Why this pipeline](#why-this-pipeline)
+- [Configure Providers (examples)](#configure-providers-examples)
+- [Quick Start](#quick-start)
+- [Modes: Legacy vs DSPy](#modes-legacy-vs-dspy)
+- [DSPy: Programs and Tuning](#dspy-programs-and-tuning-core-idea)
+  - Datasets & Tuning (detailed)
+- [Database Layer (optional)](#database-layer-optional)
+- [Docs & Articles](#docs--articles)
 
 ## Product Concept
 
@@ -20,20 +32,14 @@ flowchart LR
     QA --> Snapshot[Snapshot & Release Artifacts]
 ```
 
-## The Advantage of an Agnostic Pipeline
+## Why this pipeline
 
-The main strength of this pipeline is its **AI model agnosticism**. This eliminates dependencies on a single provider and allows business priorities to drive technical decisions. The roles remain perfectly choreographed even when swapping model providers on the fly.
+- Model‑agnostic by design: swap providers without changing code.
+- Practical economics: mix local OSS models with cloud LLMs per role.
+- Built‑in resilience: fallback routing keeps loops moving.
+- Measurable quality: DSPy + metrics enable prompt/program tuning.
 
-- **Frictionless Speed** – Adapt the AI power for each role. Use lightweight open-source models for ideation and delegate critical QA tasks to more powerful premium models.
-- **Cost and Compliance Control** – Keep sensitive data on-premise using local models and only turn to cloud providers when strictly necessary.
-- **Operational Resilience** – If an external provider fails, the pipeline can switch to an alternative model without stopping the development cycle.
-- **Continuous Innovation** – Test new LLMs without rewriting scripts or prompts. Simply point to a new model and compare the results.
-
-## Supported Providers
-
-The pipeline is compatible with multiple AI model providers. You can configure which model each role uses with a simple command.
-
-Here are some examples:
+## Configure Providers (examples)
 
 ### Vertex AI (Gemini)
 To use Google's models via Vertex AI.
@@ -73,7 +79,7 @@ This keeps every agent on locally hosted models while the pipeline remains ready
 
 ---
 
-## Quick Start Guide
+## Quick Start
 
 1. **Install dependencies**
    ```bash
@@ -97,7 +103,7 @@ This keeps every agent on locally hosted models while the pipeline remains ready
 
 ---
 
-## Legacy vs DSPy Workflow
+## Modes: Legacy vs DSPy
 
 The pipeline intentionally supports two execution styles:
 
@@ -121,7 +127,7 @@ The pipeline intentionally supports two execution styles:
    - Update `config.yaml` → `features.<role>.use_optimized_prompt: true` and point `prompt_override_file` to the generated `program_components.json`.  
    - From now on, running the role (either via `make <ROLE>` or `scripts/run_<role>.py`) automatically uses the tuned DSPy instructions.
 
-### When to switch back to legacy
+When to switch back to legacy
 
 - **New data** – if you need more examples or radically different concepts, return to legacy mode to generate/clean them, then run MiPRO again.  
 - **New model/provider** – any time you swap the underlying LLM, re-run MiPRO because the old prompt was optimized for the previous model.  
@@ -131,7 +137,7 @@ The pipeline intentionally supports two execution styles:
 
 ---
 
-## GitHub Pages Reference
+## Docs & Articles
 
 Need a shareable, read-only view of the pipeline? The repository publishes the latest marketing/overview docs to GitHub Pages.
 
@@ -140,81 +146,63 @@ Need a shareable, read-only view of the pipeline? The repository publishes the l
 
 ---
 
-## Additional Features
+Additional reading
+- GitHub Pages tour → Vision, fallback, multi‑role pipeline, cost controls.
+- Medium article → Why an agentic, model‑agnostic pipeline (link above).
 
-### Deployable Pipeline as Services (A2A)
+### Database Layer (optional)
+Toggle an SQLite mirror of YAML artifacts in `config.yaml > database.enabled` (default on). Quick ops:
+- Init/upgrade: `make db-migrate`
+- Inspect: `make db-stats`, `make db-costs`, `make db-verify`
+- Docs: schema + rollout → `docs/DATABASE_LAYER_PLAN.md`
 
-This repository adopts the **Agent-to-Agent (A2A)** protocol, allowing each role in the pipeline to run as an independent HTTP service. This enables distributed orchestration, where agents can be deployed, scaled, and replaced independently.
+### DSPy: Programs and Tuning (core idea)
 
-- **Classic Mode**: Run `make iteration`. The entire process occurs sequentially on a single machine. Ideal for quick iterations.
-- **A2A Mode (Service Mesh)**: Start each role with `python scripts/run_<role>.py serve`. Agents expose HTTP endpoints and can be orchestrated remotely. Ideal for distributed systems and team collaboration.
+DSPy lets us define each role as a small program with clear I/O signatures (e.g., Architect has “stories/epics JSON → architecture YAML”). This replaces fragile free‑form prompts with bounded outputs the pipeline can validate.
 
-### Model Recommender (RoRF)
+What DSPy adds
+- Composable modules: per‑role programs with explicit fields and validators.
+- Bounded outputs: caps for tokens and list sizes reduce truncation and drift.
+- Measurable quality: a metric per role (e.g., `architect_metric_v2`) scores predictions.
+- MiPROv2 tuning: searches better instructions + few‑shot demos for the program.
 
-The system can dynamically select the most suitable model (cost-efficient vs. high-quality) for a given task.
-- **Activation**: Controlled from `config/model_recommender.yaml`.
-- **How it works**: It uses a pre-trained router to analyze the prompt and choose between a `weak` model (fast and cheap) or a `strong` model (powerful and expensive).
-
-### Developer Fallback Models
-
-If the primary model fails, the developer role can automatically requeue the story using a fallback provider.
-- **Configuration**: define a `backup_models` list under `roles.dev` in `config.yaml`, for example:
-  ```yaml
-  backup_models:
-    - provider: claude_cli
-      model: claude-3-5-sonnet-20241022
-    - provider: ollama
-      model: qwen2.5-coder:32b
-  ```
-- **How it works**: when `run_dev` exhausts its retries, the orchestrator logs the failure and writes `metadata.model_override` back to `planning/stories.yaml`. The next `make loop` run picks that override and launches the alternate provider with the correct settings.
-- **Observability**: check `planning/stories.yaml` for `recovery_attempts`, `last_failure_reason`, `model_history`, and any active overrides.
-- **Limits**: cap the number of recovery attempts via `pipeline.max_recovery_attempts` in `config.yaml` (default: `2`). Stories exceeding the budget move to `status: blocked_recovery_budget`.
-
-### Database Layer (SQLite, optional)
-
-The pipeline now ships with an experimental SQLite layer that mirrors the YAML artifacts (projects, iterations, stories, role outputs) inside `data/pipeline.db`. You can enable or disable it from `config.yaml`:
-
-```yaml
-database:
-  enabled: true          # set to false to stay file-only
-  path: data/pipeline.db
-  wal_mode: true
-  busy_timeout_ms: 5000
-  backup_on_iteration_end: true
+How to run tuning
+```bash
+# Example: Architect tuning on a gold split
+PYTHONPATH=. .venv/bin/python scripts/tune_dspy.py \
+  --role architect \
+  --trainset artifacts/synthetic/architect/architect_train_gold_v2.jsonl \
+  --valset   artifacts/synthetic/architect/architect_val_gold_v2.jsonl \
+  --metric dspy_baseline.metrics.architect_metrics:architect_metric_v2 \
+  --num-candidates 12 --num-trials 32 --max-bootstrapped-demos 6
 ```
+Artifacts
+- `artifacts/dspy/optimizer/<role>/metadata.json` – run config and sizes
+- `.../eval_summary.json` – validation average/min/max
+- `.../program_components.json` – tuned instructions + demos (used as override)
 
-- **Migrations**: run `make db-migrate` (wraps `scripts/db_migrate.py`) to create or upgrade the schema.  
-- **Stats & health checks**: `make db-stats`, `make db-models`, `make db-costs`, `make db-verify` use `scripts/db_stats.py` / `scripts/db_verify.py` to inspect the data.  
-- **Backups**: when `backup_on_iteration_end` is true the orchestrator exports a `.dump` alongside each iteration snapshot. You can also manually copy `data/pipeline.db`.
-- **Docs**: see `docs/DATABASE_LAYER_PLAN.md` for the full schema (projects, role_artifacts, stories, story_attempts, event_log, model_stats) and the rollout plan (dual-write → cut-over). The layer is still optional, so you may keep `database.enabled: false` in environments that only need the YAML files.
+Enable or disable DSPy per role
+- `config.yaml > features.use_dspy_<role>` toggles DSPy vs legacy scripts.
+- Optionally set `features.<role>.use_optimized_prompt: true` and point `prompt_override_file` to a `program_components.json` to use the tuned program during normal runs.
 
-### DSPy-Driven Planning & QA (New Feature)
+Good practice
+- Use legacy mode to bootstrap/refresh datasets; then tune with MiPROv2.
+- If you change the model/provider or the training data, retune the program.
+- Keep validation small but representative; document scores alongside artifacts.
 
-Purpose
-- Generate consistent requirements and per‑story QA test cases with DSPy.
+Datasets & Tuning (detailed)
+- Location: `dspy_baseline/data/production/` for curated sets; gold splits under `artifacts/synthetic/<role>/` (e.g., `.../architect_train_gold_v2.jsonl`).
+- Schema (JSONL): each line has `{input:{...}, output:{...}, metadata:{score, provider, model}}`. Tuning only needs `input`/`output`; `metadata.score` helps filter gold.
+- Build a gold split: generate ≥40 train / 10 val samples with min score ≥0.85 using the role’s metric (partial‑credit metrics recommended). Keep sets small but high quality.
+- Generate datasets (legacy): use the role scripts (e.g., `scripts/run_architect.py dataset ... --metric-path <metric> --min-score 0.85 --max-records 50`) and normalizers (YAML sanitizers, dedupe) to stabilize outputs.
+- Caps & pruning: bound lists (e.g., ≤6 stories, ≤3 epics/components) and raise token caps only when needed to avoid truncation.
+- Larger searches: for deeper MiPRO runs, increase `--num-candidates` and `--num-trials` (e.g., 16×48). Expect long runs; always capture logs with `tee` and rely on `eval_summary.json` for the final score.
+- Activation: once a tuned run is satisfactory, point `features.<role>.prompt_override_file` to the resulting `program_components.json` and set `use_optimized_prompt: true`.
 
-Why DSPy? (Concept & Fit)
-- Composable and testable: replace brittle prompts with clear I/O signatures and small modules (`Predict`, `ChainOfThought`).
-- Measurable quality: heuristics + `qa_eval.yaml` make negative‑path coverage auditable.
-- Consistency across roles: the same provider/model policy feeds BA → PO → Architect → QA. Dev tests (pytest/Jest) stay as the execution ground truth.
-
-Scope
-- Adds declarative generation and linting. It does not drive browsers or run end‑to‑end UI automation.
-
-Flow & Artifacts
-```
-CONCEPT ── make ba (DSPy) ──> planning/requirements.yaml
-  └── make po ──────────────> planning/product_vision.yaml, product_owner_review.yaml
-      └── make plan ────────> planning/epics.yaml, stories.yaml, architecture.yaml, tasks.csv
-          └── make dspy-qa ─> artifacts/dspy/testcases/Sxxx.md (numbered Happy/Unhappy)
-               └── dspy-qa-lint ─> validates headings, numbering, and per‑story keywords
-```
-
-Simple Usage
-- `make ba CONCEPT="..."` → generates `planning/requirements.yaml` (DSPy-backed)
-- `make po && make plan` → vision/epics/stories from YAML
-- `make dspy-qa` → Markdown per story under `artifacts/dspy/testcases/`
-- `make dspy-qa-lint` → validates format and minimal negative coverage; also runs within `make qa`
+Notes learned
+- Prefer partial‑credit metrics (avoid all‑or‑nothing) so MiPRO can make incremental gains.
+- Keep outputs bounded (caps, pruning) to reduce truncation; raise caps only if quality demands it.
+- Build a small gold split (e.g., 40/10) with min score ≥ 0.85 before tuning; it stabilizes search.
 
 Quick example
 ```bash
@@ -240,11 +228,11 @@ Key Files
 - **Product Owner**: toggle `features.use_dspy_product_owner`. When true, `scripts/run_product_owner.py` loads the frozen DSPy snapshot in `artifacts/dspy/po_optimized_full_snapshot_*` and uses the LM described under `roles.product_owner`. When false, the legacy LLM client runs with the same config defaults.
 - **Architect**: toggle `features.use_dspy_architect`. In DSPy mode the role is broken into three modules (stories/epics, architecture, PRD/tasks) executed as a pipeline, each one picking the LM from `roles.architect` and writing its artifacts under `planning/`. When the flag is disabled the legacy prompt-based flow continues to work unchanged.
 - **Concept source**: regardless of DSPy/legacy mode, the PO script pulls the concept from `planning/requirements.yaml` (`meta.original_request`) so it always matches the BA output. Setting `CONCEPT="..." make po` is only needed for local experiments when BA hasn’t run yet.
-- **Dev/QA**: still run in legacy mode today. The migration path (plan 9.X in `docs/fase9_multi_role_dspy_plan.md`) states that they will reuse this exact mechanism once their DSPy snapshots are ready.
+- **Dev/QA**: still run in legacy mode today. They will adopt the same DSPy + MiPRO flow once their datasets and metrics reach parity with Architect/PO.
 - **Temporary overrides**: to experiment without editing `config.yaml`, export `DSPY_<ROLE>_LM`, `DSPY_<ROLE>_TEMPERATURE`, or `DSPY_<ROLE>_MAX_TOKENS` (for example `DSPY_PRODUCT_OWNER_LM=ollama/qwen2.5`). These environment variables override the LM spec only for that run. You can also force/disable PO DSPy with `USE_DSPY_PO=1` or `USE_DSPY_PO=0`.
 If a provider is unavailable (e.g., Ollama is stopped) the scripts log the failure and, when applicable, fall back to the legacy path so the pipeline keeps moving.
 
-### Using Google AI Gemini
+### Google AI Gemini (optional)
 - Install dependency once inside `.venv`: `pip install -U google-genai`.
 - Add the provider block in `config.yaml`:
   ```yaml
@@ -257,10 +245,7 @@ If a provider is unavailable (e.g., Ollama is stopped) the scripts log the failu
 - Export the key (or let the config supply it): `export GEMINI_API_KEY="<tu_api_key>"`.
 The `google-genai` client se encarga del resto; desde los scripts basta con mantener `system`/`user` prompts como siempre.
 
-Datasets & Tuning
-- Curated datasets viven en `dspy_baseline/data/production/` (JSONL + `manifest.json` con hashes), formateados para cargarse como `dspy.Example`.
-- Optimización opcional vía `dspy_baseline/optimizers/mipro.py` y el CLI `scripts/tune_dspy.py` (`--role`, `--trainset`, `--valset`, `--metric`, `--stop-metric`, `--num-candidates`, `--max-iters`, `--seed`). Ejecuta `dspy.configure(lm=...)` antes de lanzar el tuning.
-- Los programas compilados y metadatos se guardan bajo `artifacts/dspy/optimizer/<role>/`.
+ 
 
 BA (Requirements) with DSPy
 - Module: `dspy_baseline/modules/ba_requirements.py` (signature + `Predict` module)
