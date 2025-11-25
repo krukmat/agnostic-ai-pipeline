@@ -383,77 +383,165 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
         return None, model_info  # Return None response but preserve model_info
 
 
-async def implement_story(story_id: str | None = None, retries: int = 3) -> dict:
-    # Phase 2: Apply driver templates (behind feature flag via config)
+# Task 1.3: Extract helpers from implement_story() for SRP/SoC + testability
+
+def _load_config() -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Load config and extract drivers configuration.
+
+    Returns:
+        (full_config, drivers_config) tuple
+    """
+    from common import load_config
+    cfg = load_config()
+    drv_cfg = (cfg.get("drivers") or {}) if isinstance(cfg, dict) else {}
+    return cfg, drv_cfg
+
+
+def _resolve_targets(cfg: Dict[str, Any]) -> Dict[str, str]:
+    """Extract targets from config.
+
+    Args:
+        cfg: Full configuration dict
+
+    Returns:
+        targets dict {category: driver_id}
+    """
+    targets = (cfg.get("project") or {}).get("targets") or {}
+    return targets
+
+
+def _scaffold_templates(cat: str, sel: str, tpl_apply: bool) -> None:
+    """Scaffold driver templates (idempotent, uses logger).
+
+    Args:
+        cat: category (backend, frontend)
+        sel: selected driver id
+        tpl_apply: whether to apply templates
+    """
+    if not sel or str(sel).lower() == "none":
+        return
+
     try:
-        from common import load_config
-        cfg = load_config()
-        drv_cfg = (cfg.get("drivers") or {}) if isinstance(cfg, dict) else {}
+        drv = load_driver(cat, sel)
+        if tpl_apply:
+            # Copy templates if they don't exist yet
+            for t in drv.templates:
+                dest = ROOT / t.path
+                if not dest.exists():
+                    src = ROOT / t.source
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        content = src.read_text(encoding="utf-8")
+                        dest.write_text(content, encoding="utf-8")
+                        logger.info(f"[DEV] Scaffolded from driver {cat}/{sel}: {t.path}")
+                    except Exception as e:
+                        logger.warning(f"[DEV] Failed to scaffold {t.path} from {t.source}: {e}")
+        else:
+            area = "backend" if cat == "backend" else ("web" if cat == "frontend" else cat)
+            logger.info(f"[DEV][{area}] SKIP: template expansion disabled (drivers.templates.apply=false) for {cat}/{sel}")
+    except Exception as e:
+        logger.warning(f"[DEV] Driver load failed for {cat}/{sel}: {e}")
+
+
+def _embedded_detection(drv_cfg: Dict[str, Any], targets: Dict[str, str]) -> None:
+    """Embedded toolchain detection and optional command execution (injectable).
+
+    Args:
+        drv_cfg: drivers configuration
+        targets: target drivers configuration
+    """
+    sel_emb = targets.get("embedded")
+    if not sel_emb or str(sel_emb).lower() == "none":
+        return
+
+    try:
+        emb = load_driver("embedded", sel_emb)
+        emb_flags = (drv_cfg.get("embedded") or {}) if isinstance(drv_cfg, dict) else {}
+
+        # Detect toolchain
+        is_esp = emb.framework.lower().startswith("esp-idf") or emb.id.startswith("esp32")
+        is_zephyr = emb.framework.lower().startswith("zephyr")
+        ok = False
+
+        if is_esp:
+            ok, msg = has_idf()
+            logger.info(f"[DEV][embedded] ESP‑IDF: {msg}")
+        elif is_zephyr:
+            ok, msg = has_west()
+            logger.info(f"[DEV][embedded] Zephyr west: {msg}")
+
+        if ok:
+            if emb_flags.get("run_build") and getattr(emb, "build", None):
+                logf = DEV_ART_DIR / "embedded" / f"{emb.id}_build.log"
+                logf.parent.mkdir(parents=True, exist_ok=True)
+                run_driver_cmd(emb.build.command, f"embedded_{emb.id}_build", ROOT, logf, logger, role="DEV")
+            if emb_flags.get("run_test") and getattr(emb, "test", None):
+                logf = DEV_ART_DIR / "embedded" / f"{emb.id}_test.log"
+                logf.parent.mkdir(parents=True, exist_ok=True)
+                run_driver_cmd(emb.test.command, f"embedded_{emb.id}_test", ROOT, logf, logger, role="DEV")
+        else:
+            logger.info("[DEV][embedded] SKIP: required toolchain not detected")
+    except Exception as e:
+        logger.warning(f"[DEV] Embedded driver detection skipped: {e}")
+
+
+def _write_dev_summary(drivers_info: Dict[str, Any], run_dir: pathlib.Path) -> None:
+    """Write dev_summary.json with driver command results (pure helper).
+
+    Args:
+        drivers_info: dict with backend/frontend/embedded driver info and execution results
+        run_dir: artifacts directory for this run
+    """
+    dev_summary: Dict[str, Any] = {
+        "version": 1,
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "drivers": [],
+    }
+
+    # Build entries for each area
+    if "backend" in drivers_info:
+        be_info = drivers_info["backend"]
+        if be_info:
+            dev_summary["drivers"].append(be_info)
+
+    if "frontend" in drivers_info:
+        fe_info = drivers_info["frontend"]
+        if fe_info:
+            dev_summary["drivers"].append(fe_info)
+
+    if "embedded" in drivers_info:
+        emb_info = drivers_info["embedded"]
+        if emb_info:
+            dev_summary["drivers"].append(emb_info)
+
+    # Write to file
+    try:
+        (run_dir / "dev_summary.json").write_text(json.dumps(dev_summary, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.debug(f"[DEV] dev_summary.json written to {run_dir}")
+    except Exception as e:
+        logger.debug(f"[DEV] Could not write dev_summary.json: {e}")
+
+
+async def implement_story(story_id: str | None = None, retries: int = 3) -> dict:
+    # Phase 2: Apply driver templates (behind feature flag via config) - Task 1.3: Refactored with helpers
+    try:
+        cfg, drv_cfg = _load_config()
         if bool(drv_cfg.get("enabled", False)):
-            targets = (cfg.get("project") or {}).get("targets") or {}
-            emb_flags = (drv_cfg.get("embedded") or {}) if isinstance(drv_cfg, dict) else {}
+            targets = _resolve_targets(cfg)
+
             # Control template expansion via drivers.templates.apply (default: true)
             tpl_apply = True
             try:
                 tpl_apply = bool(((drv_cfg.get("templates") or {}).get("apply", True)))
             except Exception:
                 tpl_apply = True
+
+            # Task 1.3: Scaffold templates using helper
             for cat in ("backend", "frontend"):
-                sel = targets.get(cat)
-                if not sel or str(sel).lower() == "none":
-                    continue
-                try:
-                    drv = load_driver(cat, sel)
-                    if tpl_apply:
-                        # Copy templates if they don't exist yet
-                        for t in drv.templates:
-                            dest = ROOT / t.path
-                            if not dest.exists():
-                                src = ROOT / t.source
-                                dest.parent.mkdir(parents=True, exist_ok=True)
-                                try:
-                                    content = src.read_text(encoding="utf-8")
-                                    dest.write_text(content, encoding="utf-8")
-                                    logger.info(f"[DEV] Scaffolded from driver {cat}/{sel}: {t.path}")
-                                except Exception as e:
-                                    logger.warning(f"[DEV] Failed to scaffold {t.path} from {t.source}: {e}")
-                    else:
-                        area = "backend" if cat == "backend" else ("web" if cat == "frontend" else cat)
-                        logger.info(f"[DEV][{area}] SKIP: template expansion disabled (drivers.templates.apply=false) for {cat}/{sel}")
-                except Exception as e:
-                    logger.warning(f"[DEV] Driver load failed for {cat}/{sel}: {e}")
-            # Embedded detection (P3.3): detect toolchains and log readiness; do not run by default
-            sel_emb = targets.get("embedded")
-            if sel_emb and str(sel_emb).lower() != "none":
-                try:
-                    emb = load_driver("embedded", sel_emb)
-                    # Detect toolchain
-                    is_esp = emb.framework.lower().startswith("esp-idf") or emb.id.startswith("esp32")
-                    is_zephyr = emb.framework.lower().startswith("zephyr")
-                    ok = False
-                    if is_esp:
-                        ok, msg = has_idf()
-                        logger.info(f"[DEV][embedded] ESP‑IDF: {msg}")
-                    elif is_zephyr:
-                        ok, msg = has_west()
-                        logger.info(f"[DEV][embedded] Zephyr west: {msg}")
+                _scaffold_templates(cat, targets.get(cat), tpl_apply)
 
-                    # Execute optional commands (best‑effort, logs in run_dir)
-                    def _run_emb(cmd: str, name: str) -> int:
-                        if not cmd:
-                            return 0
-                        logf = run_dir / f"embedded_{emb.id}_{name}.log"
-                        return run_driver_cmd(cmd, f"embedded_{emb.id}_{name}", ROOT, logf, logger, role="DEV")
-
-                    if ok:
-                        if emb_flags.get("run_build") and getattr(emb, "build", None):
-                            _run_emb(emb.build.command, "build")
-                        if emb_flags.get("run_test") and getattr(emb, "test", None):
-                            _run_emb(emb.test.command, "test")
-                    else:
-                        logger.info("[DEV][embedded] SKIP: required toolchain not detected")
-                except Exception as e:
-                    logger.warning(f"[DEV] Embedded driver detection skipped: {e}")
+            # Task 1.3: Embedded detection using helper
+            _embedded_detection(drv_cfg, targets)
     except Exception as e:
         # Never block development due to driver layer
         logger.warning(f"[DEV][drivers] Non-fatal template scaffold error: {e}")
@@ -528,37 +616,22 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     for w in written:
         logger.info(f" - {w}")
 
-    # Phase 2 (complete): execute driver build/test commands (best-effort)
+    # Task 1.3: Execute driver build/test commands and generate summary (best-effort)
     try:
-        from common import load_config
-        cfg = load_config()
-        drv_cfg = (cfg.get("drivers") or {}) if isinstance(cfg, dict) else {}
+        cfg, drv_cfg = _load_config()
         if bool(drv_cfg.get("enabled", False)):
-            targets = (cfg.get("project") or {}).get("targets") or {}
+            targets = _resolve_targets(cfg)
 
-            # S4.2: prepare Dev summary (dev_summary.json)
-            dev_summary: Dict[str, Any] = {
-                "version": 1,
-                "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-                "drivers": [],
-            }
-
-            def _area_from(name: str) -> str:
-                if name.startswith("backend_"):
-                    return "backend"
-                if name.startswith("frontend_"):
-                    return "web"
-                if name.startswith("embedded_"):
-                    return "embedded"
-                return "general"
-
+            # Helper: run driver command via runner util
             def _run(cmd: str, name: str) -> int:
                 if not cmd or not isinstance(cmd, str):
                     return 0
                 logf = run_dir / f"{name}.log"
                 return run_driver_cmd(cmd, name, ROOT, logf, logger, role="DEV")
 
-            # Backend
+            drivers_info: Dict[str, Any] = {}
+
+            # Backend: execute test/lint commands
             sel_be = targets.get("backend")
             if sel_be and str(sel_be).lower() != "none":
                 try:
@@ -587,11 +660,11 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                             "rc": rc,
                             "log": str((run_dir / f"{name}.log").relative_to(ROOT)),
                         }
-                    dev_summary["drivers"].append(be_entry)
+                    drivers_info["backend"] = be_entry
                 except Exception as e:
                     logger.warning(f"[DEV] Backend driver execution skipped: {e}")
 
-            # Frontend
+            # Frontend: execute build/test/lint commands
             sel_fe = targets.get("frontend")
             if sel_fe and str(sel_fe).lower() != "none":
                 try:
@@ -630,15 +703,14 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                             "rc": rc,
                             "log": str((run_dir / f"{name}.log").relative_to(ROOT)),
                         }
-                    dev_summary["drivers"].append(fe_entry)
+                    drivers_info["frontend"] = fe_entry
                 except Exception as e:
                     logger.warning(f"[DEV] Frontend driver execution skipped: {e}")
 
-            # Embedded (summary only; do not run here)
+            # Embedded: summary only (no execution here; already done in _embedded_detection)
             sel_emb = targets.get("embedded")
             if sel_emb and str(sel_emb).lower() != "none":
                 try:
-                    from drivers.detect import has_idf, has_west
                     emb = load_driver("embedded", sel_emb)
                     is_esp = emb.framework.lower().startswith("esp-idf") or emb.id.startswith("esp32")
                     is_zephyr = emb.framework.lower().startswith("zephyr")
@@ -649,20 +721,17 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                     if is_zephyr:
                         ok, _ = has_west()
                         tools["west"] = bool(ok)
-                    dev_summary["drivers"].append({
+                    drivers_info["embedded"] = {
                         "area": "embedded",
                         "id": emb.id,
                         "tools_present": tools,
                         "commands": {},
-                    })
+                    }
                 except Exception as e:
                     logger.debug(f"[DEV] Embedded summary skipped: {e}")
 
-            # Write Dev summary
-            try:
-                (run_dir / "dev_summary.json").write_text(json.dumps(dev_summary, indent=2, ensure_ascii=False), encoding="utf-8")
-            except Exception as e:
-                logger.debug(f"[DEV] Could not write dev_summary.json: {e}")
+            # Task 1.3: Use helper to write dev_summary.json
+            _write_dev_summary(drivers_info, run_dir)
     except Exception as e:
         # Never block development due to driver layer
         logger.warning(f"[DEV][drivers] Non-fatal command execution error: {e}")
