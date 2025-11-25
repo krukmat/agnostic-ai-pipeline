@@ -1,0 +1,23 @@
+id: next_js
+schema_version: 1
+category: frontend
+language: javascript
+framework: next_js
+templates:
+  - path: project/web-frontend/package.json
+    source: drivers/frontend/next_js/templates/package.json
+  - path: project/web-frontend/next.config.js
+    source: drivers/frontend/next_js/templates/next.config.js
+  - path: project/web-frontend/pages/index.js
+    source: drivers/frontend/next_js/templates/pages/index.js
+build:
+  command: npm run build --prefix project/web-frontend
+test:
+  command: npm test --prefix project/web-frontend -- --passWithNoTests
+lint:
+  command: npm run lint --prefix project/web-frontend
+artifact_paths:
+  - project/web-frontend
+metadata:
+  package_manager: npm
+  test_runner: jest

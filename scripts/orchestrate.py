@@ -22,6 +22,7 @@ from scripts.run_product_owner import main as run_po
 from scripts.run_architect import run_architect_job
 from scripts.run_dev import implement_story
 from scripts.run_qa import run_quality_checks
+from drivers.registry import load_driver, VALID_CATEGORIES
 
 ROLE_SKILLS = {
     "business_analyst": "extract_requirements",
@@ -138,6 +139,43 @@ def _get_executor_for_role(role: str) -> RoleExecutor:
 
 
 async def execute_role(role: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    # Attach driver targets (behind feature flag) in a non-breaking way
+    try:
+        cfg = load_config()
+        drv_cfg = (cfg.get("drivers") or {}) if isinstance(cfg, dict) else {}
+        enabled = bool(drv_cfg.get("enabled", False))
+        if enabled:
+            proj = cfg.get("project") or {}
+            targets = (proj.get("targets") or {}) if isinstance(proj, dict) else {}
+            resolved = {}
+            for cat in sorted(VALID_CATEGORIES):
+                sel = targets.get(cat)
+                if sel and str(sel).lower() != "none":
+                    try:
+                        drv = load_driver(cat, sel)
+                        resolved[cat] = {
+                            "id": drv.id,
+                            "category": drv.category,
+                            "language": drv.language,
+                            "framework": drv.framework,
+                            "build": getattr(drv.build, "command", None),
+                            "test": getattr(drv.test, "command", None),
+                            "lint": getattr(drv.lint, "command", None),
+                            "artifact_paths": drv.artifact_paths,
+                            # extras when applicable
+                            "board": getattr(drv, "board", None),
+                            "flash_command": getattr(drv, "flash_command", None),
+                            "monitor_command": getattr(drv, "monitor_command", None),
+                            "gpu_arch": getattr(drv, "gpu_arch", None),
+                        }
+                    except Exception as e:  # non-fatal: keep legacy behavior
+                        logger.warning(f"[drivers] Failed to load driver {cat}/{sel}: {e}")
+            if resolved:
+                payload = dict(payload)
+                payload["drivers"] = resolved
+    except Exception as e:
+        # Never block role execution due to driver layer
+        logger.warning(f"[drivers] Non-fatal driver wiring error: {e}")
     executor = _get_executor_for_role(role)
 
     @instrumented(role)

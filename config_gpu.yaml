@@ -1,0 +1,24 @@
+# Sample GPU configuration for the Driver Layer.
+# Safe to keep in the repo; not used unless you replace/merge into config.yaml.
+# Notes:
+# - GPU drivers are not executed by Dev/QA yet (P4.1 pending), so this is a no‑op on non‑GPU machines.
+# - Keep embedded flags disabled by default; they are controlled in config.yaml.
+
+drivers:
+  enabled: true
+
+project:
+  targets:
+    backend: fastapi         # example
+    frontend: next_js        # example
+    gpu: cuda_jetson         # GPU target (safe; currently not executed by runners)
+    embedded: null           # leave as null unless you want ESP‑IDF/Zephyr hooks
+
+# Optional embedded execution flags (effective only if embedded target is set):
+drivers:
+  embedded:
+    run_build: false
+    run_test: false
+    run_flash: false
+
+# Tip: copy relevant keys into config.yaml or use this file as a reference.

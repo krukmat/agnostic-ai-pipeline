@@ -1,0 +1,18 @@
+id: cuda_jetson
+schema_version: 1
+category: gpu
+language: cpp
+framework: cuda
+gpu_arch: sm_87
+templates: []
+build:
+  command: make -C project/gpu-samples
+test:
+  command: pytest -q project/tests/gpu
+artifact_paths:
+  - project/gpu-samples
+metadata:
+  toolchain: nvcc
+  runtime_dependencies:
+    - cuda_toolkit>=12
+    - tensorrt (optional)

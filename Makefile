@@ -111,6 +111,101 @@ db-migrate:
 	@echo "==> Running database migration"
 	PYTHONPATH=. $(PY) scripts/db_migrate.py
 
+drivers-validate:
+	@echo "==> Validating driver definitions"
+	PYTHONPATH=. $(PY) -m drivers.registry validate --all
+
+drivers-show:
+	@echo "==> Resolving drivers from config.yaml (behind feature flag)"
+	PYTHONPATH=. $(PY) scripts/drivers_show.py
+
+drivers-list:
+	@echo "==> Listing available drivers"
+	PYTHONPATH=. $(PY) -m drivers.registry list
+
+drivers-plan:
+	@echo "==> Planning driver execution from config.yaml"
+	PYTHONPATH=. $(PY) -m drivers.registry plan
+
+drivers-scaffold:
+	@echo "==> Scaffolding driver templates (when missing)"
+	PYTHONPATH=. $(PY) scripts/drivers_scaffold.py
+
+drivers-test:
+	@echo "==> Running driver layer tests (pytest)"
+	PYTHONPATH=. $(PY) -m pytest -q tests/driver_layer
+
+qa-smoke:
+	@echo "==> QA Smoke: backend-fastapi"
+	@if [ -f project/backend-fastapi/tests/test_smoke.py ]; then \
+		.venv/bin/pytest -q project/backend-fastapi/tests/test_smoke.py || true; \
+	else \
+		echo "(skip) backend smoke not present"; \
+	fi
+	@echo "==> QA Smoke: web-express"
+	@if [ -f project/web-express/package.json ]; then \
+		if [ -x project/web-express/node_modules/.bin/jest ]; then \
+			cd project/web-express && npm test -- --passWithNoTests || true; \
+		else \
+			echo "(skip) Jest not installed in web-express"; \
+		fi; \
+	else \
+		echo "(skip) web package.json not found"; \
+	fi
+
+dev-smoke:
+	@echo "==> Dev Smoke: backend-fastapi"
+	@if [ -f project/backend-fastapi/tests/test_smoke.py ]; then \
+		.venv/bin/pytest -q project/backend-fastapi/tests/test_smoke.py || true; \
+	else \
+		echo "(skip) backend smoke not present"; \
+	fi
+	@echo "==> Dev Smoke: web-express"
+	@if [ -f project/web-express/package.json ]; then \
+		if [ -x project/web-express/node_modules/.bin/jest ]; then \
+			cd project/web-express && npm test -- --passWithNoTests || true; \
+		else \
+			echo "(skip) Jest not installed in web-express"; \
+		fi; \
+	else \
+		echo "(skip) web package.json not found"; \
+	fi
+
+qa-summary:
+	@echo "==> QA Summary"
+	@STORY_FILE=""; \
+	if [ -n "$$STORY" ] && [ -f artifacts/qa/"$$STORY"/qa_summary.json ]; then \
+		STORY_FILE=artifacts/qa/"$$STORY"/qa_summary.json; \
+	else \
+		STORY_FILE=$$(ls -t artifacts/qa/*/qa_summary.json 2>/dev/null | head -n1); \
+	fi; \
+	if [ -z "$$STORY_FILE" ]; then \
+		echo "(no qa_summary.json found)"; \
+		exit 0; \
+	fi; \
+	if command -v jq >/dev/null 2>&1; then \
+		jq . "$$STORY_FILE"; \
+	else \
+		$(PY) -m json.tool "$$STORY_FILE"; \
+	fi
+
+# 7.6 — Lint/Typing (new modules)
+lint-new:
+	@echo "==> Lint (ruff) for new modules (drivers/*, scripts/utils)"
+	@if command -v ruff >/dev/null 2>&1; then \
+		ruff check drivers scripts/utils; \
+	else \
+		echo "(skip) ruff not installed"; \
+	fi
+
+typecheck-new:
+	@echo "==> Type check (mypy) for new modules"
+	@if command -v mypy >/dev/null 2>&1; then \
+		mypy --ignore-missing-imports drivers scripts/utils; \
+	else \
+		echo "(skip) mypy not installed"; \
+	fi
+
 show-config:
 	$(PY) -c "import yaml,sys;print(yaml.safe_load(open('config.yaml').read()))"
 

@@ -1,0 +1,19 @@
+id: fastapi
+schema_version: 1
+category: backend
+language: python
+framework: fastapi
+templates:
+  - path: project/backend-fastapi/app/main.py
+    source: drivers/backend/fastapi/templates/app/main.py
+build:
+  command: uvicorn app.main:app --reload
+test:
+  command: .venv/bin/pytest -q project/backend-fastapi
+lint:
+  command: ruff check project/backend-fastapi
+artifact_paths:
+  - project/backend-fastapi
+metadata:
+  db_support: postgres
+  test_runner: pytest

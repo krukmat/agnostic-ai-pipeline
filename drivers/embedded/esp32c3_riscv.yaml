@@ -1,0 +1,35 @@
+id: esp32c3_riscv
+# purpose: Minimal FreeRTOS example for ESP32‑C3 using ESP‑IDF (no flashing in P3.4)
+# detection: requires `idf.py` on PATH; Dev/QA will skip with a clear reason if missing
+# expected:
+#   build: idf.py set-target esp32c3 && idf.py build
+#   test:  idf.py unit-test-app
+# logs:
+#   dev: artifacts/dev/<story>/embedded_build.log, embedded_test.log
+#   qa:  artifacts/qa/<story>/embedded_test.log
+# safety: P3.4 does NOT run `flash` or `monitor` automatically
+schema_version: 1
+category: embedded
+language: c
+framework: esp-idf
+board: esp32c3
+templates:
+  - path: project/embedded-esp32c3/CMakeLists.txt
+    source: drivers/embedded/esp32c3_riscv/templates/CMakeLists.txt
+  - path: project/embedded-esp32c3/main/CMakeLists.txt
+    source: drivers/embedded/esp32c3_riscv/templates/main/CMakeLists.txt
+  - path: project/embedded-esp32c3/main/main.c
+    source: drivers/embedded/esp32c3_riscv/templates/main/main.c
+build:
+  command: drivers/embedded/esp32c3_riscv/scripts/build.sh
+flash_command: idf.py -p {{serial_port}} flash
+monitor_command: idf.py -p {{serial_port}} monitor
+test:
+  command: idf.py unit-test-app
+artifact_paths:
+  - project/embedded-esp32c3
+metadata:
+  architecture: riscv32imc
+  rtos: freertos
+  x-doc:
+    notes: "P3.4 executes only build/test when enabled via config; no flashing. See docs/DRIVER_EXAMPLES.md."

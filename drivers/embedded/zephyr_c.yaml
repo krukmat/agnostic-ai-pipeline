@@ -1,0 +1,35 @@
+id: zephyr_c
+# purpose: Minimal Zephyr C example (no flashing in P3.4)
+# detection: requires `west` on PATH; Dev/QA will skip with a clear reason if missing
+# expected:
+#   build: west build -b {{board}}
+#   test:  west twister -v
+# logs:
+#   dev: artifacts/dev/<story>/embedded_build.log, embedded_test.log
+#   qa:  artifacts/qa/<story>/embedded_test.log
+# safety: P3.4 does NOT run `west flash` automatically
+schema_version: 1
+category: embedded
+language: c
+framework: zephyr
+board: nrf52840dk_nrf52840
+templates:
+  - path: project/embedded-zephyr/CMakeLists.txt
+    source: drivers/embedded/zephyr_c/templates/CMakeLists.txt
+  - path: project/embedded-zephyr/prj.conf
+    source: drivers/embedded/zephyr_c/templates/prj.conf
+  - path: project/embedded-zephyr/src/main.c
+    source: drivers/embedded/zephyr_c/templates/src/main.c
+build:
+  command: west build -b {{board}}
+flash_command: west flash
+monitor_command: west debug
+test:
+  command: west twister -v
+artifact_paths:
+  - project/embedded-zephyr
+metadata:
+  rtos: zephyr
+  notes: "Requires Zephyr SDK and west configured; host-only validation should skip gracefully."
+  x-doc:
+    notes: "P3.4 executes only build/test when enabled via config; no flashing. See docs/DRIVER_EXAMPLES.md."

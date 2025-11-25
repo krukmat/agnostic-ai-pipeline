@@ -12,6 +12,7 @@ Learn more (Medium): Why an Agentic, Model‑Agnostic Pipeline beats a pile of s
 - [DSPy: Programs and Tuning](#dspy-programs-and-tuning-core-idea)
   - Datasets & Tuning (detailed)
 - [Database Layer (optional)](#database-layer-optional)
+- [Driver Layer (full guide)](#driver-layer)
 - [Docs & Articles](#docs--articles)
 
 ## Product Concept
@@ -198,6 +199,12 @@ Good practice
 - Use legacy mode to bootstrap/refresh datasets; then tune with MiPROv2.
 - If you change the model/provider or the training data, retune the program.
 - Keep validation small but representative; document scores alongside artifacts.
+
+---
+
+## Driver Layer
+
+See the complete guide: docs/DRIVER_LAYER_GUIDE.md
 
 Datasets & Tuning (detailed)
 - Location: `dspy_baseline/data/production/` for curated sets; gold splits under `artifacts/synthetic/<role>/` (e.g., `.../architect_train_gold_v2.jsonl`).
