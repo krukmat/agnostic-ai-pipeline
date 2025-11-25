@@ -115,7 +115,7 @@ PYTHONPATH=. .venv/bin/pytest tests/driver_layer/ tests/utils/  # All 12 tests m
 | Task | Status | Details | Date | Branch |
 |------|--------|---------|------|--------|
 | **1.1** | ✅ COMPLETED | Extract pure functions (list_drivers, show_driver, plan_from_config); inject DetectorMap; 21 new tests (76% coverage). CLI output unchanged. | 2025-11-25 | refactor-roles (d38f405) |
-| **1.2** | ⏳ PENDING | Validator: category whitelist + cross-platform script checks | - | - |
+| **1.2** | ✅ COMPLETED | Add category-based allowlist + cross-platform script checks to validator; 5 new negative tests; all 5 drivers pass validation (gpu/cuda_jetson, embedded/esp32c3_riscv, embedded/zephyr_c, backend/fastapi, frontend/next_js). Coverage 80%. | 2025-11-25 | refactor-roles |
 | **1.3** | ⏳ PENDING | Refactor run_dev.py: extract helpers, preserve P2.1 | - | - |
 | **1.4** | ⏳ PENDING | Refactor run_qa.py: execution vs reporting split | - | - |
 | **1.5** | ⏳ PENDING | DRY: extend runner.py with naming/rc helpers | - | - |
