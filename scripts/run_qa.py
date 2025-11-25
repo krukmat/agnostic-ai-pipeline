@@ -7,6 +7,7 @@ import typer
 from common import ensure_dirs, ROOT
 from logger import logger # Import the logger
 from drivers.registry import load_driver  # P2.2: Driver integration for QA
+from scripts.utils.runner import run_driver_cmd
 from drivers.detect import has_idf, has_west
 
 QA_ART_DIR = ROOT / "artifacts" / "qa"
@@ -368,32 +369,8 @@ def main():
     targets = (cfg.get("project") or {}).get("targets") or {}
 
     def run_shell(cmd: str, name: str) -> int:
-        if not cmd:
-            return 0
         logf = story_art_dir / f"{name}.log"
-        area = "backend" if name.startswith("backend_") else ("web" if name.startswith("frontend_") else "general")
-        logger.info(f"[QA][{area}] RUN: {cmd}")
-        try:
-            env = os.environ.copy()
-            # BUG-008 fix: ensure backend tests can import 'app' by adding backend path to PYTHONPATH
-            if name.startswith("backend_"):
-                be_path = str(ROOT / "project" / "backend-fastapi")
-                env["PYTHONPATH"] = (
-                    f"{be_path}:{env.get('PYTHONPATH','')}" if env.get("PYTHONPATH") else be_path
-                )
-            res = subprocess.run(cmd, shell=True, cwd=str(ROOT), capture_output=True, text=True, env=env)
-            logf.write_text((res.stdout or "") + ("\n" + (res.stderr or "") if res.stderr else ""), encoding="utf-8")
-            if res.returncode != 0:
-                logger.warning(f"[QA][{area}] ERROR rc={res.returncode} (see {logf})")
-            else:
-                logger.info(f"[QA][{area}] DONE (see {logf})")
-            return res.returncode
-        except FileNotFoundError as e:
-            logger.info(f"[QA][{area}] SKIP tool missing: {e}")
-            return 127
-        except Exception as e:
-            logger.error(f"[QA][{area}] ERROR: {e}")
-            return 1
+        return run_driver_cmd(cmd, name, ROOT, logf, logger, role="QA")
 
     # Backend
     be_rc = None
@@ -422,7 +399,7 @@ def main():
             pytest_bin = ROOT / ".venv" / "bin" / "pytest"
             if pytest_bin.exists():
                 be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], story_art_dir=story_art_dir, cwd=str(be_root))
-                if be_rc not in (0, 10):
+                if be_rc != 0:
                     logger.warning(f"[QA] Pytest returned {be_rc}. Checking for import errors...")
                     missing = log_contains_import_error(story_art_dir)
                     if any(m.startswith("backend_fastapi") or "backend-fastapi" in m for m in missing):
@@ -590,7 +567,7 @@ def main():
     # S4.3: build standardized QA summary alongside detailed report
     def _norm(area_name: str, rc_val: int | None, executed: bool, tools: dict | None, logs: list[str], reason: str | None) -> dict:
         def _normalized_rc(raw: int | None) -> int:
-            if raw is None or raw == 0 or raw == 10:
+            if raw is None or raw == 0:
                 return 0
             if raw == 127:
                 return 127
@@ -598,10 +575,8 @@ def main():
         # status mapping
         if rc_val is None:
             status_m = "skip_not_configured"
-        elif rc_val in (0,):
+        elif rc_val == 0:
             status_m = "run_pass" if executed else "skip_no_tests"
-        elif rc_val == 10:
-            status_m = "skip_no_tests"
         elif rc_val == 127:
             status_m = "skip_tool_missing"
         elif collection_errors_present:
@@ -635,8 +610,8 @@ def main():
         "version": 1,
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "areas": {
-            "backend": _norm("backend", be_rc if be_rc is not None else (0 if not run_backend_tests else None), bool(run_backend_tests), tools_backend, _glob_logs("backend_"), None if (be_rc in (0, 10, None)) else "backend tests failed"),
-            "web": _norm("web", web_rc if web_rc is not None else (0 if not run_web_tests else None), bool(run_web_tests), tools_web, _glob_logs("frontend_") + _glob_logs("web_"), None if (web_rc in (0, 10, None)) else "web tests failed"),
+            "backend": _norm("backend", be_rc if be_rc is not None else (0 if not run_backend_tests else None), bool(run_backend_tests), tools_backend, _glob_logs("backend_"), None if (be_rc in (0, None)) else "backend tests failed"),
+            "web": _norm("web", web_rc if web_rc is not None else (0 if not run_web_tests else None), bool(run_web_tests), tools_web, _glob_logs("frontend_") + _glob_logs("web_"), None if (web_rc in (0, None)) else "web tests failed"),
             "embedded": _norm("embedded", 0, False, tools_emb, _glob_logs("embedded_"), "Not executed in QA unless configured"),
         },
     }

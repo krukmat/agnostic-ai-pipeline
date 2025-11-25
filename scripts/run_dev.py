@@ -17,6 +17,7 @@ from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
 from logger import logger # Import the logger
 from drivers.registry import load_driver
+from scripts.utils.runner import run_driver_cmd
 from drivers.detect import has_idf, has_west
 import subprocess
 
@@ -442,21 +443,7 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                         if not cmd:
                             return 0
                         logf = run_dir / f"embedded_{emb.id}_{name}.log"
-                        logger.info(f"[DEV][embedded] Running '{name}': {cmd}")
-                        try:
-                            res = subprocess.run(cmd, shell=True, cwd=str(ROOT), capture_output=True, text=True)
-                            logf.write_text((res.stdout or "") + ("\n" + (res.stderr or "") if res.stderr else ""), encoding="utf-8")
-                            if res.returncode != 0:
-                                logger.warning(f"[DEV][embedded] '{name}' returned {res.returncode} (see {logf})")
-                            else:
-                                logger.info(f"[DEV][embedded] '{name}' completed (see {logf})")
-                            return res.returncode
-                        except FileNotFoundError as e:
-                            logger.warning(f"[DEV][embedded] command not found for '{name}': {e}")
-                            return 127
-                        except Exception as e:
-                            logger.warning(f"[DEV][embedded] '{name}' failed: {e}")
-                            return 1
+                        return run_driver_cmd(cmd, f"embedded_{emb.id}_{name}", ROOT, logf, logger, role="DEV")
 
                     if ok:
                         if emb_flags.get("run_build") and getattr(emb, "build", None):
@@ -569,36 +556,7 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                 if not cmd or not isinstance(cmd, str):
                     return 0
                 logf = run_dir / f"{name}.log"
-                area = _area_from(name)
-                logger.info(f"[DEV][{area}] RUN: {cmd}")
-                try:
-                    env = os.environ.copy()
-                    # BUG-008 fix: add backend path to PYTHONPATH so tests can import 'app'
-                    if name.startswith("backend_"):
-                        be_path = str(ROOT / "project" / "backend-fastapi")
-                        env["PYTHONPATH"] = (
-                            f"{be_path}:{env.get('PYTHONPATH','')}" if env.get("PYTHONPATH") else be_path
-                        )
-                    res = subprocess.run(
-                        cmd,
-                        shell=True,
-                        cwd=str(ROOT),
-                        capture_output=True,
-                        text=True,
-                        env=env,
-                    )
-                    logf.write_text((res.stdout or "") + ("\n" + (res.stderr or "") if res.stderr else ""), encoding="utf-8")
-                    if res.returncode != 0:
-                        logger.warning(f"[DEV][{area}] ERROR rc={res.returncode} (see {logf})")
-                    else:
-                        logger.info(f"[DEV][{area}] DONE (see {logf})")
-                    return res.returncode
-                except FileNotFoundError as e:
-                    logger.warning(f"[DEV][{area}] SKIP tool missing: {e}")
-                    return 127
-                except Exception as e:
-                    logger.warning(f"[DEV][{area}] ERROR: {e}")
-                    return 1
+                return run_driver_cmd(cmd, name, ROOT, logf, logger, role="DEV")
 
             # Backend
             sel_be = targets.get("backend")

@@ -189,6 +189,23 @@ qa-summary:
 		$(PY) -m json.tool "$$STORY_FILE"; \
 	fi
 
+# 7.6 — Lint/Typing (new modules)
+lint-new:
+	@echo "==> Lint (ruff) for new modules (drivers/*, scripts/utils)"
+	@if command -v ruff >/dev/null 2>&1; then \
+		ruff check drivers scripts/utils; \
+	else \
+		echo "(skip) ruff not installed"; \
+	fi
+
+typecheck-new:
+	@echo "==> Type check (mypy) for new modules"
+	@if command -v mypy >/dev/null 2>&1; then \
+		mypy --ignore-missing-imports drivers scripts/utils; \
+	else \
+		echo "(skip) mypy not installed"; \
+	fi
+
 show-config:
 	$(PY) -c "import yaml,sys;print(yaml.safe_load(open('config.yaml').read()))"
 

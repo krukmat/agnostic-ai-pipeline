@@ -21,7 +21,7 @@ templates:
   - path: project/embedded-esp32c3/main/main.c
     source: drivers/embedded/esp32c3_riscv/templates/main/main.c
 build:
-  command: idf.py set-target esp32c3 && idf.py build
+  command: drivers/embedded/esp32c3_riscv/scripts/build.sh
 flash_command: idf.py -p {{serial_port}} flash
 monitor_command: idf.py -p {{serial_port}} monitor
 test:
