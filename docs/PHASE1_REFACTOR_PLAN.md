@@ -110,6 +110,20 @@ PYTHONPATH=. .venv/bin/pytest tests/driver_layer/ tests/utils/  # All 12 tests m
 | 1.6  | Tests | Mostly automatic | Add negative tests (validator/runner/loader) to reach targets | Core ≥90% (validator/loader/runner), Overall ≥60% |
 | 1.7  | CI   | Judgment (optional) | Add workflow: validate → tests → qa-smoke (tolerant) | Green job with logs and optional artifacts |
 
+### 3.B — Progress Tracking (Phase 1)
+
+| Task | Status | Details | Date | Branch |
+|------|--------|---------|------|--------|
+| **1.1** | ✅ COMPLETED | Extract pure functions (list_drivers, show_driver, plan_from_config); inject DetectorMap; 21 new tests (76% coverage). CLI output unchanged. | 2025-11-25 | refactor-roles (d38f405) |
+| **1.2** | ⏳ PENDING | Validator: category whitelist + cross-platform script checks | - | - |
+| **1.3** | ⏳ PENDING | Refactor run_dev.py: extract helpers, preserve P2.1 | - | - |
+| **1.4** | ⏳ PENDING | Refactor run_qa.py: execution vs reporting split | - | - |
+| **1.5** | ⏳ PENDING | DRY: extend runner.py with naming/rc helpers | - | - |
+| **1.6** | ⏳ PENDING | Core tests: target 90% coverage in validator/loader/runner | - | - |
+| **1.7** | ⏳ PENDING | Minimal CI: GitHub Actions workflow (optional) | - | - |
+
+---
+
 ### 1.1 — Decouple drivers CLI (DIP + testability)
 - Changes
   - Extract pure functions: `list_drivers()`, `show_driver(id)`, `plan_from_config(cfg, detectors)`
