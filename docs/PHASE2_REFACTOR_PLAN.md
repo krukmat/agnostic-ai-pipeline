@@ -110,18 +110,12 @@ Scope: Refactor architecture and code quality in Architect, Product Owner, and B
 
 ### 2.1 — Extract shared utilities (DRY foundation)
 
+**Status**: 🔍 IN REVIEW (external validation pending)
+
 **Changes**:
-- **Create `scripts/utils/yaml_sanitizer.py`**:
-  - Consolidate PO's `_normalize_po_yaml()` + Architect's `sanitize_yaml()`
-  - Functions: `sanitize_yaml_block()`, `normalize_inline_json()`, `strip_markdown_emphasis()`
-  - Handle YAML edge cases: thin spaces, special chars, percent tokens, unicode keys
-- **Create `scripts/utils/story_manager.py`**:
-  - Extract: `load_stories()`, `save_stories()`, `mark_story_todo()`
-  - Add: `get_story_by_id()`, `update_story_status()`, `get_stories_by_status()`
-  - Shared between Architect, orchestrator, Dev, QA
-- **Create `scripts/utils/config_loader.py`**:
-  - Consolidate: `_load_config()`, `_normalize_bool()` from all roles
-  - Add: `get_role_config()`, `get_feature_flag()`, `get_dspy_settings()`
+- `config_loader.py` (complejidad: baja). Helpers defensivos (`load_config_base`, `load_config_with_drivers`, `load_qa_config`, `normalize_bool`) y tests en `tests/utils/test_config_loader.py`.
+- `story_manager.py` (complejidad: media). `load_stories(recover_comments)`, `save_stories`, `mark_story_status/mark_story_todo`; tests en `tests/utils/test_story_manager.py`.
+- `yaml_sanitizer.py` (complejidad: alta). `sanitize_yaml_block` (fences + dump), `sanitize_po_yaml` (backticks cleanup), `normalize_po_yaml` (Gemini quirks); tests en `tests/utils/test_yaml_sanitizer.py`.
 
 **Deliverables**:
 - `scripts/utils/yaml_sanitizer.py` (~120 lines, extracted from Architect/PO)
@@ -137,6 +131,7 @@ Scope: Refactor architecture and code quality in Architect, Product Owner, and B
 ### 2.2 — Refactor Architect: extract complexity classifier
 
 **Changes**:
+- **Status**: 🔍 IN REVIEW (complejidad: alta). Nuevos módulos `scripts/architect/complexity_classifier.py` (cache inyectable, parse/fallback) y `scripts/architect/cache.py`; `run_architect.py` ahora importa el classifier desde utils; tests en `tests/architect/test_complexity_classifier.py`.
 - **Create `scripts/architect/complexity_classifier.py`**:
   - Extract: `classify_complexity_with_llm()`, `parse_complexity_response()`, `fallback_complexity()`
   - Add caching interface: `ComplexityCache` protocol (injectable)
@@ -156,6 +151,7 @@ Scope: Refactor architecture and code quality in Architect, Product Owner, and B
 ### 2.3 — Refactor Architect: extract dataset generator
 
 **Changes**:
+- **Status**: 🔍 IN REVIEW (complejidad: media). Dataset CLI extraído a `scripts/architect/dataset_cli.py`; `run_architect.py` reducido a CLI DSPy puro (imports de dataset removidos).
 - **Consolidate dataset generation** (already has separate files):
   - Move CLI commands from `run_architect.py` → `scripts/architect/dataset_cli.py`
   - Extract: `cli_dataset()`, `cli_ba_normalize()`, `cli_ba_remaining()`

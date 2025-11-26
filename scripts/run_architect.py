@@ -19,12 +19,15 @@ from logger import logger # Import the logger
 # Task: database-layer - Import dual-write support
 from src.db import get_current_context
 from pathlib import Path
-from scripts.generate_architect_dataset import generate as _dataset_generate
-from scripts.normalize_ba_jsonl import normalize as _ba_normalize
 from scripts.architect_utils import (
     convert_stories_epics_to_yaml,
-    sanitize_yaml_block,
 )
+from scripts.architect.complexity_classifier import (
+    classify_complexity_with_llm,
+    fallback_complexity,
+    parse_complexity_response,
+)
+from scripts.utils.yaml_sanitizer import sanitize_yaml_block
 from dspy_baseline.modules.architect import (
     StoriesEpicsModule,
     ArchitectureModule,
@@ -86,10 +89,6 @@ def _use_dspy_architect() -> bool:
         return _normalize_bool(env_override, config_flag)
     return config_flag
 
-def _complexity_cache_key(requirements_text: str) -> str:
-    return hashlib.sha256(requirements_text.encode("utf-8")).hexdigest()
-
-
 def _run_dspy_pipeline(
     concept: str,
     requirements_yaml: str,
@@ -126,123 +125,9 @@ def _run_dspy_pipeline(
     }
 
 
-# -------------------------------
-# CLI integration (dataset helpers)
-# -------------------------------
-
-app = typer.Typer(help="Architect CLI (DSPy + dataset helpers)")
 
 
-@app.command("dataset")
-def cli_dataset(
-    ba_path: Path = typer.Option(..., help="BA outputs JSONL (normalized or mixed)"),
-    out_train: Path = typer.Option(ROOT / "dspy_baseline/data/production/architect_train.jsonl", help="Train JSONL output"),
-    out_val: Path = typer.Option(ROOT / "dspy_baseline/data/production/architect_val.jsonl", help="Validation JSONL output"),
-    min_score: float = typer.Option(0.85, help="Minimum architect_metric score"),
-    max_records: int = typer.Option(20, help="Desired sample count"),
-    seed: int = typer.Option(42, help="Shuffle seed"),
-    resume: bool = typer.Option(False, help="Append to existing JSONL files instead of overwriting"),
-    metric_path: Optional[str] = typer.Option(
-        None, help="Optional metric override 'module:function' (default architect_metric)."
-    ),
-):
-    """Generate Architect dataset using the integrated pipeline.
-
-    This wraps scripts/generate_architect_dataset.generate to keep a single entrypoint
-    for role + dataset tasks. All normalizers/validators/caps and feature flags apply.
-    """
-    _dataset_generate(
-        ba_path=ba_path,
-        out_train=out_train,
-        out_val=out_val,
-        min_score=min_score,
-        max_records=max_records,
-        seed=seed,
-        resume=resume,
-        metric_path=metric_path,
-    )
-
-
-@app.command("ba-normalize")
-def cli_ba_normalize(
-    src: Path = typer.Argument(..., help="Input BA JSONL (mixed shapes)"),
-    dst: Path = typer.Argument(..., help="Output normalized BA JSONL"),
-):
-    """Normalize BA JSONL to {input:{concept, requirements_yaml}} with canonical YAML."""
-    _ba_normalize(src, dst)
-
-
-@app.command("ba-remaining")
-def cli_ba_remaining(
-    ba_path: Path = typer.Option(..., help="Normalized BA JSONL path"),
-    out: Path = typer.Option(..., help="Output BA JSONL excluding dataset keys"),
-    subtract_train: bool = typer.Option(True, help="Subtract architect_train.jsonl"),
-    subtract_val: bool = typer.Option(True, help="Subtract architect_val.jsonl"),
-    subtract_gold: bool = typer.Option(True, help="Subtract architect_train/val_gold.jsonl"),
-):
-    """Create a BA feed that excludes keys already present in the dataset (train/val/gold)."""
-    import json
-    import yaml as _yaml
-
-    base = ROOT / "dspy_baseline" / "data" / "production"
-    train = base / "architect_train.jsonl"
-    val = base / "architect_val.jsonl"
-    gtrain = base / "architect_train_gold.jsonl"
-    gval = base / "architect_val_gold.jsonl"
-
-    def canon(yaml_str: str) -> str:
-        try:
-            return _yaml.safe_dump(
-                _yaml.safe_load(yaml_str),
-                sort_keys=True,
-                allow_unicode=True,
-                default_flow_style=False,
-            )
-        except Exception:
-            return yaml_str or ""
-
-    seen = set()
-    sources = []
-    if subtract_train:
-        sources.append(train)
-    if subtract_val:
-        sources.append(val)
-    if subtract_gold:
-        sources.extend([gtrain, gval])
-
-    for p in sources:
-        if not p.exists():
-            continue
-        for ln in p.open(encoding="utf-8"):
-            ln = ln.strip()
-            if not ln:
-                continue
-            try:
-                j = json.loads(ln)
-                inp = j.get("input", j)
-                key = ((inp.get("concept") or "").strip(), canon(inp.get("requirements_yaml") or inp.get("requirements") or ""))
-                seen.add(key)
-            except Exception:
-                continue
-
-    out.parent.mkdir(parents=True, exist_ok=True)
-    written = 0
-    with ba_path.open(encoding="utf-8") as fin, out.open("w", encoding="utf-8") as fout:
-        for ln in fin:
-            ln = ln.strip()
-            if not ln:
-                continue
-            try:
-                j = json.loads(ln)
-                inp = j.get("input", j)
-                key = ((inp.get("concept") or "").strip(), canon(inp.get("requirements_yaml") or inp.get("requirements") or ""))
-                if key in seen:
-                    continue
-                fout.write(json.dumps(j, ensure_ascii=False) + "\n")
-                written += 1
-            except Exception:
-                continue
-    typer.echo(f"[ba-remaining] wrote {written} records to {out}")
+app = typer.Typer(help="Architect CLI (DSPy)")
 
 
 if __name__ == "__main__":
@@ -275,65 +160,6 @@ def get_architect_prompt(mode: str, tier: str) -> str:
             except Exception:
                 pass
     return ARCHITECT_PROMPTS.get(tier, ARCHITECT_PROMPTS["medium"])
-
-
-async def classify_complexity_with_llm(requirements_text: str) -> str:
-    """Ask the architect model to classify requirements as simple/medium/corporate."""
-    cleaned = (requirements_text or "").strip()
-    if not cleaned:
-        return "simple"
-
-    cache_key = _complexity_cache_key(cleaned)
-    cached = _COMPLEXITY_CACHE.get(cache_key)
-    now = time.time()
-    if cached:
-        cached_value, cached_at = cached
-        if now - cached_at <= COMPLEXITY_CACHE_TTL_SECONDS:
-            logger.debug(f"[ARCHITECT] Using cached complexity tier '{cached_value}' (age {now - cached_at:.1f}s).")
-            return cached_value
-        logger.debug("[ARCHITECT] Complexity cache entry expired; recomputing.")
-
-    try:
-        client = Client(role="architect")
-        user = (
-            "REQUIREMENTS:\n"
-            f"{cleaned}\n\n"
-            "Respond with exactly one word: simple, medium, or corporate."
-        )
-        response = await client.chat(system=COMPLEXITY_CLASSIFIER_PROMPT, user=user)
-        tier = parse_complexity_response(response)
-        if tier:
-            _COMPLEXITY_CACHE[cache_key] = (tier, time.time())
-            return tier
-        print(f"[ARCHITECT] Unexpected classifier response: {response[:120]!r}")
-    except Exception as exc:
-        print(f"[ARCHITECT] Complexity classifier failed via LLM: {exc}")
-
-    fallback = fallback_complexity(cleaned)
-    _COMPLEXITY_CACHE[cache_key] = (fallback, time.time())
-    return fallback
-
-
-def parse_complexity_response(text: str) -> str | None:
-    if not text:
-        return None
-    lowered = text.strip().split()
-    if not lowered:
-        return None
-    candidate = lowered[0].lower().strip(",.:;")
-    if candidate in {"simple", "medium", "corporate"}:
-        return candidate
-    return None
-
-
-def fallback_complexity(requirements_text: str) -> str:
-    """Fallback heuristic when the classifier cannot determine a tier."""
-    words = len(requirements_text.split())
-    if words <= 350:
-        return "simple"
-    if words >= 900:
-        return "corporate"
-    return "medium"
 
 
 def extract_original_concept(requirements_text: str) -> str:
