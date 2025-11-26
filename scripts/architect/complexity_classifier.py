@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import time
+from pathlib import Path
 from typing import Dict, Optional, Protocol, Tuple
 
 from llm import Client
+from common import ROOT
 
 
 class ComplexityCache(Protocol):
@@ -85,9 +87,8 @@ async def classify_complexity_with_llm(
             f"{cleaned}\n\n"
             "Respond with exactly one word: simple, medium, or corporate."
         )
-        from scripts.run_architect import COMPLEXITY_CLASSIFIER_PROMPT  # lazy import to avoid cycles
-
-        response = await client.chat(system=COMPLEXITY_CLASSIFIER_PROMPT, user=user)
+        prompt = (ROOT / "prompts" / "architect_complexity_classifier.md").read_text(encoding="utf-8")
+        response = await client.chat(system=prompt, user=user)
         tier = parse_complexity_response(response)
         if tier:
             cache_obj.set(cache_key, tier)

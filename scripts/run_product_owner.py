@@ -8,13 +8,13 @@ from pathlib import Path
 import yaml
 
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
+from scripts.utils.config_loader import load_config_base, normalize_bool
+from scripts.utils.yaml_sanitizer import sanitize_po_yaml, sanitize_yaml_block, normalize_po_yaml
 from llm import Client
 from logger import logger # Import the logger
 
 # Task: database-layer - Import dual-write support
 from src.db import get_current_context
-
-CONFIG_PATH = ROOT / "config.yaml"
 
 DSPY_CACHE_DIR = Path(os.environ.get("DSPY_CACHEDIR", "/tmp/dspy_cache"))
 DSPY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -28,60 +28,6 @@ PO_PROMPT = (ROOT / "prompts" / "product_owner.md").read_text(encoding="utf-8")
 VISION_PATH = PLANNING / "product_vision.yaml"
 REVIEW_PATH = PLANNING / "product_owner_review.yaml"
 DEBUG_PATH = ART / "debug" / "debug_product_owner_response.txt"
-
-_THIN_SPACE_CHARS = ("\u202f", "\u00a0", "\u2007")
-
-
-def _normalize_po_yaml(content: str) -> str:
-    """Pre-process Gemini output so yaml.safe_load can handle human text lists."""
-    lines = content.splitlines()
-    normalized: list[str] = []
-    for raw_line in lines:
-        line = raw_line
-        for ch in _THIN_SPACE_CHARS:
-            if ch in line:
-                line = line.replace(ch, " ")
-
-        stripped = line.lstrip()
-        indent = len(line) - len(stripped)
-
-        if stripped.startswith("-"):
-            payload = stripped[1:].lstrip()
-            if payload:
-                needs_quote = False
-                # Quote bullets that start with special characters that YAML treats as directives/tokens
-                if payload[0] in ("%", "&", "*", "#", "!", "?", "@", "[", "]", "{", "}", ","):
-                    needs_quote = True
-                elif payload[0] in (">", "<"):
-                    needs_quote = True
-                else:
-                    colon_idx = payload.find(":")
-                    if colon_idx != -1:
-                        key_part = payload[:colon_idx]
-                        remainder = payload[colon_idx + 1 :].strip()
-                        key_has_spaces = " " in key_part.strip()
-                        key_has_unicode = any(ord(ch) > 127 for ch in key_part)
-                        key_is_simple = re.fullmatch(r"[\w-]+", key_part.strip() or "") is not None
-                        if remainder and (key_has_spaces or key_has_unicode) and not key_is_simple:
-                            needs_quote = True
-
-                # Percent tokens anywhere in the first word also need quoting (YAML treats `%` as directive)
-                first_token = payload.split()[0] if payload.split() else ""
-                if "%" in first_token:
-                    needs_quote = True
-
-                if needs_quote:
-                    payload_q = payload.replace('"', '\\"')
-                    line = " " * indent + f"- \"{payload_q}\""
-        else:
-            if stripped and stripped[0] in (">", "<"):
-                payload = stripped.replace('"', '\\"')
-                line = " " * indent + f"\"{payload}\""
-
-        normalized.append(line)
-
-    return "\n".join(normalized)
-
 
 def extract_original_concept(requirements_text: str) -> str:
     if not requirements_text.strip():
@@ -114,46 +60,7 @@ def sanitize_yaml(content: str) -> str:
 
     Task: fix-stories - YAML sanitization for PO output
     """
-    if not content.strip():
-        return content
-
-    prepared = _normalize_po_yaml(content)
-
-    try:
-        # Try to parse and re-serialize to ensure valid YAML
-        data = yaml.safe_load(prepared)
-        # Re-serialize with safe_dump to ensure proper formatting
-        sanitized = yaml.safe_dump(
-            data,
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False
-        )
-        logger.debug(f"[PO] YAML sanitized via parse/dump cycle")
-        return sanitized
-    except yaml.YAMLError as exc:
-        # If parsing fails, try regex-based backtick removal
-        logger.warning(f"[PO] YAML parsing failed: {exc}. Attempting regex cleanup...")
-
-        # Remove backticks from YAML values
-        # Pattern: match backticks that are likely markdown formatting
-        cleaned = re.sub(r'`([^`]+?)`', r'\1', prepared)
-
-        # Try parsing again after cleanup
-        try:
-            data = yaml.safe_load(cleaned)
-            sanitized = yaml.safe_dump(
-                data,
-                sort_keys=False,
-                allow_unicode=True,
-                default_flow_style=False
-            )
-            logger.info(f"[PO] YAML sanitized via regex cleanup")
-            return sanitized
-        except yaml.YAMLError as exc2:
-            logger.error(f"[PO] YAML sanitization failed even after cleanup: {exc2}")
-            # Return cleaned version anyway, it's better than corrupted
-            return cleaned
+    return sanitize_po_yaml(content)
 
 
 def build_user_payload(concept: str, existing_vision: str, requirements: str) -> str:
@@ -168,28 +75,11 @@ def build_user_payload(concept: str, existing_vision: str, requirements: str) ->
 
 
 def _load_config() -> dict:
-    try:
-        return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
-    except FileNotFoundError:
-        return {}
+    return load_config_base()
 
 
 def _normalize_bool(value, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value != 0
-    if isinstance(value, str):
-        cleaned = value.strip().lower()
-        if not cleaned:
-            return default
-        if cleaned in {"1", "true", "yes", "on"}:
-            return True
-        if cleaned in {"0", "false", "no", "off"}:
-            return False
-    return default
+    return normalize_bool(value, default)
 
 
 def _use_dspy_po() -> bool:
