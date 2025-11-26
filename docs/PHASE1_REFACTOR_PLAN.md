@@ -118,7 +118,7 @@ PYTHONPATH=. .venv/bin/pytest tests/driver_layer/ tests/utils/  # All 12 tests m
 | **1.2** | ✅ COMPLETED | Add category-based allowlist + cross-platform script checks to validator; 5 new negative tests; all 5 drivers pass validation (gpu/cuda_jetson, embedded/esp32c3_riscv, embedded/zephyr_c, backend/fastapi, frontend/next_js). Coverage 80%. | 2025-11-25 | refactor-roles |
 | **1.3** | ✅ COMPLETED | Refactor run_dev.py: extract _load_config(), _resolve_targets(), _scaffold_templates(), _embedded_detection(), _write_dev_summary() helpers; 15 new unit tests with mocked deps; implement_story() now cleaner and testable. Total 48/48 driver_layer tests passing. | 2025-11-25 | refactor-roles |
 | **1.4** | ✅ COMPLETED | Refactor run_qa.py: extract _load_qa_config(), _build_qa_summary() helpers for SRP + testability; 13 new unit tests with mocked config/filesystem; main() delegates reporting to pure helper. Total 56/56 driver_layer tests passing (was 48, added 8). | 2025-11-26 | refactor-roles |
-| **1.5** | ⏳ PENDING | DRY: extend runner.py with naming/rc helpers | - | - |
+| **1.5** | ✅ COMPLETED | DRY runner.py: add driver_log_name(), normalize_rc(), area_from_name() helpers; updated run_dev.py + run_qa.py to use standardized log naming (backend|web|embedded_<id>_<cmd>.log) and RC normalization. 6 new runner tests + adoption in Dev/QA. Total 62/62 tests passing (56 driver_layer + 6 utils/runner). | 2025-11-26 | refactor-roles |
 | **1.6** | ⏳ PENDING | Core tests: target 90% coverage in validator/loader/runner | - | - |
 | **1.7** | ⏳ PENDING | Minimal CI: GitHub Actions workflow (optional) | - | - |
 

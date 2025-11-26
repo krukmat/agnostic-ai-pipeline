@@ -17,7 +17,7 @@ from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
 from logger import logger # Import the logger
 from drivers.registry import load_driver
-from scripts.utils.runner import run_driver_cmd
+from scripts.utils.runner import driver_log_name, normalize_rc, run_driver_cmd
 from drivers.detect import has_idf, has_west
 import subprocess
 
@@ -622,12 +622,13 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
         if bool(drv_cfg.get("enabled", False)):
             targets = _resolve_targets(cfg)
 
-            # Helper: run driver command via runner util
-            def _run(cmd: str, name: str) -> int:
+            # Helper: run driver command via runner util with standardized log names
+            def _run(area: str, drv_id: str, cmd_name: str, cmd: str) -> int:
                 if not cmd or not isinstance(cmd, str):
                     return 0
-                logf = run_dir / f"{name}.log"
-                return run_driver_cmd(cmd, name, ROOT, logf, logger, role="DEV")
+                log_name = driver_log_name(area, drv_id, cmd_name)
+                logf = run_dir / log_name
+                return run_driver_cmd(cmd, pathlib.Path(log_name).stem, ROOT, logf, logger, role="DEV")
 
             drivers_info: Dict[str, Any] = {}
 
@@ -645,20 +646,18 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                     }
                     # Prefer running tests for backend (build often is a server)
                     if getattr(be, "test", None):
-                        name = f"backend_{be.id}_test"
-                        rc = _run(be.test.command, name)
+                        rc = _run("backend", be.id, "test", be.test.command)
                         be_entry["commands"]["test"] = {
                             "attempted": True,
-                            "rc": rc,
-                            "log": str((run_dir / f"{name}.log").relative_to(ROOT)),
+                            "rc": normalize_rc(rc, rc == 127),
+                            "log": str((run_dir / driver_log_name("backend", be.id, "test")).relative_to(ROOT)),
                         }
                     if getattr(be, "lint", None):
-                        name = f"backend_{be.id}_lint"
-                        rc = _run(be.lint.command, name)
+                        rc = _run("backend", be.id, "lint", be.lint.command)
                         be_entry["commands"]["lint"] = {
                             "attempted": True,
-                            "rc": rc,
-                            "log": str((run_dir / f"{name}.log").relative_to(ROOT)),
+                            "rc": normalize_rc(rc, rc == 127),
+                            "log": str((run_dir / driver_log_name("backend", be.id, "lint")).relative_to(ROOT)),
                         }
                     drivers_info["backend"] = be_entry
                 except Exception as e:
@@ -680,28 +679,25 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                         "commands": {},
                     }
                     if getattr(fe, "build", None):
-                        name = f"frontend_{fe.id}_build"
-                        rc = _run(fe.build.command, name)
+                        rc = _run("web", fe.id, "build", fe.build.command)
                         fe_entry["commands"]["build"] = {
                             "attempted": True,
-                            "rc": rc,
-                            "log": str((run_dir / f"{name}.log").relative_to(ROOT)),
+                            "rc": normalize_rc(rc, rc == 127),
+                            "log": str((run_dir / driver_log_name("web", fe.id, "build")).relative_to(ROOT)),
                         }
                     if getattr(fe, "test", None):
-                        name = f"frontend_{fe.id}_test"
-                        rc = _run(fe.test.command, name)
+                        rc = _run("web", fe.id, "test", fe.test.command)
                         fe_entry["commands"]["test"] = {
                             "attempted": True,
-                            "rc": rc,
-                            "log": str((run_dir / f"{name}.log").relative_to(ROOT)),
+                            "rc": normalize_rc(rc, rc == 127),
+                            "log": str((run_dir / driver_log_name("web", fe.id, "test")).relative_to(ROOT)),
                         }
                     if getattr(fe, "lint", None):
-                        name = f"frontend_{fe.id}_lint"
-                        rc = _run(fe.lint.command, name)
+                        rc = _run("web", fe.id, "lint", fe.lint.command)
                         fe_entry["commands"]["lint"] = {
                             "attempted": True,
-                            "rc": rc,
-                            "log": str((run_dir / f"{name}.log").relative_to(ROOT)),
+                            "rc": normalize_rc(rc, rc == 127),
+                            "log": str((run_dir / driver_log_name("web", fe.id, "lint")).relative_to(ROOT)),
                         }
                     drivers_info["frontend"] = fe_entry
                 except Exception as e:

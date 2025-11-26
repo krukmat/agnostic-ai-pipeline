@@ -7,6 +7,8 @@ import types
 
 from scripts.utils.runner import (
     area_from_name,
+    driver_log_name,
+    normalize_rc,
     prepare_env_for_name,
     run_driver_cmd,
 )
@@ -26,8 +28,19 @@ class DummyLogger:
 def test_area_from_name_mapping():
     assert area_from_name("backend_fastapi_test") == "backend"
     assert area_from_name("frontend_next_js_build") == "web"
+    assert area_from_name("web_next_js_build") == "web"
     assert area_from_name("embedded_esp32_build") == "embedded"
     assert area_from_name("other") == "general"
+
+
+def test_driver_log_name_and_normalize_rc():
+    assert driver_log_name("backend", "fastapi", "test") == "backend_fastapi_test.log"
+    assert driver_log_name("web", "next_js", "lint") == "web_next_js_lint.log"
+
+    assert normalize_rc(0) == 0
+    assert normalize_rc(None) == 0
+    assert normalize_rc(5) == 5
+    assert normalize_rc(1, tool_missing=True) == 127
 
 
 def test_prepare_env_for_backend_adds_pythonpath(tmp_path: Path):
@@ -90,4 +103,3 @@ def test_run_driver_cmd_nonzero_rc(monkeypatch, tmp_path: Path):
     txt = log_path.read_text(encoding="utf-8")
     assert "out" in txt and "err" in txt
     assert any("ERROR rc=2" in m for lvl, m in logger.messages)
-

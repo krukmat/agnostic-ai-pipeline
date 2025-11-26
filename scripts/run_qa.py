@@ -7,7 +7,7 @@ import typer
 from common import ensure_dirs, ROOT
 from logger import logger # Import the logger
 from drivers.registry import load_driver  # P2.2: Driver integration for QA
-from scripts.utils.runner import run_driver_cmd
+from scripts.utils.runner import driver_log_name, normalize_rc, run_driver_cmd
 from drivers.detect import has_idf, has_west
 
 QA_ART_DIR = ROOT / "artifacts" / "qa"
@@ -455,9 +455,10 @@ def main():
     cfg, drv_cfg, targets = _load_qa_config()
     drivers_enabled = bool(drv_cfg.get("enabled", False))
 
-    def run_shell(cmd: str, name: str) -> int:
-        logf = story_art_dir / f"{name}.log"
-        return run_driver_cmd(cmd, name, ROOT, logf, logger, role="QA")
+    def run_shell(area: str, driver_id: str, cmd_name: str, cmd: str) -> int:
+        log_name = driver_log_name(area, driver_id, cmd_name)
+        logf = story_art_dir / log_name
+        return run_driver_cmd(cmd, pathlib.Path(log_name).stem, ROOT, logf, logger, role="QA")
 
     # Backend
     be_rc = None
@@ -466,14 +467,14 @@ def main():
         logger.info(f"[QA][backend] SKIP: no backend changes detected for story {story_id}")
     elif drivers_enabled and targets.get("backend"):
         try:
-            be = load_driver("backend", targets.get("backend"))
-            if getattr(be, "test", None):
-                be_rc = run_shell(be.test.command, f"backend_{be.id}_test")
-            else:
-                be_rc = 0
-                logger.info("[QA][backend] SKIP: backend driver has no test command")
-            if getattr(be, "lint", None):
-                _ = run_shell(be.lint.command, f"backend_{be.id}_lint")
+                be = load_driver("backend", targets.get("backend"))
+                if getattr(be, "test", None):
+                    be_rc = run_shell("backend", be.id, "test", be.test.command)
+                else:
+                    be_rc = 0
+                    logger.info("[QA][backend] SKIP: backend driver has no test command")
+                if getattr(be, "lint", None):
+                    _ = run_shell("backend", be.id, "lint", be.lint.command)
         except Exception as e:
             logger.warning(f"[QA][backend] SKIP: backend driver test skipped due to error: {e}")
             be_rc = 0
@@ -511,16 +512,16 @@ def main():
         logger.info(f"[QA][web] SKIP: no web changes detected for story {story_id}")
     elif drivers_enabled and targets.get("frontend"):
         try:
-            fe = load_driver("frontend", targets.get("frontend"))
-            if getattr(fe, "build", None):
-                _ = run_shell(fe.build.command, f"frontend_{fe.id}_build")
-            if getattr(fe, "test", None):
-                web_rc = run_shell(fe.test.command, f"frontend_{fe.id}_test")
-            else:
-                web_rc = 0
-                logger.info("[QA][web] SKIP: frontend driver has no test command")
-            if getattr(fe, "lint", None):
-                _ = run_shell(fe.lint.command, f"frontend_{fe.id}_lint")
+                fe = load_driver("frontend", targets.get("frontend"))
+                if getattr(fe, "build", None):
+                    _ = run_shell("web", fe.id, "build", fe.build.command)
+                if getattr(fe, "test", None):
+                    web_rc = run_shell("web", fe.id, "test", fe.test.command)
+                else:
+                    web_rc = 0
+                    logger.info("[QA][web] SKIP: frontend driver has no test command")
+                if getattr(fe, "lint", None):
+                    _ = run_shell("web", fe.id, "lint", fe.lint.command)
         except Exception as e:
             logger.warning(f"[QA][web] SKIP: frontend driver test skipped due to error: {e}")
             web_rc = 0
@@ -585,13 +586,13 @@ def main():
     areas = {
         "backend": {
             "has_tests": be_has,
-            "rc": be_rc,
+            "rc": normalize_rc(be_rc, be_rc == 127),
             "skipped": not run_backend_tests,
             "touched": backend_touched,
         },
         "web":     {
             "has_tests": web_tests,
-            "rc": web_rc,
+            "rc": normalize_rc(web_rc, web_rc == 127),
             "skipped": not run_web_tests,
             "touched": web_touched,
         },
