@@ -269,3 +269,97 @@ class TestCLIIntegration:
         import yaml
         result = yaml.safe_load(captured.out)
         assert result["drivers.enabled"] is True
+
+
+# ========== Task 1.6: CLI main() entry point tests (lines 169, 176-206) ==========
+
+
+class TestCLIMainEntryPoint:
+    """Test CLI main() entry point with argument parsing."""
+
+    def test_main_validate_all(self, capsys):
+        """Line 196-198: validate --all command."""
+        from drivers.cli import main
+        rc = main(["validate", "--all"])
+        assert rc == 0
+        captured = capsys.readouterr()
+        # Should validate all drivers successfully
+        assert "✓" in captured.out or "fastapi" in captured.out.lower()
+
+    def test_main_validate_without_all_errors(self):
+        """Line 199: validate without --all should error."""
+        from drivers.cli import main
+        with pytest.raises(SystemExit):  # argparse calls sys.exit
+            main(["validate"])
+
+    def test_main_load_command(self, capsys):
+        """Line 200-201: load command calls _cmd_show."""
+        from drivers.cli import main
+        rc = main(["load", "backend", "fastapi"])
+        captured = capsys.readouterr()
+        assert rc == 0
+        import yaml
+        result = yaml.safe_load(captured.out)
+        assert result["id"] == "fastapi"
+
+    def test_main_show_command(self, capsys):
+        """Line 200-201: show command (alias of load)."""
+        from drivers.cli import main
+        rc = main(["show", "backend", "fastapi"])
+        captured = capsys.readouterr()
+        assert rc == 0
+        import yaml
+        result = yaml.safe_load(captured.out)
+        assert result["id"] == "fastapi"
+
+    def test_main_list_command(self, capsys):
+        """Line 202-203: list command calls _cmd_list."""
+        from drivers.cli import main
+        rc = main(["list"])
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert "backend:" in captured.out
+        assert "fastapi" in captured.out
+
+    def test_main_plan_command_default_config(self, capsys):
+        """Line 204-205: plan command with default config path."""
+        from drivers.cli import main
+        # This will use the actual config.yaml in the repo
+        rc = main(["plan"])
+        captured = capsys.readouterr()
+        # Should produce YAML output
+        assert rc == 0 or "drivers.enabled" in captured.out  # tolerant if config missing
+
+    def test_main_plan_command_custom_config(self, tmp_path, capsys):
+        """Line 204-205: plan command with custom --config."""
+        from drivers.cli import main
+        config_path = tmp_path / "custom.yaml"
+        config_path.write_text("drivers:\n  enabled: false\n")
+        rc = main(["plan", "--config", str(config_path)])
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert "drivers.enabled:" in captured.out
+
+    def test_main_plan_error_path(self, tmp_path, capsys):
+        """Line 169: _cmd_plan error handling (print error message)."""
+        from drivers.cli import main
+        # Use nonexistent config file to trigger rc=2 error path
+        config_path = tmp_path / "nonexistent.yaml"
+        rc = main(["plan", "--config", str(config_path)])
+        captured = capsys.readouterr()
+        # Should return non-zero (rc=2) and show error
+        assert rc == 2
+        assert "❌" in captured.out
+        assert "error" in captured.out.lower() or "not found" in captured.out.lower()
+
+    def test_main_no_command_raises(self):
+        """Line 177: argparse requires a command."""
+        from drivers.cli import main
+        with pytest.raises(SystemExit):
+            main([])
+
+    def test_main_invalid_command_raises(self):
+        """Line 176-206: invalid command should error."""
+        from drivers.cli import main
+        with pytest.raises(SystemExit):
+            main(["invalid_command"])

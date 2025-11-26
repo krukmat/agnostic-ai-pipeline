@@ -103,3 +103,62 @@ def test_run_driver_cmd_nonzero_rc(monkeypatch, tmp_path: Path):
     txt = log_path.read_text(encoding="utf-8")
     assert "out" in txt and "err" in txt
     assert any("ERROR rc=2" in m for lvl, m in logger.messages)
+
+
+# ========== Task 1.6: Additional runner.py coverage (lines 46, 55-56, 61, 90-91) ==========
+
+
+def test_run_driver_cmd_empty_command():
+    """Line 46: empty command returns 0 immediately."""
+    root = Path(__file__).resolve().parents[2]
+    logger = DummyLogger()
+    rc = run_driver_cmd("", "backend_fastapi_test", root, Path("/tmp/test.log"), logger)
+    assert rc == 0
+    assert len(logger.messages) == 0  # No logging for empty cmd
+
+
+def test_run_driver_cmd_shlex_split_failure(monkeypatch, tmp_path: Path):
+    """Lines 55-56, 61: shlex.split fails, fallback to shell=True."""
+    class Result:
+        returncode = 0
+        stdout = "OK"
+        stderr = ""
+
+    def mock_split(cmd):
+        raise ValueError("Cannot parse command")
+
+    monkeypatch.setattr("shlex.split", mock_split)
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: Result())
+
+    root = Path(__file__).resolve().parents[2]
+    log_path = tmp_path / "backend_fastapi_test.log"
+    logger = DummyLogger()
+    rc = run_driver_cmd("echo 'test'", "backend_fastapi_test", root, log_path, logger)
+    assert rc == 0
+    assert log_path.exists()
+
+
+def test_run_driver_cmd_empty_argv_fallback_to_shell(monkeypatch, tmp_path: Path):
+    """Line 61: argv is None or empty, use shell=True."""
+    class Result:
+        returncode = 0
+        stdout = "shell output"
+        stderr = ""
+
+    monkeypatch.setattr("shlex.split", lambda cmd: [])  # Empty argv
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: Result())
+
+    root = Path(__file__).resolve().parents[2]
+    log_path = tmp_path / "test.log"
+    logger = DummyLogger()
+    rc = run_driver_cmd("echo test", "backend_fastapi_test", root, log_path, logger)
+    assert rc == 0
+    assert "shell output" in log_path.read_text(encoding="utf-8")
+
+
+def test_normalize_rc_exception_handling():
+    """Lines 90-91: normalize_rc handles non-int values."""
+    # String that can't be converted to int
+    assert normalize_rc("not_a_number") == 1  # type: ignore
+    # Object that can't be converted
+    assert normalize_rc(object()) == 1  # type: ignore

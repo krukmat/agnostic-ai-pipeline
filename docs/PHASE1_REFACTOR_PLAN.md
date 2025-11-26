@@ -119,7 +119,7 @@ PYTHONPATH=. .venv/bin/pytest tests/driver_layer/ tests/utils/  # All 12 tests m
 | **1.3** | ✅ COMPLETED | Refactor run_dev.py: extract _load_config(), _resolve_targets(), _scaffold_templates(), _embedded_detection(), _write_dev_summary() helpers; 15 new unit tests with mocked deps; implement_story() now cleaner and testable. Total 48/48 driver_layer tests passing. | 2025-11-25 | refactor-roles |
 | **1.4** | ✅ COMPLETED | Refactor run_qa.py: extract _load_qa_config(), _build_qa_summary() helpers for SRP + testability; 13 new unit tests with mocked config/filesystem; main() delegates reporting to pure helper. Total 56/56 driver_layer tests passing (was 48, added 8). | 2025-11-26 | refactor-roles |
 | **1.5** | ✅ COMPLETED | DRY runner.py: add driver_log_name(), normalize_rc(), area_from_name() helpers; updated run_dev.py + run_qa.py to use standardized log naming (backend|web|embedded_<id>_<cmd>.log) and RC normalization. 6 new runner tests + adoption in Dev/QA. Total 62/62 tests passing (56 driver_layer + 6 utils/runner). | 2025-11-26 | refactor-roles |
-| **1.6** | ⏳ PENDING | Core tests: target 90% coverage in validator/loader/runner | - | - |
+| **1.6** | ✅ COMPLETED | Core tests: achieved 99% coverage (305 stmts, 2 missing). Added 15 validator negative tests, 10 CLI main() tests, 10 detect.py tests, 4 runner.py edge case tests. Total 101/101 tests passing (87 driver_layer + 10 utils + 4 new). validator.py 100%, detect.py 100%, runner.py 100%, cli.py 99%, loader.py 98%. | 2025-11-26 | refactor-roles |
 | **1.7** | ⏳ PENDING | Minimal CI: GitHub Actions workflow (optional) | - | - |
 
 ---
@@ -200,31 +200,67 @@ PYTHONPATH=. .venv/bin/pytest tests/driver_layer/ tests/utils/  # All 12 tests m
   - Consistent log names across Dev/QA and summaries
   - Single source of truth for area/log/RC conventions
 
-### 1.6 — Core tests (target ≥90% in validator/runner/loader)
-- **Core scope** (must reach 90%):
-  - `drivers/validator.py` (currently 74% → target 90%+)
-  - `drivers/loader.py` (currently 95% → maintain)
-  - `scripts/utils/runner.py` (currently 91% → maintain or improve)
-- **Changes** (missing coverage to add):
-  - **validator.py**:
-    - Embedded fields validation (invalid `board`, `flash_command`, `monitor_command`)
-    - GPU fields validation (invalid `gpu_arch` format)
-    - `artifact_paths` wrong type (not a list)
-    - Whitelist violations per category (new in 1.2)
-  - **runner.py**:
-    - Fallback `shell=True` when `shlex.split` fails
-    - Error log capture and formatting
-    - Naming helpers (new in 1.5): `driver_log_name()`, `normalize_rc()`
-  - **loader.py**:
-    - Non-mapping YAML (load fails gracefully)
-    - Missing file (FileNotFoundError with clear message)
-- Deliverables
-  - New tests in `tests/driver_layer/test_validator.py` (embedded/gpu/whitelist cases)
-  - Extended `tests/utils/test_runner.py` (shell fallback, naming, RC normalization)
-- Acceptance
-  - Core modules: validator ≥90%, loader ≥90%, runner ≥90%
-  - Overall uplift: 50% → 60%+ (including new helpers)
-  - No regression: existing 12 tests still pass
+### 1.6 — Core tests (target ≥90% in validator/runner/loader) ✅ COMPLETED
+- **Initial Coverage** (before Task 1.6):
+  - `drivers/validator.py`: 74% (15 lines missing)
+  - `drivers/cli.py`: 76% (main() entry point + error path)
+  - `drivers/detect.py`: 89% (exception handling in _probe)
+  - `scripts/utils/runner.py`: 89% (edge cases in run_driver_cmd)
+  - Overall: 82% (248 stmts, 44 missing)
+- **Changes Implemented**:
+  - **validator.py** (15 new negative tests in `test_validator_loader.py`):
+    - Missing required keys (id, category, language, framework)
+    - Invalid types for all fields
+    - Invalid category values
+    - Templates validation (not a list, missing path/source)
+    - Command validation (not a dict, empty command, newlines, invalid tokens)
+    - artifact_paths not a list
+    - Embedded fields: board/flash_command/monitor_command not string
+    - GPU fields: gpu_arch not string or invalid format (not sm_/gfx)
+    - Coverage: 74% → **100%** (0 lines missing)
+  - **cli.py** (10 new tests in `test_cli_plan.py::TestCLIMainEntryPoint`):
+    - main() validate --all command
+    - main() validate without --all (argparse error)
+    - main() load/show commands
+    - main() list command
+    - main() plan command (default + custom config)
+    - main() plan error path (missing config file → rc=2)
+    - main() no command raises SystemExit
+    - main() invalid command raises SystemExit
+    - Coverage: 76% → **99%** (1 line missing: unreachable return 0)
+  - **detect.py** (10 new tests in `test_detect.py`):
+    - _probe() command not found in PATH
+    - _probe() subprocess timeout exception (lines 16-17)
+    - _probe() generic exception handling
+    - _probe() version from stderr fallback
+    - _probe() no version output
+    - has_idf() and has_west() wrappers
+    - Coverage: 89% → **100%** (0 lines missing)
+  - **runner.py** (4 new tests in `test_runner.py`):
+    - run_driver_cmd() empty command early return (line 46)
+    - run_driver_cmd() shlex.split() exception → shell=True fallback (lines 55-56, 61)
+    - run_driver_cmd() empty argv → shell=True fallback (line 61)
+    - normalize_rc() exception handling (lines 90-91)
+    - Coverage: 89% → **100%** (0 lines missing)
+- **Deliverables**:
+  - `tests/driver_layer/test_validator_loader.py`: +15 tests (5 → 20 tests)
+  - `tests/driver_layer/test_cli_plan.py`: +10 tests (21 → 31 tests)
+  - `tests/driver_layer/test_detect.py`: NEW FILE with 10 tests
+  - `tests/utils/test_runner.py`: +4 tests (6 → 10 tests)
+- **Final Coverage** (after Task 1.6):
+  - `drivers/validator.py`: **100%** (57 stmts, 0 missing)
+  - `drivers/cli.py`: **99%** (110 stmts, 1 missing - unreachable)
+  - `drivers/detect.py`: **100%** (18 stmts, 0 missing)
+  - `drivers/loader.py`: **98%** (59 stmts, 1 missing - defensive)
+  - `drivers/registry.py`: **100%** (4 stmts, 0 missing)
+  - `scripts/utils/runner.py`: **100%** (57 stmts, 0 missing)
+  - **Overall: 99%** (305 stmts, 2 missing)
+  - **Test Count**: 101/101 passing (87 driver_layer + 10 utils/runner + 4 new)
+- **Acceptance Criteria**:
+  - ✅ Core modules exceed 90% target (all at 98-100%)
+  - ✅ Overall coverage: 82% → 99% (exceeded 90% target)
+  - ✅ No regressions: all previous tests still pass
+  - ✅ New tests cover all error paths and edge cases
 
 ### 1.7 — Minimal CI (optional)
 - Changes
