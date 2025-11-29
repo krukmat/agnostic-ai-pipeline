@@ -6,13 +6,14 @@ Learn more (Medium): Why an Agentic, Model‑Agnostic Pipeline beats a pile of s
 
 ## Contents
 - [Why this pipeline](#why-this-pipeline)
-- [Configure Providers (examples)](#configure-providers-examples)
 - [Quick Start](#quick-start)
-- [Modes: Legacy vs DSPy](#modes-legacy-vs-dspy)
-- [DSPy: Programs and Tuning](#dspy-programs-and-tuning-core-idea)
-  - Datasets & Tuning (detailed)
-- [Database Layer (optional)](#database-layer-optional)
-- [Driver Layer (full guide)](#driver-layer)
+- [Configure Providers](#configure-providers-examples)
+- [Key Features](#key-features)
+  - [Complexity-Based Routing](#complexity-based-routing-new)
+  - [DSPy Programs & Optimization](#dspy-programs--tuning)
+  - [Database Layer](#database-layer-optional)
+  - [Driver Layer](#driver-layer)
+- [Advanced Topics](#advanced-topics)
 - [Docs & Articles](#docs--articles)
 
 ## Product Concept
@@ -35,48 +36,11 @@ flowchart LR
 
 ## Why this pipeline
 
-- Model‑agnostic by design: swap providers without changing code.
-- Practical economics: mix local OSS models with cloud LLMs per role.
-- Built‑in resilience: fallback routing keeps loops moving.
-- Measurable quality: DSPy + metrics enable prompt/program tuning.
-
-## Configure Providers (examples)
-
-### Vertex AI (Gemini)
-To use Google's models via Vertex AI.
-```bash
-make set-role role=architect provider=vertex_cli model="gemini-1.0-pro"
-```
-*See `vertex_ai_gemini_provider_via_gcloud_implementation_guide_for_codex.md` for more configuration details.*
-
-### OpenAI (GPT)
-To use models like GPT-4 through a Codex-compatible CLI.
-```bash
-make set-role role=dev provider=codex_cli model="gpt-4-turbo"
-```
-
-### Claude Code CLI (Anthropic)
-To call Anthropic's Claude Code via its local CLI (no direct API integration required).
-```bash
-make set-role role=dev provider=claude_cli model="claude-3-5-sonnet-latest"
-```
-*Prerequisites*: run `claude login` (or equivalent token setup) beforehand and ensure the binary is on your `PATH`.
-*Optional verbose mode*: set `debug: true` on the `claude_cli` provider in `config.yaml` to add `--verbose --debug` flags and persist CLI stderr under `artifacts/<role>/last_raw.txt`.
-
-### Ollama (Local Models)
-To run open-source models like Llama or Mistral on your own machine.
-```bash
-make set-role role=dev provider=ollama model="mistral:7b-instruct"
-```
-
-### Local-Only Example with Ollama
-For an entirely local stack, point the core roles to Ollama models:
-```bash
-make set-role role=architect provider=ollama model="qwen2.5-coder:7b"
-make set-role role=dev provider=ollama model="qwen2.5-coder:14b"
-make set-role role=qa provider=ollama model="qwen2.5-coder:7b"
-```
-This keeps every agent on locally hosted models while the pipeline remains ready to switch back to hosted providers when needed.
+- **Model‑agnostic by design**: swap providers without changing code
+- **Practical economics**: mix local OSS models with cloud LLMs per role
+- **Intelligent routing**: automatically select models based on task complexity (simple/medium/complex)
+- **Built‑in resilience**: fallback routing keeps loops moving
+- **Measurable quality**: DSPy + metrics enable prompt/program tuning
 
 ---
 
@@ -86,16 +50,19 @@ This keeps every agent on locally hosted models while the pipeline remains ready
    ```bash
    make setup
    ```
+
 2. **Configure providers and models**
    ```bash
    # Example: Architect with OpenAI and Development with a local model
    make set-role role=architect provider=codex_cli model="gpt-4-turbo"
    make set-role role=dev provider=ollama model="mistral:7b-instruct"
    ```
+
 3. **Run a full development cycle**
    ```bash
    make iteration CONCEPT="An inventory system for a coffee shop"
    ```
+
 4. **Inspect the results**
    ```bash
    cat artifacts/iterations/<iteration>/summary.json
@@ -104,236 +71,329 @@ This keeps every agent on locally hosted models while the pipeline remains ready
 
 ---
 
-## Modes: Legacy vs DSPy
+## Configure Providers (examples)
 
-The pipeline intentionally supports two execution styles:
+### Vertex AI (Gemini)
+```bash
+make set-role role=architect provider=vertex_cli model="gemini-1.0-pro"
+```
+*See `vertex_ai_gemini_provider_via_gcloud_implementation_guide_for_codex.md` for details.*
 
-1. **Legacy mode** – the original role scripts (`scripts/run_product_owner.py`, `scripts/run_architect.py`, etc.) call the selected models with static prompts. Use this mode to bootstrap or refresh datasets because it reflects the “factory baseline” and never depends on optimized instructions.
-2. **DSPy + MiPROv2 mode** – each role also has a DSPy program (`dspy_baseline/modules/...`). When you want better quality you run:
-   ```bash
-   PYTHONPATH=. .venv/bin/python scripts/tune_dspy.py --role <role> --trainset <train.jsonl> --valset <val.jsonl> --metric <metric> [...]
-   ```
-   MiPROv2 will discover improved instructions and few‑shot demos, write them under `artifacts/dspy/optimizer/<role>/`, and record the validation score.
+### OpenAI (GPT)
+```bash
+make set-role role=dev provider=codex_cli model="gpt-4-turbo"
+```
 
-### Recommended workflow
+### Claude Code CLI (Anthropic)
+```bash
+make set-role role=dev provider=claude_cli model="claude-3-5-sonnet-latest"
+```
+*Prerequisites*: run `claude login` and ensure the binary is on your `PATH`.
 
-1. **Generate or clean data in legacy mode.**  
-   - Run the role’s legacy script to produce JSONL outputs.  
-   - Normalize them (helpers live under `scripts/` such as `normalize_ba_jsonl.py`).  
-   - Split into `train/val` and store them in `dspy_baseline/data/production/` or `artifacts/synthetic/<role>/`.
-2. **Run MiPROv2 on the DSPy program.**  
-   - Launch `scripts/tune_dspy.py` with those JSONL files and the role metric (e.g., `dspy_baseline.metrics.architect_metrics:architect_metric_v2`).  
-   - The optimizer prints the validation average and stores `program_components.json` plus `eval_summary.json`.
-3. **Activate the optimized prompt.**  
-   - Update `config.yaml` → `features.<role>.use_optimized_prompt: true` and point `prompt_override_file` to the generated `program_components.json`.  
-   - From now on, running the role (either via `make <ROLE>` or `scripts/run_<role>.py`) automatically uses the tuned DSPy instructions.
+### Ollama (Local Models)
+```bash
+make set-role role=dev provider=ollama model="mistral:7b-instruct"
+```
 
-When to switch back to legacy
-
-- **New data** – if you need more examples or radically different concepts, return to legacy mode to generate/clean them, then run MiPRO again.  
-- **New model/provider** – any time you swap the underlying LLM, re-run MiPRO because the old prompt was optimized for the previous model.  
-- Otherwise keep executing in DSPy mode; legacy is only your “springboard” for data refreshes.
-
-> **Architect note:** `features.architect.arch_only` controls whether the Architect role skips story generation and uses stubbed JSON just to produce architectures. Keep it `false` for the full BA→PO→Architect→Dev→QA pipeline (stories + architecture). Only set it to `true` when you are intentionally collecting architecture-only datasets, knowing that Dev/QA will not receive real stories in that mode.
-
----
-
-## Docs & Articles
-
-Project documentation lives under `docs/` inside this repository. For high‑level context and rationale, refer to the Medium series below.
-
-Medium series (high‑level concepts and rationale)
-- Part 1 — Why an Agentic, Model‑Agnostic Pipeline: replacing brittle scripts with a choreographed multi‑role loop that survives provider changes and scales with needs.  
-  https://medium.com/@iotforce/why-an-agentic-model-agnostic-pipeline-beats-a-pile-of-scripts-b57661276505
-- Part 2 — Inside the AI Development Team: how BA, Architect, Dev and QA hand off artifacts, enforce quality, and keep the cycle moving.  
-  https://medium.com/@iotforce/inside-the-ai-development-team-ba-architect-developer-qa-e7631503f0d9
-- Part 3 — Smart Routing for 89% Cost Reduction: choosing strong vs. local models per task to optimize spend without losing coverage.  
-  https://medium.com/@iotforce/how-i-cut-ai-costs-by-89-using-smart-routing-and-local-models-d58258a14802
-- Part 4 — Automatic Recovery from Model Failures: resilience patterns (fallbacks, retries, budgets) that keep releases on track.  
-  https://iotforce.medium.com/how-my-ai-pipeline-automatically-recovered-from-8-model-failures-b39cb09c6ae0
-- Part 5 — Scaling Agents with DSPy + MiPROv2: from manual prompts to automated program optimization with measurable metrics.  
-  https://medium.com/@iotforce/scaling-ai-agents-with-dspy-and-miprov2-from-manual-prompts-to-automated-optimization-6a88f993f2b2
+### Local-Only Stack Example
+```bash
+make set-role role=architect provider=ollama model="qwen2.5-coder:7b"
+make set-role role=dev provider=ollama model="qwen2.5-coder:14b"
+make set-role role=qa provider=ollama model="qwen2.5-coder:7b"
+```
 
 ---
 
-Additional reading
-- GitHub Pages tour → Vision, fallback, multi‑role pipeline, cost controls.
-- Medium article → Why an agentic, model‑agnostic pipeline (link above).
+## Key Features
 
-### Database Layer (optional)
-Toggle an SQLite mirror of YAML artifacts in `config.yaml > database.enabled` (default on). Quick ops:
-- Init/upgrade: `make db-migrate`
-- Inspect: `make db-stats`, `make db-costs`, `make db-verify`
-- Docs: schema + rollout → `docs/DATABASE_LAYER_PLAN.md`
+### Complexity-Based Routing (NEW)
 
-### DSPy: Programs and Tuning (core idea)
+**Automatically select different models based on story complexity** to optimize cost and quality.
 
-DSPy define cada rol como un programa con I/O claros (ej., historias/epics JSON → arquitectura YAML), reemplazando prompts libres con salidas acotadas y validadas.
+#### How It Works
 
-Qué aporta
-- Módulos composables con validación de campos.
-- Outputs acotados (capas de tokens, tamaños de listas).
-- Métrica por rol (ej. `architect_metric_v2`) para puntuar.
-- MiPROv2 busca instrucciones y few-shots mejores.
+1. **Architect classifies stories** as `simple`, `medium`, or `complex`
+2. **Routing matrix** in `config.yaml` maps each complexity level to specific provider/model
+3. **Developer & QA** automatically use the appropriate model for each story
 
-Cómo tunear (ejemplo rápido)
+#### Example Configuration
+
+```yaml
+features:
+  routing_by_complexity_enabled: true
+
+routing_by_complexity:
+  dev:
+    simple: ollama/qwen2.5-coder:7b      # Cheap local model
+    medium: vertex_sdk/gemini-2.5-flash  # Balanced cloud model
+    complex: codex_cli/gpt-4-turbo       # Powerful model for hard tasks
+  qa:
+    simple: ollama/qwen2.5-coder:7b
+    medium: vertex_cli/gemini-2.5-pro
+    complex: claude_cli/claude-3-5-sonnet-latest
+```
+
+#### Benefits
+
+✅ **Cost optimization**: Use cheap models for simple CRUD stories (40-60% cost reduction)
+✅ **Quality assurance**: Complex architecture stories get powerful models
+✅ **Automatic classification**: Heuristic analyzer intelligently classifies stories without LLM calls
+✅ **Config-driven**: Change routing rules without touching code
+
+#### Real-World Example
+
+```
+Story S1: "Create GET endpoint for listing users"
+  → Complexity: simple
+  → Model: ollama/qwen2.5-coder:7b (local, free)
+
+Story S2: "Implement JWT authentication with refresh tokens"
+  → Complexity: medium
+  → Model: vertex/gemini-2.5-flash ($0.002/1K tokens)
+
+Story S3: "Migrate to distributed multi-tenant architecture"
+  → Complexity: complex
+  → Model: gpt-4-turbo (powerful, worth the cost)
+```
+
+**Documentation**: See `docs/COMPLEXITY_ROUTING_PLAN.md` and `docs/COMPLEXITY_ANALYZER.md` for details.
+
+---
+
+### DSPy Programs & Tuning
+
+DSPy replaces manual prompts with composable programs that can be automatically optimized using MiPROv2.
+
+#### Quick Overview
+
+- **Programs**: Each role (BA, PO, Architect) has a DSPy module with validated I/O
+- **Metrics**: Role-specific scoring functions (e.g., `architect_metric_v2`)
+- **Optimization**: MiPROv2 searches for better instructions and few-shot examples
+- **Activation**: Point `config.yaml` to optimized components
+
+#### Tune a Role
+
 ```bash
 PYTHONPATH=. .venv/bin/python scripts/tune_dspy.py \
   --role architect \
-  --trainset artifacts/synthetic/architect/architect_train_gold_v2.jsonl \
-  --valset   artifacts/synthetic/architect/architect_val_gold_v2.jsonl \
+  --trainset dspy_baseline/data/production/architect_train.jsonl \
+  --valset dspy_baseline/data/production/architect_val.jsonl \
   --metric dspy_baseline.metrics.architect_metrics:architect_metric_v2
 ```
-Artefactos: `artifacts/dspy/optimizer/<role>/{metadata.json,eval_summary.json,program_components.json}`
+
+Artifacts saved to: `artifacts/dspy/optimizer/<role>/`
+
+#### Recommended Workflow
+
+1. **Generate baseline data** in legacy mode
+2. **Normalize and split** into train/val (40 train / 10 val minimum)
+3. **Run MiPROv2** optimization
+4. **Activate optimized prompt** in `config.yaml`:
+   ```yaml
+   features:
+     architect:
+       use_optimized_prompt: true
+       prompt_override_file: artifacts/dspy/optimizer/architect/program_components.json
+   ```
+
+**When to re-tune**: New model/provider, new data domain, quality degradation.
+
+**Documentation**: See Medium article Part 5 (link below) and `dspy_baseline/README.md`
 
 ---
 
-## Driver Layer
+### Database Layer (optional)
 
-See the complete guide: docs/DRIVER_LAYER_GUIDE.md
+SQLite mirror of YAML artifacts for analytics and versioning.
 
-Datasets & Tuning (detailed)
-- Location: `dspy_baseline/data/production/` for curated sets; gold splits under `artifacts/synthetic/<role>/` (e.g., `.../architect_train_gold_v2.jsonl`).
-- Schema (JSONL): each line has `{input:{...}, output:{...}, metadata:{score, provider, model}}`. Tuning only needs `input`/`output`; `metadata.score` helps filter gold.
-- Build a gold split: generate ≥40 train / 10 val samples with min score ≥0.85 using the role’s metric (partial‑credit metrics recommended). Keep sets small but high quality.
-- Generate datasets (legacy): use the role scripts (e.g., `scripts/run_architect.py dataset ... --metric-path <metric> --min-score 0.85 --max-records 50`) and normalizers (YAML sanitizers, dedupe) to stabilize outputs.
-- Caps & pruning: bound lists (e.g., ≤6 stories, ≤3 epics/components) and raise token caps only when needed to avoid truncation.
-- Larger searches: for deeper MiPRO runs, increase `--num-candidates` and `--num-trials` (e.g., 16×48). Expect long runs; always capture logs with `tee` and rely on `eval_summary.json` for the final score.
-- Activation: once a tuned run is satisfactory, point `features.<role>.prompt_override_file` to the resulting `program_components.json` and set `use_optimized_prompt: true`.
-
-Notes learned
-- Prefer partial‑credit metrics (avoid all‑or‑nothing) so MiPRO can make incremental gains.
-- Keep outputs bounded (caps, pruning) to reduce truncation; raise caps only if quality demands it.
-- Build a small gold split (e.g., 40/10) with min score ≥ 0.85 before tuning; it stabilizes search.
-
-Quick example
-```bash
-make ba CONCEPT="Smart radio with intelligent station selection"
-make po && make plan
-make dspy-qa && make dspy-qa-lint
-# Inspect: planning/requirements.yaml, planning/stories.yaml,
-# and artifacts/dspy/testcases/S001.md
+```yaml
+database:
+  enabled: true  # Toggle in config.yaml
 ```
 
-CI/Sandbox Flags
-- `DSPY_QA_SKIP_IF_MISSING=1 make qa` skips DSPy generation if no model is available and only lints when artifacts exist
-- `DSPY_QA_STUB=1 make dspy-qa` generates deterministic cases from `dspy_baseline/data/qa_eval.yaml` (smoke when LLM is unavailable)
+**Quick ops**:
+```bash
+make db-migrate  # Init/upgrade schema
+make db-stats    # Show statistics
+make db-costs    # Cost analysis
+make db-verify   # Integrity check
+```
 
-Key Files
-- Modules: `dspy_baseline/modules/qa_testcases.py` (DSPy), `dspy_baseline/config/metrics.py` (heuristic), `dspy_baseline/data/qa_eval.yaml` (per‑story keywords)
-- Scripts: `scripts/generate_dspy_testcases.py`, `scripts/lint_dspy_testcases.py`
-- Artifacts: `planning/*.yaml`, `artifacts/dspy/testcases/*.md`
-
-#### DSPy vs. legacy – how each role is configured
-- **Single source of truth**: `config.yaml` controls provider/model/temperature per role for both legacy clients and DSPy modules. You no longer need to duplicate these values elsewhere.
-- **Business Analyst**: toggle `features.use_dspy_ba` to switch between the DSPy baseline and the legacy `ba_legacy.py`. When DSPy is enabled, `scripts/run_ba.py` builds an LM with the `roles.ba` settings.
-- **Product Owner**: toggle `features.use_dspy_product_owner`. When true, `scripts/run_product_owner.py` loads the frozen DSPy snapshot in `artifacts/dspy/po_optimized_full_snapshot_*` and uses the LM described under `roles.product_owner`. When false, the legacy LLM client runs with the same config defaults.
-- **Architect**: toggle `features.use_dspy_architect`. In DSPy mode the role is broken into three modules (stories/epics, architecture, PRD/tasks) executed as a pipeline, each one picking the LM from `roles.architect` and writing its artifacts under `planning/`. When the flag is disabled the legacy prompt-based flow continues to work unchanged.
-- **Concept source**: regardless of DSPy/legacy mode, the PO script pulls the concept from `planning/requirements.yaml` (`meta.original_request`) so it always matches the BA output. Setting `CONCEPT="..." make po` is only needed for local experiments when BA hasn’t run yet.
-- **Dev/QA**: still run in legacy mode today. They will adopt the same DSPy + MiPRO flow once their datasets and metrics reach parity with Architect/PO.
-- **Temporary overrides**: to experiment without editing `config.yaml`, export `DSPY_<ROLE>_LM`, `DSPY_<ROLE>_TEMPERATURE`, or `DSPY_<ROLE>_MAX_TOKENS` (for example `DSPY_PRODUCT_OWNER_LM=ollama/qwen2.5`). These environment variables override the LM spec only for that run. You can also force/disable PO DSPy with `USE_DSPY_PO=1` or `USE_DSPY_PO=0`.
-If a provider is unavailable (e.g., Ollama is stopped) the scripts log the failure and, when applicable, fall back to the legacy path so the pipeline keeps moving.
-
-### Google AI Gemini (optional)
-- Install dependency once inside `.venv`: `pip install -U google-genai`.
-- Add the provider block in `config.yaml`:
-  ```yaml
-  providers:
-    google_ai_gemini:
-      type: google_ai_gemini
-      api_key: <tu_api_key>
-  ```
-- Point any role to it (e.g., `roles.product_owner.provider: google_ai_gemini`, `model: gemini-2.5-pro`).
-- Export the key (or let the config supply it): `export GEMINI_API_KEY="<tu_api_key>"`.
-The `google-genai` client se encarga del resto; desde los scripts basta con mantener `system`/`user` prompts como siempre.
-
- 
-
-BA (Requirements) with DSPy
-- Module: `dspy_baseline/modules/ba_requirements.py` (signature + `Predict` module)
-- CLI: `dspy_baseline/scripts/run_ba.py` (reads provider/model from `config.yaml`)
-- Run: `make ba CONCEPT="..."` (or `make dspy-ba CONCEPT="..."`)
-- Output: `planning/requirements.yaml` (title, description, FR/NFR/constraints)
-
-Expanding the QA dataset
-- Locate new story IDs in `planning/stories.yaml` and add entries to `dspy_baseline/data/qa_eval.yaml`:
-  - `story_id`: the exact ID (e.g., `S011`)
-  - `description`: short intent (why these checks exist)
-  - `required_mentions`: 3–5 lowercase tokens you expect in Unhappy tests (e.g., `invalid`, `retry`, `timeout`, `unauthorized`, `no data`)
-- Keep tokens short and failure‑oriented; avoid long sentences. Include at least one reliability or security keyword when applicable.
-- Validate locally:
-  - Real: `make dspy-qa && make dspy-qa-lint`
-  - Stub (no model): `DSPY_QA_STUB=1 make dspy-qa && make dspy-qa-lint`
-- CI tip: if the model isn’t available, commit a snapshot of `artifacts/dspy/testcases/` or run with `DSPY_QA_SKIP_IF_MISSING=1` so the lint checks only existing files.
-
-### Architect Complexity Tiers
-
-The Architect agent analyzes the requirements and adjusts the level of detail in the user stories.
-- **Tiers**: `Simple`, `Medium`, `Corporate`.
-- **Selection**: An LLM classifier determines the complexity level based on the requirements text, although it can be forced manually.
+**Docs**: `docs/DATABASE_LAYER_PLAN.md`
 
 ---
 
-## Advanced Controls
+### Driver Layer
+
+Abstraction layer for test execution (pytest, jest, etc.) with sandboxing and resource limits.
+
+**Full guide**: `docs/DRIVER_LAYER_GUIDE.md`
+
+**Quick example**:
+```python
+from drivers import get_test_driver
+
+driver = get_test_driver("pytest")
+result = driver.run(path="tests/", timeout=60)
+print(result.exit_code, result.summary)
+```
+
+---
+
+## Advanced Topics
+
+<details>
+<summary><b>Architect Complexity Tiers</b></summary>
+
+The Architect classifies requirements into tiers (`Simple`, `Medium`, `Corporate`) to adjust story detail level. An LLM classifier auto-detects the tier, or force manually:
+
+```bash
+FORCE_ARCHITECT_TIER=simple make plan
+```
+</details>
+
+<details>
+<summary><b>Advanced Routing (RoRF)</b></summary>
+
+Runtime model recommendation that overrides complexity routing for dynamic cost optimization. Analyzes prompt content to potentially downgrade/upgrade models.
+
+**See**: Medium article Part 3 and `docs/03-cost-engineering/index.html`
+</details>
+
+<details>
+<summary><b>Legacy vs DSPy Modes</b></summary>
+
+**Legacy**: Static prompts, good for bootstrapping datasets
+**DSPy**: Optimized programs with MiPROv2, better quality
+
+Toggle per role in `config.yaml`:
+```yaml
+features:
+  use_dspy_ba: false          # BA in legacy mode
+  use_dspy_product_owner: true # PO in DSPy mode
+  use_dspy_architect: true     # Architect in DSPy mode
+```
+</details>
+
+<details>
+<summary><b>Control Flags</b></summary>
 
 | Flag | Purpose |
 | ---- | ------- |
-| `ALLOW_NO_TESTS` | TDD strictness level (0 = strict, 1 = relaxed) |
-| `ARCHITECT_INTERVENTION` | Allows the architect to refine stories if QA fails |
-| `STRICT_TDD` | Forces the architect to include additional TDD requirements |
-| `LOOP_MODE=dev_only` | Skips the QA step for exploratory coding cycles |
-| `SKIP_BA` / `SKIP_PO` / `SKIP_PLAN` | Reuses existing artifacts for incremental releases |
+| `ALLOW_NO_TESTS=1` | Relaxed TDD mode |
+| `ARCHITECT_INTERVENTION=1` | Architect refines stories on QA failure |
+| `STRICT_TDD=1` | Enforce strict test requirements |
+| `LOOP_MODE=dev_only` | Skip QA for exploratory cycles |
+| `SKIP_BA` / `SKIP_PO` / `SKIP_PLAN` | Reuse existing artifacts |
+</details>
+
+<details>
+<summary><b>Google AI Gemini Provider</b></summary>
+
+```bash
+pip install -U google-genai
+```
+
+Add to `config.yaml`:
+```yaml
+providers:
+  google_ai_gemini:
+    type: google_ai_gemini
+    api_key: <your_key>
+
+roles:
+  product_owner:
+    provider: google_ai_gemini
+    model: gemini-2.5-pro
+```
+
+Export key: `export GEMINI_API_KEY="<your_key>"`
+</details>
 
 ---
 
 ## Reference Commands
 
 ```bash
-# Individual actions
+# Individual roles
 make ba                          # Generate requirements
 make po                          # Review product vision
-make plan                        # Generate epics, stories, and tasks
-make dev STORY=S1                # Implement a specific story
+make plan                        # Generate epics, stories, tasks
+make dev STORY=S1                # Implement specific story
 make qa QA_RUN_TESTS=1           # Run QA with tests
 
 # Orchestration
-make loop MAX_LOOPS=10           # Start a Dev↔QA loop
-make iteration CONCEPT="..."     # Run a full release cycle
+make iteration CONCEPT="..."     # Full BA→PO→Architect→Dev→QA cycle
+make loop MAX_LOOPS=10           # Dev↔QA loop until all stories done
 
-# Start services in A2A mode
-python scripts/run_ba.py serve
-python scripts/run_architect.py serve
-python scripts/run_dev.py serve
-# ... and so on for each role
+# Configuration
+make show-config                 # Display current config
+make set-role role=dev provider=ollama model="qwen2.5-coder:7b"
+
+# Database
+make db-migrate                  # Initialize database
+make db-stats                    # Show statistics
+make db-costs                    # Cost analysis
+
+# DSPy
+make dspy-ba CONCEPT="..."       # Run BA in DSPy mode
+make dspy-qa                     # Generate QA test cases
+make dspy-qa-lint                # Lint test cases
 
 # Utilities
-make clean                       # Clean up artifacts
-make show-config                 # Display the model configuration per role
+make clean                       # Clean artifacts
+make clean FLUSH=1               # Clean artifacts + planning + project
+make fix-stories                 # Normalize stories.yaml
 ```
 
 ---
 
-## Proven Results
+## Docs & Articles
 
-This pipeline has already generated:
-- A complete e-commerce platform (authentication, catalog, cart, checkout).
-- Over 200 automated tests validated by QA in strict mode.
-- Zero manual coding once the initial concept is defined.
+### Project Documentation
+
+- **Complexity Routing**: `docs/COMPLEXITY_ROUTING_PLAN.md`, `docs/COMPLEXITY_ANALYZER.md`
+- **Database Layer**: `docs/DATABASE_LAYER_PLAN.md`
+- **Driver Layer**: `docs/DRIVER_LAYER_GUIDE.md`
+- **DSPy Baseline**: `dspy_baseline/README.md`
+- **GitHub Pages**: Vision, fallback, cost controls → https://krukmat.github.io/agnostic-ai-pipeline/
+
+### Medium Series (Concepts & Rationale)
+
+1. **Why an Agentic, Model‑Agnostic Pipeline**
+   Replacing brittle scripts with a choreographed multi‑role loop
+   https://medium.com/@iotforce/why-an-agentic-model-agnostic-pipeline-beats-a-pile-of-scripts-b57661276505
+
+2. **Inside the AI Development Team**
+   How BA, Architect, Dev and QA hand off artifacts and enforce quality
+   https://medium.com/@iotforce/inside-the-ai-development-team-ba-architect-developer-qa-e7631503f0d9
+
+3. **Smart Routing for 89% Cost Reduction**
+   Choosing strong vs. local models per task to optimize spend
+   https://medium.com/@iotforce/how-i-cut-ai-costs-by-89-using-smart-routing-and-local-models-d58258a14802
+
+4. **Automatic Recovery from Model Failures**
+   Resilience patterns (fallbacks, retries, budgets) that keep releases on track
+   https://iotforce.medium.com/how-my-ai-pipeline-automatically-recovered-from-8-model-failures-b39cb09c6ae0
+
+5. **Scaling Agents with DSPy + MiPROv2**
+   From manual prompts to automated program optimization with measurable metrics
+   https://medium.com/@iotforce/scaling-ai-agents-with-dspy-and-miprov2-from-manual-prompts-to-automated-optimization-6a88f993f2b2
 
 ---
 
-## Conclusion
+## Contributing
 
-Treat each `make iteration` cycle as a self-contained product increment. The workflow is **simple to operate**, **powerful in its coverage**, and **extensible to any tech stack**. The AGNOSTIC AI PIPELINE turns the release cycle into a repeatable process that scales while maintaining auditable artifacts. 🚀
+Contributions welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Submit a pull request
+
+## License
+
+[Your License Here]
 
 ---
 
-## Public Pages (Guided Tour)
-
-A friendly tour to understand the project before running anything. Each link opens a shareable HTML page.
-
-- Start Here: Vision & End‑to‑End Flow (`docs/00-vision-ok/index.html`) — What the pipeline is, how an idea walks through BA → PO → Architect → Dev → QA, and why this loop keeps shipping consistently. Link: https://krukmat.github.io/agnostic-ai-pipeline/00-vision-ok/
-- Resilience in Practice (`docs/01-fallback-system/index.html`) — How the system keeps working when models fail, from the decision logic that promotes backups to the guardrails that protect the budget. Link: https://krukmat.github.io/agnostic-ai-pipeline/01-fallback-system/
-- Meet the Team of Agents (`docs/02-multi-role-pipeline/index.html`) — A story about each role’s deliverables, how artifacts move forward, and how you can run the same collaboration as Agent-to-Agent services. Link: https://krukmat.github.io/agnostic-ai-pipeline/02-multi-role-pipeline/
-- Cost Engineering & Model Routing (`docs/03-cost-engineering/index.html`) — How the router (RoRF) balances speed vs. quality, with playbooks for keeping spend in check without giving up coverage. Link: https://krukmat.github.io/agnostic-ai-pipeline/03-cost-engineering/
-- Configure Fallback Controls (`docs/04-fallback-system/index.html`) — Practical knobs in `config.yaml` to set recovery budgets, observability, and escalation paths so loops don’t stall. Link: https://krukmat.github.io/agnostic-ai-pipeline/04-fallback-system/
+**Built with ❤️ for AI-powered software development**
