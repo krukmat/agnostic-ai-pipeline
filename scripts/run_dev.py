@@ -334,7 +334,7 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
         else:
             logger.warning(f"[DEV] Unknown provider type '{provider_type}', may not work correctly")
     else:
-        client = Client(role="dev")
+        client = Client(role="dev", complexity=story.get("complexity"))
 
     logger.debug(f"[DEV] LLM Client initialized: provider={client.provider_type}, model={client.model}")
 
@@ -555,7 +555,7 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     story_art_dir = DEV_ART_DIR / sid
     story_art_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"[DEV] Implementando: {sid} - {story.get('description', '(sin desc)')}")
+    logger.info(f"[DEV] Implementando: {sid} - {story.get('description', '(sin desc)')} (complexity={story.get('complexity', 'n/a')})")
 
     files_ctx = repo_tree(limit=300)
     files = None
