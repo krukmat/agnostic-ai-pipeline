@@ -26,7 +26,7 @@ from scripts.architect_utils import (
     convert_stories_epics_to_yaml as _convert_stories_epics_to_yaml,
     sanitize_yaml_block as _sanitize_yaml_block,
 )
-from scripts.run_product_owner import sanitize_yaml as sanitize_po_yaml
+from scripts.utils.yaml_sanitizer import sanitize_po_yaml
 from scripts.dspy_lm_helper import build_lm_for_role, get_role_output_cap
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -55,14 +55,6 @@ def grab_block(text: str, tag: str, label: str) -> str:
     return content
 
 
-def sanitize_yaml(content: str) -> str:
-    """Remove markdown backticks from YAML content to prevent parsing errors.
-
-    Task: fix-stories - YAML sanitization for PO output
-    """
-    return sanitize_po_yaml(content)
-
-
 def build_user_payload(concept: str, existing_vision: str, requirements: str) -> str:
     concept_section = concept or "(concept not provided)"
     vision_section = existing_vision.strip() if existing_vision else "(no existing vision)"
@@ -74,26 +66,18 @@ def build_user_payload(concept: str, existing_vision: str, requirements: str) ->
     )
 
 
-def _load_config() -> dict:
-    return load_config_base()
-
-
-def _normalize_bool(value, default: bool = False) -> bool:
-    return normalize_bool(value, default)
-
-
 def _use_dspy_po() -> bool:
-    config = _load_config()
+    config = load_config_base()
     features_candidate = config.get("features", {})
     features = features_candidate if isinstance(features_candidate, dict) else {}
     flag_value = features.get("use_dspy_product_owner")
     if flag_value is None:
         flag_value = features.get("use_dspy_po")
-    config_flag = _normalize_bool(flag_value, default=False)
+    config_flag = normalize_bool(flag_value, default=False)
 
     env_override = os.environ.get("USE_DSPY_PO")
     if env_override is not None and env_override.strip() != "":
-        return _normalize_bool(env_override, config_flag)
+        return normalize_bool(env_override, config_flag)
     return config_flag
 
 
@@ -162,14 +146,14 @@ async def main() -> None:
 
     # Task: fix-stories - Sanitize YAML before writing
     if vision_yaml:
-        sanitized_vision = sanitize_yaml(vision_yaml)
+        sanitized_vision = sanitize_po_yaml(vision_yaml)
         VISION_PATH.write_text(sanitized_vision.strip() + "\n", encoding="utf-8")
         logger.info("✓ product_vision.yaml updated")
     else:
         logger.warning("[PO] VISION block missing in LLM response")
 
     if review_yaml:
-        sanitized_review = sanitize_yaml(review_yaml)
+        sanitized_review = sanitize_po_yaml(review_yaml)
         REVIEW_PATH.write_text(sanitized_review.strip() + "\n", encoding="utf-8")
         logger.info("✓ product_owner_review.yaml updated")
     else:
@@ -233,14 +217,14 @@ async def run_dspy_program(requirements_content: str, concept: str, existing_vis
     review_yaml = prediction.product_owner_review
 
     if vision_yaml:
-        sanitized_vision = sanitize_yaml(vision_yaml)
+        sanitized_vision = sanitize_po_yaml(vision_yaml)
         VISION_PATH.write_text(sanitized_vision.strip() + "\n", encoding="utf-8")
         logger.info("[PO][DSPY] ✓ product_vision.yaml updated from DSPy snapshot")
     else:
         logger.warning("[PO][DSPY] Missing product_vision output from snapshot")
 
     if review_yaml:
-        sanitized_review = sanitize_yaml(review_yaml)
+        sanitized_review = sanitize_po_yaml(review_yaml)
         REVIEW_PATH.write_text(sanitized_review.strip() + "\n", encoding="utf-8")
         logger.info("[PO][DSPY] ✓ product_owner_review.yaml updated from DSPy snapshot")
     else:
