@@ -7,7 +7,7 @@ import typer
 from common import ensure_dirs, ROOT
 from logger import logger # Import the logger
 from drivers.registry import load_driver  # P2.2: Driver integration for QA
-from scripts.utils.runner import run_driver_cmd
+from scripts.utils.runner import driver_log_name, normalize_rc, run_driver_cmd
 from drivers.detect import has_idf, has_west
 
 QA_ART_DIR = ROOT / "artifacts" / "qa"
@@ -258,6 +258,101 @@ def has_collection_errors(failure_details: dict) -> bool:
     logger.debug("[QA] No collection errors found.")
     return False
 
+# Task 1.4: Extract helpers for SRP/SoC + testability
+
+def _load_qa_config() -> tuple[dict, dict, dict]:
+    """Load config and extract QA-specific settings.
+
+    Returns:
+        (full_config, drivers_config, targets) tuple
+    """
+    cfg = {}
+    try:
+        with open(ROOT / "config.yaml", "r", encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+    except Exception as e:
+        logger.warning(f"[QA] Failed to load config.yaml, using empty config: {e}")
+        cfg = {}
+    drv_cfg = (cfg.get("drivers") or {}) if isinstance(cfg, dict) else {}
+    targets = (cfg.get("project") or {}).get("targets") or {}
+    return cfg, drv_cfg, targets
+
+
+def _build_qa_summary(
+    story_art_dir: pathlib.Path,
+    be_rc: int | None,
+    web_rc: int | None,
+    run_backend_tests: bool,
+    run_web_tests: bool,
+    collection_errors_present: bool
+) -> dict:
+    """Build standardized QA summary (pure function for report generation).
+
+    Args:
+        story_art_dir: artifacts directory for this story
+        be_rc: backend test return code
+        web_rc: web test return code
+        run_backend_tests: whether backend tests were executed
+        run_web_tests: whether web tests were executed
+        collection_errors_present: whether pytest collection errors were found
+
+    Returns:
+        qa_summary dict with version, timestamp, areas
+    """
+    def _norm(area_name: str, rc_val: int | None, executed: bool, tools: dict | None, logs: list[str], reason: str | None) -> dict:
+        def _normalized_rc(raw: int | None) -> int:
+            if raw is None or raw == 0:
+                return 0
+            if raw == 127:
+                return 127
+            return 1 if not collection_errors_present else 4
+        # status mapping
+        if rc_val is None:
+            status_m = "skip_not_configured"
+        elif rc_val == 0:
+            status_m = "run_pass" if executed else "skip_no_tests"
+        elif rc_val == 127:
+            status_m = "skip_tool_missing"
+        elif collection_errors_present:
+            status_m = "error_collection"
+        else:
+            status_m = "run_fail"
+        return {
+            "area": area_name,
+            "executed": bool(executed),
+            "rc": _normalized_rc(rc_val),
+            "status": status_m,
+            "reason": reason,
+            "tools_present": tools or {},
+            "logs": logs,
+        }
+
+    def _glob_logs(prefix: str) -> list[str]:
+        out = []
+        for p in story_art_dir.glob(f"{prefix}*.log"):
+            try:
+                out.append(str(p.relative_to(ROOT)))
+            except Exception:
+                out.append(str(p))
+        return sorted(out)
+
+    tools_backend = {"pytest": (ROOT / ".venv" / "bin" / "pytest").exists()}
+    tools_web = {"jest": (ROOT / "project" / "web-express" / "node_modules" / ".bin" / "jest").exists()}
+    tools_emb: dict = {}
+
+    qa_summary = {
+        "version": 1,
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "areas": {
+            "backend": _norm("backend", be_rc if be_rc is not None else (0 if not run_backend_tests else None), bool(run_backend_tests), tools_backend, _glob_logs("backend_"), None if (be_rc in (0, None)) else "backend tests failed"),
+            "web": _norm("web", web_rc if web_rc is not None else (0 if not run_web_tests else None), bool(run_web_tests), tools_web, _glob_logs("frontend_") + _glob_logs("web_"), None if (web_rc in (0, None)) else "web tests failed"),
+            "embedded": _norm("embedded", 0, False, tools_emb, _glob_logs("embedded_"), "Not executed in QA unless configured"),
+        },
+    }
+
+    return qa_summary
+
+
 def run_cmd(cmd: list[str], story_art_dir: pathlib.Path, cwd: str | None = None) -> int:
     try:
         logger.info(f"[QA] Running command: {' '.join(cmd)} (cwd={cwd or os.getcwd()})")
@@ -356,21 +451,14 @@ def main():
     else:
         logger.debug("[QA] No developer snapshot available. Running full QA suite.")
 
-    # Resolve driver settings if enabled
-    cfg = {}
-    try:
-        with open(ROOT / "config.yaml", "r", encoding="utf-8") as fh:
-            cfg = yaml.safe_load(fh) or {}
-    except Exception as e:
-        logger.warning(f"[QA] Failed to load config.yaml, using empty config: {e}")
-        cfg = {}
-    drv_cfg = (cfg.get("drivers") or {}) if isinstance(cfg, dict) else {}
+    # Task 1.4: Use helper for config loading
+    cfg, drv_cfg, targets = _load_qa_config()
     drivers_enabled = bool(drv_cfg.get("enabled", False))
-    targets = (cfg.get("project") or {}).get("targets") or {}
 
-    def run_shell(cmd: str, name: str) -> int:
-        logf = story_art_dir / f"{name}.log"
-        return run_driver_cmd(cmd, name, ROOT, logf, logger, role="QA")
+    def run_shell(area: str, driver_id: str, cmd_name: str, cmd: str) -> int:
+        log_name = driver_log_name(area, driver_id, cmd_name)
+        logf = story_art_dir / log_name
+        return run_driver_cmd(cmd, pathlib.Path(log_name).stem, ROOT, logf, logger, role="QA")
 
     # Backend
     be_rc = None
@@ -379,14 +467,14 @@ def main():
         logger.info(f"[QA][backend] SKIP: no backend changes detected for story {story_id}")
     elif drivers_enabled and targets.get("backend"):
         try:
-            be = load_driver("backend", targets.get("backend"))
-            if getattr(be, "test", None):
-                be_rc = run_shell(be.test.command, f"backend_{be.id}_test")
-            else:
-                be_rc = 0
-                logger.info("[QA][backend] SKIP: backend driver has no test command")
-            if getattr(be, "lint", None):
-                _ = run_shell(be.lint.command, f"backend_{be.id}_lint")
+                be = load_driver("backend", targets.get("backend"))
+                if getattr(be, "test", None):
+                    be_rc = run_shell("backend", be.id, "test", be.test.command)
+                else:
+                    be_rc = 0
+                    logger.info("[QA][backend] SKIP: backend driver has no test command")
+                if getattr(be, "lint", None):
+                    _ = run_shell("backend", be.id, "lint", be.lint.command)
         except Exception as e:
             logger.warning(f"[QA][backend] SKIP: backend driver test skipped due to error: {e}")
             be_rc = 0
@@ -424,16 +512,16 @@ def main():
         logger.info(f"[QA][web] SKIP: no web changes detected for story {story_id}")
     elif drivers_enabled and targets.get("frontend"):
         try:
-            fe = load_driver("frontend", targets.get("frontend"))
-            if getattr(fe, "build", None):
-                _ = run_shell(fe.build.command, f"frontend_{fe.id}_build")
-            if getattr(fe, "test", None):
-                web_rc = run_shell(fe.test.command, f"frontend_{fe.id}_test")
-            else:
-                web_rc = 0
-                logger.info("[QA][web] SKIP: frontend driver has no test command")
-            if getattr(fe, "lint", None):
-                _ = run_shell(fe.lint.command, f"frontend_{fe.id}_lint")
+                fe = load_driver("frontend", targets.get("frontend"))
+                if getattr(fe, "build", None):
+                    _ = run_shell("web", fe.id, "build", fe.build.command)
+                if getattr(fe, "test", None):
+                    web_rc = run_shell("web", fe.id, "test", fe.test.command)
+                else:
+                    web_rc = 0
+                    logger.info("[QA][web] SKIP: frontend driver has no test command")
+                if getattr(fe, "lint", None):
+                    _ = run_shell("web", fe.id, "lint", fe.lint.command)
         except Exception as e:
             logger.warning(f"[QA][web] SKIP: frontend driver test skipped due to error: {e}")
             web_rc = 0
@@ -498,13 +586,13 @@ def main():
     areas = {
         "backend": {
             "has_tests": be_has,
-            "rc": be_rc,
+            "rc": normalize_rc(be_rc, be_rc == 127),
             "skipped": not run_backend_tests,
             "touched": backend_touched,
         },
         "web":     {
             "has_tests": web_tests,
-            "rc": web_rc,
+            "rc": normalize_rc(web_rc, web_rc == 127),
             "skipped": not run_web_tests,
             "touched": web_touched,
         },
@@ -564,57 +652,16 @@ def main():
         "failure_details": failure_details,
         "story_context": story_id,
     }
-    # S4.3: build standardized QA summary alongside detailed report
-    def _norm(area_name: str, rc_val: int | None, executed: bool, tools: dict | None, logs: list[str], reason: str | None) -> dict:
-        def _normalized_rc(raw: int | None) -> int:
-            if raw is None or raw == 0:
-                return 0
-            if raw == 127:
-                return 127
-            return 1 if not collection_errors_present else 4
-        # status mapping
-        if rc_val is None:
-            status_m = "skip_not_configured"
-        elif rc_val == 0:
-            status_m = "run_pass" if executed else "skip_no_tests"
-        elif rc_val == 127:
-            status_m = "skip_tool_missing"
-        elif collection_errors_present:
-            status_m = "error_collection"
-        else:
-            status_m = "run_fail"
-        return {
-            "area": area_name,
-            "executed": bool(executed),
-            "rc": _normalized_rc(rc_val),
-            "status": status_m,
-            "reason": reason,
-            "tools_present": tools or {},
-            "logs": logs,
-        }
 
-    def _glob_logs(prefix: str) -> list[str]:
-        out = []
-        for p in story_art_dir.glob(f"{prefix}*.log"):
-            try:
-                out.append(str(p.relative_to(ROOT)))
-            except Exception:
-                out.append(str(p))
-        return sorted(out)
-
-    tools_backend = {"pytest": (ROOT / ".venv" / "bin" / "pytest").exists()}
-    tools_web = {"jest": (ROOT / "project" / "web-express" / "node_modules" / ".bin" / "jest").exists()}
-    tools_emb: dict = {}
-
-    qa_summary = {
-        "version": 1,
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-        "areas": {
-            "backend": _norm("backend", be_rc if be_rc is not None else (0 if not run_backend_tests else None), bool(run_backend_tests), tools_backend, _glob_logs("backend_"), None if (be_rc in (0, None)) else "backend tests failed"),
-            "web": _norm("web", web_rc if web_rc is not None else (0 if not run_web_tests else None), bool(run_web_tests), tools_web, _glob_logs("frontend_") + _glob_logs("web_"), None if (web_rc in (0, None)) else "web tests failed"),
-            "embedded": _norm("embedded", 0, False, tools_emb, _glob_logs("embedded_"), "Not executed in QA unless configured"),
-        },
-    }
+    # Task 1.4: Use helper to build standardized QA summary
+    qa_summary = _build_qa_summary(
+        story_art_dir,
+        be_rc,
+        web_rc,
+        run_backend_tests,
+        run_web_tests,
+        collection_errors_present
+    )
 
     try:
         (story_art_dir / "qa_summary.json").write_text(json.dumps(qa_summary, indent=2, ensure_ascii=False), encoding="utf-8")

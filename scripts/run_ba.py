@@ -17,6 +17,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from common import ensure_dirs, PLANNING
+from scripts.utils.config_loader import load_config_base, normalize_bool
 from logger import logger
 import importlib.util
 
@@ -42,11 +43,9 @@ def _load_legacy_module():
 
 
 def _use_dspy() -> bool:
-    from pathlib import Path
-    import yaml
-
-    config = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
-    return config.get("features", {}).get("use_dspy_ba", True)
+    config = load_config_base()
+    features = config.get("features", {}) if isinstance(config, dict) else {}
+    return normalize_bool(features.get("use_dspy_ba"), default=True)
 
 
 def _run_dspy(concept: str) -> dict[str, str]:

@@ -12,6 +12,8 @@ def area_from_name(name: str) -> str:
         return "backend"
     if name.startswith("frontend_"):
         return "web"
+    if name.startswith("web_"):
+        return "web"
     if name.startswith("embedded_"):
         return "embedded"
     return "general"
@@ -69,4 +71,21 @@ def run_driver_cmd(
         return 127
     except Exception as e:  # pragma: no cover - defensive
         logger.warning(f"[{role}][{area}] ERROR: {e}")
+        return 1
+
+
+def driver_log_name(area: str, driver_id: str, cmd: str) -> str:
+    """Compose standardized driver log filename."""
+    return f"{area}_{driver_id}_{cmd}.log"
+
+
+def normalize_rc(rc: Optional[int], tool_missing: bool = False) -> int:
+    """Normalize return codes for summaries."""
+    if tool_missing:
+        return 127
+    if rc is None:
+        return 0
+    try:
+        return int(rc)
+    except Exception:
         return 1
