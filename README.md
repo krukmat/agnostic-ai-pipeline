@@ -168,37 +168,23 @@ Toggle an SQLite mirror of YAML artifacts in `config.yaml > database.enabled` (d
 
 ### DSPy: Programs and Tuning (core idea)
 
-DSPy lets us define each role as a small program with clear I/O signatures (e.g., Architect has “stories/epics JSON → architecture YAML”). This replaces fragile free‑form prompts with bounded outputs the pipeline can validate.
+DSPy define cada rol como un programa con I/O claros (ej., historias/epics JSON → arquitectura YAML), reemplazando prompts libres con salidas acotadas y validadas.
 
-What DSPy adds
-- Composable modules: per‑role programs with explicit fields and validators.
-- Bounded outputs: caps for tokens and list sizes reduce truncation and drift.
-- Measurable quality: a metric per role (e.g., `architect_metric_v2`) scores predictions.
-- MiPROv2 tuning: searches better instructions + few‑shot demos for the program.
+Qué aporta
+- Módulos composables con validación de campos.
+- Outputs acotados (capas de tokens, tamaños de listas).
+- Métrica por rol (ej. `architect_metric_v2`) para puntuar.
+- MiPROv2 busca instrucciones y few-shots mejores.
 
-How to run tuning
+Cómo tunear (ejemplo rápido)
 ```bash
-# Example: Architect tuning on a gold split
 PYTHONPATH=. .venv/bin/python scripts/tune_dspy.py \
   --role architect \
   --trainset artifacts/synthetic/architect/architect_train_gold_v2.jsonl \
   --valset   artifacts/synthetic/architect/architect_val_gold_v2.jsonl \
-  --metric dspy_baseline.metrics.architect_metrics:architect_metric_v2 \
-  --num-candidates 12 --num-trials 32 --max-bootstrapped-demos 6
+  --metric dspy_baseline.metrics.architect_metrics:architect_metric_v2
 ```
-Artifacts
-- `artifacts/dspy/optimizer/<role>/metadata.json` – run config and sizes
-- `.../eval_summary.json` – validation average/min/max
-- `.../program_components.json` – tuned instructions + demos (used as override)
-
-Enable or disable DSPy per role
-- `config.yaml > features.use_dspy_<role>` toggles DSPy vs legacy scripts.
-- Optionally set `features.<role>.use_optimized_prompt: true` and point `prompt_override_file` to a `program_components.json` to use the tuned program during normal runs.
-
-Good practice
-- Use legacy mode to bootstrap/refresh datasets; then tune with MiPROv2.
-- If you change the model/provider or the training data, retune the program.
-- Keep validation small but representative; document scores alongside artifacts.
+Artefactos: `artifacts/dspy/optimizer/<role>/{metadata.json,eval_summary.json,program_components.json}`
 
 ---
 
