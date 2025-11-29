@@ -47,6 +47,16 @@ def sanitize_po_yaml(content: str) -> str:
     ).strip()
 
 
+def sanitize_requirements_yaml(content: str) -> str:
+    """Normalize requirements.yaml content emitted with markdown fences/bold."""
+    if not content:
+        return ""
+    cleaned = sanitize_yaml_block(content)
+    # Strip bold markers that break YAML (`**text**`)
+    cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned)
+    return cleaned
+
+
 def normalize_po_yaml(content: str) -> str:
     """Pre-process LLM output (Gemini quirks) for PO."""
     _THIN_SPACE_CHARS = ("\u202f", "\u00a0", "\u2007")

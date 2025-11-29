@@ -54,8 +54,8 @@ providers:
     max_output_tokens: 2048
 roles:
   ba:
-    provider: ollama
-    model: granite4
+    provider: vertex_sdk
+    model: gemini-2.5-flash
     temperature: 0.4
     max_tokens: 8192
     top_p: 0.95
@@ -74,7 +74,7 @@ roles:
         min_tokens: 600
   dev:
     provider: vertex_sdk
-    model: gemini-2.5-pro
+    model: gemini-2.5-flash
     temperature: 0.2
     max_tokens: 8192
     top_p: 0.5
@@ -165,11 +165,35 @@ features:
   use_dspy_ba: false
   use_dspy_product_owner: false
   use_dspy_architect: false
+  routing_by_complexity_enabled: true
   architect:
     arch_only: false
     normalize_minified_arch: true
     use_optimized_prompt: false
     prompt_override_file: ""
+defaults:
+  complexity: medium
+routing_by_complexity:
+  dev:
+    simple:
+      provider: vertex_sdk
+      model: gemini-2.5-flash
+    medium:
+      provider: vertex_sdk
+      model: gemini-2.5-flash
+    complex:
+      provider: vertex_sdk
+      model: gemini-2.5-flash
+  qa:
+    simple:
+      provider: vertex_cli
+      model: gemini-2.5-flash
+    medium:
+      provider: vertex_cli
+      model: gemini-2.5-flash
+    complex:
+      provider: vertex_cli
+      model: gemini-2.5-flash
 database:
   enabled: true  # Fase 3: dual-write activado para pruebas
   path: data/pipeline.db

@@ -6,6 +6,7 @@ Para entregar los resultados en EXACTAMENTE los bloques requeridos por DSPy, res
 - id: S1
   epic: E1
   description: ...
+  complexity: medium
   acceptance:
     - ...
   priority: P1
@@ -37,7 +38,9 @@ ANALYZE the REQUIREMENTS and create:
 
 FORMAT REQUIREMENTS:
 - Stories MUST be implementable in 1-2 days maximum
-- Each story needs: id, epic, description, acceptance criteria, priority, status: todo
+- **PREFER smaller, atomic stories (4-8 hours each) to minimize truncation risk**
+- **Break complex features into multiple simple stories when possible**
+- Each story needs: id, epic, description, acceptance criteria, priority, status: todo, **complexity: simple | medium | complex** (mandatory; choose the smallest model that can deliver quality)
 - Acceptance criteria as simple bullet points
 - **CRITICAL: All stories MUST include automated tests as part of implementation**
 - **Tests are NOT separate stories - they are INTEGRAL to each user story**
@@ -70,6 +73,7 @@ OUTPUT STRICTLY IN THIS FORMAT:
 - id: S1
   epic: E1
   description: Clear implementation goal
+  complexity: medium  # required: simple | medium | complex
   acceptance:
     - First acceptance criterion
     - Second acceptance criterion
@@ -78,6 +82,7 @@ OUTPUT STRICTLY IN THIS FORMAT:
 - id: S2
   epic: E1
   description: Another clear implementation goal
+  complexity: medium  # required
   acceptance:
     - Acceptance criterion for this story
   priority: P2

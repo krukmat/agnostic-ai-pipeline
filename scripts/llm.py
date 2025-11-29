@@ -13,7 +13,12 @@ from typing import Any, Dict, Optional
 import httpx
 import yaml
 
-from logger import logger # Import the logger
+from logger import logger  # Import the logger
+
+try:
+    from scripts.utils.complexity_router import resolve_role_model_for_complexity
+except Exception:  # pragma: no cover - fallback when executed differently
+    from utils.complexity_router import resolve_role_model_for_complexity  # type: ignore
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -92,7 +97,13 @@ class Client:
         Client("ollama", "mistral:7b-instruct", 0.2, 2048, "http://localhost:11434")
         ^provider  ^model                     ^temperature ^max_tokens ^base_url
     """
-    def __init__(self, role: Optional[str] = None, *legacy_args, **overrides):
+    def __init__(
+        self,
+        role: Optional[str] = None,
+        *legacy_args,
+        complexity: Optional[str] = None,
+        **overrides,
+    ):
         cfg = load_config()
         self.cfg = cfg
 
@@ -131,11 +142,16 @@ class Client:
         roles = cfg.get("roles", {}) if isinstance(cfg.get("roles", {}), dict) else {}
         role_cfg = roles.get(self.role, {}) if isinstance(roles, dict) else {}
         providers = cfg.get("providers", {}) if isinstance(cfg.get("providers", {}), dict) else {}
-        provider_key = role_cfg.get("provider") or "ollama"
+
+        routed_provider, routed_model = resolve_role_model_for_complexity(cfg, self.role, complexity)
+        provider_key = routed_provider or role_cfg.get("provider") or "ollama"
         provider_cfg = providers.get(provider_key, {"type": "ollama", "base_url": "http://localhost:11434"})
 
         # Apply config defaults
-        self.model = role_cfg.get("model", self.model)
+        if routed_model:
+            self.model = routed_model
+        else:
+            self.model = role_cfg.get("model", self.model)
         self.temperature = float(role_cfg.get("temperature", self.temperature))
         self.max_tokens = int(role_cfg.get("max_tokens", self.max_tokens))
         self.provider_type = provider_cfg.get("type", provider_key)
@@ -231,7 +247,18 @@ class Client:
                 self.ollama_base = str(overrides["base_url"])
             else:
                 self.oai_base = str(overrides["base_url"])
-        logger.debug(f"[LLM] Client initialized for role '{self.role}': provider={self.provider_type}, model={self.model}, temp={self.temperature}, max_tokens={self.max_tokens}")
+        if routed_provider and routed_model:
+            logger.info(
+                "[LLM] Complexity routing applied for role '%s' (complexity=%s) -> %s/%s",
+                self.role,
+                complexity or "auto",
+                routed_provider,
+                routed_model,
+            )
+
+        logger.debug(
+            f"[LLM] Client initialized for role '{self.role}': provider={self.provider_type}, model={self.model}, temp={self.temperature}, max_tokens={self.max_tokens}"
+        )
 
 
     async def chat(self, system: str, user: str) -> str:
