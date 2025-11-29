@@ -70,7 +70,9 @@ def normalize_status(items):
         if not isinstance(s, dict): 
             continue
         s.setdefault("status", "todo")
-        s.setdefault("complexity", default_complexity)
+        if "complexity" not in s or not s.get("complexity"):
+            print(f"[fix_stories] Missing complexity for story {s.get('id','?')}, defaulting to {default_complexity}")
+            s.setdefault("complexity", default_complexity)
         fixed.append(s)
     return fixed
 

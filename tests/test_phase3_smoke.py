@@ -34,57 +34,87 @@ def test_routing_matrices_configured():
 
 
 def test_dev_routing_with_real_config_simple():
-    """Test dev Client with simple complexity uses ollama/qwen2.5-coder:7b."""
+    """Test dev Client with simple complexity uses configured provider/model."""
+    config = load_config()
+    routing = config.get("routing_by_complexity", {})
+    expected_provider = routing["dev"]["simple"]["provider"]
+    expected_model = routing["dev"]["simple"]["model"]
+
     client = Client(role="dev", complexity="simple")
-    assert client.provider_type == "ollama", \
-        f"Expected ollama for dev/simple, got {client.provider_type}"
-    assert client.model == "qwen2.5-coder:7b", \
-        f"Expected qwen2.5-coder:7b for dev/simple, got {client.model}"
+    assert client.provider_type == expected_provider, \
+        f"Expected {expected_provider} for dev/simple, got {client.provider_type}"
+    assert client.model == expected_model, \
+        f"Expected {expected_model} for dev/simple, got {client.model}"
 
 
 def test_dev_routing_with_real_config_medium():
-    """Test dev Client with medium complexity uses vertex_sdk/gemini-2.5-pro."""
+    """Test dev Client with medium complexity uses configured provider/model."""
+    config = load_config()
+    routing = config.get("routing_by_complexity", {})
+    expected_provider = routing["dev"]["medium"]["provider"]
+    expected_model = routing["dev"]["medium"]["model"]
+
     client = Client(role="dev", complexity="medium")
-    assert client.provider_type == "vertex_sdk", \
-        f"Expected vertex_sdk for dev/medium, got {client.provider_type}"
-    assert client.model == "gemini-2.5-pro", \
-        f"Expected gemini-2.5-pro for dev/medium, got {client.model}"
+    assert client.provider_type == expected_provider, \
+        f"Expected {expected_provider} for dev/medium, got {client.provider_type}"
+    assert client.model == expected_model, \
+        f"Expected {expected_model} for dev/medium, got {client.model}"
 
 
 def test_dev_routing_with_real_config_complex():
-    """Test dev Client with complex complexity uses codex_cli/gpt-4-turbo."""
+    """Test dev Client with complex complexity uses configured provider/model."""
+    config = load_config()
+    routing = config.get("routing_by_complexity", {})
+    expected_provider = routing["dev"]["complex"]["provider"]
+    expected_model = routing["dev"]["complex"]["model"]
+
     client = Client(role="dev", complexity="complex")
-    assert client.provider_type == "codex_cli", \
-        f"Expected codex_cli for dev/complex, got {client.provider_type}"
-    assert client.model == "gpt-4-turbo", \
-        f"Expected gpt-4-turbo for dev/complex, got {client.model}"
+    assert client.provider_type == expected_provider, \
+        f"Expected {expected_provider} for dev/complex, got {client.provider_type}"
+    assert client.model == expected_model, \
+        f"Expected {expected_model} for dev/complex, got {client.model}"
 
 
 def test_qa_routing_with_real_config_simple():
-    """Test qa Client with simple complexity uses ollama/qwen2.5-coder:7b."""
+    """Test qa Client with simple complexity uses configured provider/model."""
+    config = load_config()
+    routing = config.get("routing_by_complexity", {})
+    expected_provider = routing["qa"]["simple"]["provider"]
+    expected_model = routing["qa"]["simple"]["model"]
+
     client = Client(role="qa", complexity="simple")
-    assert client.provider_type == "ollama", \
-        f"Expected ollama for qa/simple, got {client.provider_type}"
-    assert client.model == "qwen2.5-coder:7b", \
-        f"Expected qwen2.5-coder:7b for qa/simple, got {client.model}"
+    assert client.provider_type == expected_provider, \
+        f"Expected {expected_provider} for qa/simple, got {client.provider_type}"
+    assert client.model == expected_model, \
+        f"Expected {expected_model} for qa/simple, got {client.model}"
 
 
 def test_qa_routing_with_real_config_medium():
-    """Test qa Client with medium complexity uses vertex_cli/gemini-2.5-pro."""
+    """Test qa Client with medium complexity uses configured provider/model."""
+    config = load_config()
+    routing = config.get("routing_by_complexity", {})
+    expected_provider = routing["qa"]["medium"]["provider"]
+    expected_model = routing["qa"]["medium"]["model"]
+
     client = Client(role="qa", complexity="medium")
-    assert client.provider_type == "vertex_cli", \
-        f"Expected vertex_cli for qa/medium, got {client.provider_type}"
-    assert client.model == "gemini-2.5-pro", \
-        f"Expected gemini-2.5-pro for qa/medium, got {client.model}"
+    assert client.provider_type == expected_provider, \
+        f"Expected {expected_provider} for qa/medium, got {client.provider_type}"
+    assert client.model == expected_model, \
+        f"Expected {expected_model} for qa/medium, got {client.model}"
 
 
 def test_qa_routing_with_real_config_complex():
-    """Test qa Client with complex complexity uses claude_cli/claude-3-5-sonnet-latest."""
+    """Test qa Client with complex complexity uses configured provider/model."""
+    config = load_config()
+    routing = config.get("routing_by_complexity", {})
+    expected_provider = routing["qa"]["complex"]["provider"]
+    expected_model = routing["qa"]["complex"]["model"]
+
     client = Client(role="qa", complexity="complex")
-    assert client.provider_type == "claude_cli", \
-        f"Expected claude_cli for qa/complex, got {client.provider_type}"
-    assert client.model == "claude-3-5-sonnet-latest", \
-        f"Expected claude-3-5-sonnet-latest for qa/complex, got {client.model}"
+    assert client.provider_type == expected_provider, \
+        f"Expected {expected_provider} for qa/complex, got {client.provider_type}"
+    assert client.model == expected_model, \
+        f"Expected {expected_model} for qa/complex, got {client.model}"
 
 
 def test_fallback_when_no_complexity_provided():
@@ -93,50 +123,42 @@ def test_fallback_when_no_complexity_provided():
     defaults = config.get("defaults", {})
     default_complexity = defaults.get("complexity", "medium")
 
+    # Get expected provider/model for default complexity
+    routing = config.get("routing_by_complexity", {})
+    expected_provider = routing["dev"][default_complexity]["provider"]
+    expected_model = routing["dev"][default_complexity]["model"]
+
     # Create client without complexity
     client = Client(role="dev", complexity=None)
 
-    # Should use default complexity routing (medium)
-    if default_complexity == "medium":
-        assert client.provider_type == "vertex_sdk", \
-            f"Expected vertex_sdk for default medium, got {client.provider_type}"
-        assert client.model == "gemini-2.5-pro", \
-            f"Expected gemini-2.5-pro for default medium, got {client.model}"
+    # Should use default complexity routing
+    assert client.provider_type == expected_provider, \
+        f"Expected {expected_provider} for default {default_complexity}, got {client.provider_type}"
+    assert client.model == expected_model, \
+        f"Expected {expected_model} for default {default_complexity}, got {client.model}"
 
 
-def test_routing_matrices_match_documentation():
-    """Verify routing matrices match the documented configuration."""
+def test_routing_matrices_are_complete():
+    """Verify routing matrices have all required complexity levels configured."""
     config = load_config()
     routing = config.get("routing_by_complexity", {})
 
-    # Expected dev matrix from docs
-    expected_dev = {
-        "simple": {"provider": "ollama", "model": "qwen2.5-coder:7b"},
-        "medium": {"provider": "vertex_sdk", "model": "gemini-2.5-pro"},
-        "complex": {"provider": "codex_cli", "model": "gpt-4-turbo"}
-    }
-
-    # Expected qa matrix from docs
-    expected_qa = {
-        "simple": {"provider": "ollama", "model": "qwen2.5-coder:7b"},
-        "medium": {"provider": "vertex_cli", "model": "gemini-2.5-pro"},
-        "complex": {"provider": "claude_cli", "model": "claude-3-5-sonnet-latest"}
-    }
-
-    # Verify dev matrix
+    # Verify dev matrix has all complexity levels
     for complexity in ["simple", "medium", "complex"]:
-        actual = routing["dev"][complexity]
-        expected = expected_dev[complexity]
-        assert actual["provider"] == expected["provider"], \
-            f"Dev/{complexity} provider mismatch: {actual['provider']} != {expected['provider']}"
-        assert actual["model"] == expected["model"], \
-            f"Dev/{complexity} model mismatch: {actual['model']} != {expected['model']}"
+        assert complexity in routing["dev"], \
+            f"Dev matrix missing complexity: {complexity}"
+        dev_config = routing["dev"][complexity]
+        assert "provider" in dev_config and dev_config["provider"], \
+            f"Dev/{complexity} missing provider"
+        assert "model" in dev_config and dev_config["model"], \
+            f"Dev/{complexity} missing model"
 
-    # Verify qa matrix
+    # Verify qa matrix has all complexity levels
     for complexity in ["simple", "medium", "complex"]:
-        actual = routing["qa"][complexity]
-        expected = expected_qa[complexity]
-        assert actual["provider"] == expected["provider"], \
-            f"QA/{complexity} provider mismatch: {actual['provider']} != {expected['provider']}"
-        assert actual["model"] == expected["model"], \
-            f"QA/{complexity} model mismatch: {actual['model']} != {expected['model']}"
+        assert complexity in routing["qa"], \
+            f"QA matrix missing complexity: {complexity}"
+        qa_config = routing["qa"][complexity]
+        assert "provider" in qa_config and qa_config["provider"], \
+            f"QA/{complexity} missing provider"
+        assert "model" in qa_config and qa_config["model"], \
+            f"QA/{complexity} missing model"

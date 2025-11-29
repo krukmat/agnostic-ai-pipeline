@@ -1,6 +1,9 @@
 # scripts/run_qa.py
 from __future__ import annotations
 import os, sys, json, subprocess, pathlib, re, datetime
+BASE_DIR = pathlib.Path(__file__).resolve().parents[1]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 from typing import Optional
 import yaml
 import typer
@@ -591,7 +594,7 @@ def main():
             "touched": backend_touched,
         },
         "web":     {
-            "has_tests": web_tests,
+            "has_tests": bool(web_has) if "web_has" in locals() else False,
             "rc": normalize_rc(web_rc, web_rc == 127),
             "skipped": not run_web_tests,
             "touched": web_touched,
