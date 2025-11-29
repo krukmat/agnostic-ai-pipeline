@@ -66,13 +66,27 @@ def normalize_status(items):
         default_complexity = defaults.get("complexity", "medium") if isinstance(defaults, dict) else "medium"
     except Exception:
         default_complexity = "medium"
+
+    # Try to import complexity analyzer
+    try:
+        from scripts.utils.complexity_analyzer import analyze_story_complexity
+        use_analyzer = True
+    except Exception:
+        use_analyzer = False
+
     for s in items:
-        if not isinstance(s, dict): 
+        if not isinstance(s, dict):
             continue
         s.setdefault("status", "todo")
         if "complexity" not in s or not s.get("complexity"):
-            print(f"[fix_stories] Missing complexity for story {s.get('id','?')}, defaulting to {default_complexity}")
-            s.setdefault("complexity", default_complexity)
+            # Use intelligent analysis if available, otherwise fall back to default
+            if use_analyzer:
+                auto_complexity = analyze_story_complexity(s, verbose=False)
+                print(f"[fix_stories] Missing complexity for story {s.get('id','?')}, auto-classified as {auto_complexity}")
+                s["complexity"] = auto_complexity
+            else:
+                print(f"[fix_stories] Missing complexity for story {s.get('id','?')}, defaulting to {default_complexity}")
+                s.setdefault("complexity", default_complexity)
         fixed.append(s)
     return fixed
 
