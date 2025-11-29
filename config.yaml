@@ -54,8 +54,8 @@ providers:
     max_output_tokens: 2048
 roles:
   ba:
-    provider: ollama
-    model: granite4
+    provider: vertex_sdk
+    model: gemini-2.5-flash
     temperature: 0.4
     max_tokens: 8192
     top_p: 0.95
@@ -74,7 +74,7 @@ roles:
         min_tokens: 600
   dev:
     provider: vertex_sdk
-    model: gemini-2.5-pro
+    model: gemini-2.5-flash
     temperature: 0.2
     max_tokens: 8192
     top_p: 0.5
@@ -176,24 +176,24 @@ defaults:
 routing_by_complexity:
   dev:
     simple:
-      provider: ollama
-      model: qwen2.5-coder:7b
+      provider: vertex_sdk
+      model: gemini-2.5-flash
     medium:
       provider: vertex_sdk
-      model: gemini-2.5-pro
+      model: gemini-2.5-flash
     complex:
-      provider: codex_cli
-      model: gpt-4-turbo
+      provider: vertex_sdk
+      model: gemini-2.5-flash
   qa:
     simple:
-      provider: ollama
-      model: qwen2.5-coder:7b
+      provider: vertex_cli
+      model: gemini-2.5-flash
     medium:
       provider: vertex_cli
-      model: gemini-2.5-pro
+      model: gemini-2.5-flash
     complex:
-      provider: claude_cli
-      model: claude-3-5-sonnet-latest
+      provider: vertex_cli
+      model: gemini-2.5-flash
 database:
   enabled: true  # Fase 3: dual-write activado para pruebas
   path: data/pipeline.db

@@ -49,6 +49,8 @@ def load_llm_config() -> dspy.LM:
         lm_name = f"anthropic/{model}"
     elif provider == "ollama":
         lm_name = f"ollama/{model}"
+    elif provider in {"vertex_cli", "vertex_sdk"}:
+        lm_name = f"vertex_ai/{model}"
     else:
         typer.echo(
             f"Warning: Unknown provider '{provider}', falling back to openai/gpt-4",

@@ -7,6 +7,12 @@ import re
 import sys
 from typing import List, Tuple, Optional
 
+import pathlib
+
+ROOT_PATH = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT_PATH) not in sys.path:
+    sys.path.insert(0, str(ROOT_PATH))
+
 import typer
 import yaml
 
@@ -25,11 +31,19 @@ from scripts.architect_utils import (
 from scripts.architect.complexity_classifier import (
     classify_complexity_with_llm,
 )
-from scripts.utils.yaml_sanitizer import sanitize_yaml_block
+from scripts.utils.yaml_sanitizer import sanitize_yaml_block, sanitize_requirements_yaml
 from dspy_baseline.modules.architect import (
     StoriesEpicsModule,
     ArchitectureModule,
 )
+
+
+def _load_config() -> dict:
+    """Thin wrapper to load base config safely."""
+    try:
+        return load_config_base()
+    except Exception:
+        return {}
 
 
 ARCHITECT_PROMPTS = {
@@ -89,16 +103,6 @@ def _run_dspy_pipeline(
         "epics_yaml": epics_yaml,
         "architecture_yaml": architecture_yaml,
     }
-
-
-
-
-app = typer.Typer(help="Architect CLI (DSPy)")
-
-
-if __name__ == "__main__":
-    app()
-
 
 def _convert_stories_epics_to_yaml(raw_text: str) -> tuple[str, str]:
     # Backward-compatible wrapper retained for legacy callers inside this module
@@ -166,7 +170,8 @@ def _build_architect_context(
     iteration_count: int,
 ) -> dict:
     requirements_path = PLANNING / "requirements.yaml"
-    requirements_content = requirements_path.read_text(encoding="utf-8") if requirements_path.exists() else ""
+    requirements_content_raw = requirements_path.read_text(encoding="utf-8") if requirements_path.exists() else ""
+    requirements_content = sanitize_requirements_yaml(requirements_content_raw)
     vision_path = PLANNING / "product_vision.yaml"
     product_vision_content = vision_path.read_text(encoding="utf-8") if vision_path.exists() else ""
     concept_meta = extract_original_concept(requirements_content)
@@ -175,6 +180,7 @@ def _build_architect_context(
 
     return {
         "requirements_content": requirements_content,
+        "requirements_content_raw": requirements_content_raw,
         "vision_content": product_vision_content,
         "concept_value": concept_value,
         "stories_content": stories_content,
@@ -571,4 +577,8 @@ if __name__ == "__main__":
         asyncio.run(main())
     else:
         logger.debug("[ARCHITECT] Running typer app")
-        app()
+        try:
+            app()
+        except RuntimeError:
+            logger.debug("[ARCHITECT] Typer failed to resolve command; fallback to main()")
+            asyncio.run(main())

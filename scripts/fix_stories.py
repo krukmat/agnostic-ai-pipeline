@@ -60,10 +60,17 @@ def ensure_list_top_level(data):
 
 def normalize_status(items):
     fixed=[]
+    try:
+        from scripts.utils.config_loader import load_config_base
+        defaults = load_config_base().get("defaults", {}) if callable(load_config_base) else {}
+        default_complexity = defaults.get("complexity", "medium") if isinstance(defaults, dict) else "medium"
+    except Exception:
+        default_complexity = "medium"
     for s in items:
         if not isinstance(s, dict): 
             continue
         s.setdefault("status", "todo")
+        s.setdefault("complexity", default_complexity)
         fixed.append(s)
     return fixed
 
