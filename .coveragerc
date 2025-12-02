@@ -26,6 +26,7 @@ omit =
     scripts/reopen_stories.py
     scripts/providers/vertex_cli.py
     scripts/providers/vertex_sdk.py
+    scripts/dspy_lm_helper.py
     scripts/generate_*.py
     scripts/test_*.py
     tests/*
