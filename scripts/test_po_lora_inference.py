@@ -12,6 +12,10 @@ import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+import pytest
+
+pytest.importorskip("torch")
+
 import typer
 import torch
 from transformers import (
@@ -20,6 +24,9 @@ from transformers import (
     BitsAndBytesConfig,
 )
 from peft import PeftModel
+
+# Skip heavy HF/LoRA inference in CI/unit runs; this is a manual diagnostic script.
+pytest.skip("Skipping HF/LoRA inference test in automated suite", allow_module_level=True)
 
 app = typer.Typer(help="Test Product Owner LoRA model inference.")
 

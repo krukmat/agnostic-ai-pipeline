@@ -52,19 +52,25 @@ class IterationScriptTests(unittest.TestCase):
             )
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(len(commands), 3)
+        # BA, PO, plan, loop
+        self.assertEqual(len(commands), 4)
 
         ba_cmd, ba_env = commands[0]
         self.assertEqual(ba_cmd, ["make", "ba"])
         self.assertIsNotNone(ba_env)
         self.assertEqual(ba_env.get("CONCEPT"), "Demo")
 
-        plan_cmd, plan_env = commands[1]
+        po_cmd, po_env = commands[1]
+        self.assertEqual(po_cmd, ["make", "po"])
+        self.assertIsNotNone(po_env)
+        self.assertEqual(po_env.get("CONCEPT"), "Demo")
+
+        plan_cmd, plan_env = commands[2]
         self.assertEqual(plan_cmd, ["make", "plan"])
         self.assertIsNotNone(plan_env)
         self.assertEqual(plan_env.get("CONCEPT"), "Demo")
 
-        loop_cmd, loop_env = commands[2]
+        loop_cmd, loop_env = commands[3]
         self.assertEqual(loop_cmd, ["make", "loop"])
         self.assertIsNotNone(loop_env)
         self.assertEqual(loop_env.get("MAX_LOOPS"), "2")
@@ -97,9 +103,15 @@ class IterationScriptTests(unittest.TestCase):
             exit_code = run_iteration.main(["--skip-plan"])
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(len(commands), 1)  # Only loop should run
+        # With SKIP_BA=1 and --skip-plan, we run PO + loop
+        self.assertEqual(len(commands), 2)
 
-        loop_cmd, loop_env = commands[0]
+        po_cmd, po_env = commands[0]
+        self.assertEqual(po_cmd, ["make", "po"])
+        self.assertIsNotNone(po_env)
+        self.assertEqual(po_env.get("CONCEPT"), "Env Product")
+
+        loop_cmd, loop_env = commands[1]
         self.assertEqual(loop_cmd, ["make", "loop"])
         self.assertIsNotNone(loop_env)
         self.assertEqual(loop_env.get("MAX_LOOPS"), "3")

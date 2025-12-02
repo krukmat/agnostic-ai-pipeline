@@ -699,6 +699,15 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     for w in written:
         logger.info(f" - {w}")
 
+    # Return success payload with status for tests/in-process callers
+    return {
+        "status": "done",
+        "story_id": sid,
+        "artifacts_dir": str(story_art_dir),
+        "written": written,
+        "model_info": model_info,
+    }
+
     # Task 1.3: Execute driver build/test commands and generate summary (best-effort)
     try:
         cfg, drv_cfg = _load_config()

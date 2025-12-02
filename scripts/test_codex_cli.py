@@ -7,6 +7,9 @@ Ejecutar con: python scripts/test_codex_cli.py
 import asyncio
 import sys
 import pathlib
+import pytest
+
+pytestmark = pytest.mark.asyncio
 
 # Add current directory to path to import llm module
 sys.path.insert(0, str(pathlib.Path(__file__).parent))

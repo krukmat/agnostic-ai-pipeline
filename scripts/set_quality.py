@@ -1,6 +1,6 @@
 # scripts/set_quality.py
 from __future__ import annotations
-import argparse, sys, pathlib, yaml
+import argparse, sys, pathlib, yaml, os
 
 PRESETS = {
     "low":    {"temperature": 0.05, "top_p": 0.90, "max_tokens": 1536},
@@ -15,7 +15,7 @@ def main():
     args = ap.parse_args()
 
     root = pathlib.Path(__file__).resolve().parents[1]
-    cfg_path = root / "config.yaml"
+    cfg_path = pathlib.Path(os.environ.get("CONFIG_PATH", root / "config.yaml"))
     if not cfg_path.exists():
         sys.exit("config.yaml no encontrado")
 
