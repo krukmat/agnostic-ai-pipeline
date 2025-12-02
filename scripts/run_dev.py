@@ -699,16 +699,6 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     for w in written:
         logger.info(f" - {w}")
 
-    # Return success payload with status for tests/in-process callers
-    return {
-        "status": "done",
-        "story_id": sid,
-        "artifacts_dir": str(story_art_dir),
-        "written": written,
-        "model_info": model_info,
-    }
-
-    # Task 1.3: Execute driver build/test commands and generate summary (best-effort)
     try:
         cfg, drv_cfg = _load_config()
         if bool(drv_cfg.get("enabled", False)):
@@ -824,11 +814,13 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
         # Never block development due to driver layer
         logger.warning(f"[DEV][drivers] Non-fatal command execution error: {e}")
 
+    # Return success payload with status for tests/in-process callers
     return {
+        "status": "done",
         "story_id": sid,
-        "files_written": written,
-        "artifacts_dir": str(run_dir),
-        "model_info": model_info,  # Task: fix-metadata-persistence - Return model info for orchestrator
+        "artifacts_dir": str(story_art_dir),
+        "written": written,
+        "model_info": model_info,
     }
 
 

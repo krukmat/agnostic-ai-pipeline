@@ -175,6 +175,7 @@ async def main() -> None:
 
 
 async def run_dspy_program(requirements_content: str, concept: str, existing_vision: str) -> None:
+    # pragma: no cover - requires snapshot files and HF models; exercised manually
     program_dir = ROOT / "artifacts" / "dspy" / "po_optimized_full_snapshot_20251117T105427" / "product_owner"
     if not program_dir.exists():
         logger.error(f"[PO][DSPY] Snapshot missing at {program_dir} — aborting")
