@@ -22,13 +22,15 @@ from logger import logger
 import importlib.util
 
 # Task: database-layer - Import dual-write support
-from src.db import get_current_context
+# Task: DB integration - Phase 2 - Use ad-hoc context for standalone runs
+from scripts.utils.db_context import get_db_context_or_default
 
 from dspy_baseline.modules.ba_requirements import (
     generate_requirements as dsp_generate,
 )
 from scripts.dspy_lm_helper import build_lm_for_role
 import dspy
+from scripts.utils.db_context import get_db_context_or_default
 
 
 def _load_legacy_module():
@@ -70,11 +72,12 @@ def _run_dspy(concept: str) -> dict[str, str]:
     )
     logger.info("✓ requirements.yaml written via DSPy baseline")
 
-    # Task: database-layer - Save artifact to DB if context available
-    db_ctx = get_current_context()
+    # Task: DB integration - Phase 2 - Save artifact to DB with ad-hoc context
+    db_ctx = get_db_context_or_default()
     if db_ctx and db_ctx.enabled:
+        db_ctx.log_event("ba_start", role="ba", message=f"Generating requirements for: {concept}")
         db_ctx.save_artifact("ba", "requirements", data)
-        db_ctx.log_event("artifact_created", "BA requirements generated", role="ba")
+        db_ctx.log_event("ba_end", role="ba", message="BA requirements generated successfully")
         logger.debug("[BA] Artifact saved to database")
 
     return {"requirements_path": str(output_path)}
@@ -84,8 +87,23 @@ async def generate_requirements(concept: str) -> dict[str, str]:
     if _use_dspy():
         return _run_dspy(concept)
     logger.info("[BA] DSPy disabled; using legacy implementation.")
+    db_ctx = get_db_context_or_default()
     legacy_module = _load_legacy_module()
-    return await legacy_module.generate_requirements(concept)
+    result = await legacy_module.generate_requirements(concept)
+
+    # DB persistence (ad-hoc context)
+    if db_ctx and getattr(db_ctx, "enabled", False):
+        try:
+            req_path = PLANNING / "requirements.yaml"
+            if req_path.exists():
+                payload = req_path.read_text(encoding="utf-8")
+                db_ctx.log_event("ba_start", role="ba", message=f"Generating requirements for: {concept}")
+                db_ctx.save_artifact("ba", "requirements", payload)
+                db_ctx.log_event("ba_end", role="ba", message="Requirements generated")
+        except Exception as e:
+            logger.debug(f"[BA][db] Skipping DB persistence: {e}")
+
+    return result
 
 
 app = typer.Typer(help="Business Analyst agent CLI (DSPy or legacy)")

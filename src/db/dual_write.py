@@ -316,6 +316,30 @@ def set_current_context(ctx: Optional[DualWriteContext]) -> None:
     _current_context = ctx
 
 
+def get_or_create_adhoc_context(role: str = "unknown", concept: str = "standalone-run") -> Optional[DualWriteContext]:
+    """Return existing context or create ad-hoc project/iteration for standalone runs.
+
+    - If a current_context exists, return it (orchestrator path).
+    - If DB is disabled, return None.
+    - Otherwise, create a project named `adhoc-<role>` and start an iteration if none exists.
+    """
+    ctx = get_current_context()
+    if ctx:
+        return ctx
+
+    if not is_db_enabled():
+        return None
+
+    project_name = f"adhoc-{role}"
+    adhoc_ctx = DualWriteContext(project_name, concept)
+    adhoc_ctx.__enter__()
+
+    if not adhoc_ctx.iteration_id:
+        adhoc_ctx.start_iteration(loops_requested=1, config_snapshot={})
+
+    # Note: we don't set this as global current_context to avoid leaking across scripts
+    return adhoc_ctx
+
 def db_enabled() -> bool:
     """Check if database dual-write is enabled."""
     return is_db_enabled()

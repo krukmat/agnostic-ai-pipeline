@@ -1,6 +1,7 @@
 # scripts/run_qa.py
 from __future__ import annotations
 import os, sys, json, subprocess, pathlib, re, datetime
+from scripts.utils.db_context import get_db_context_or_default
 BASE_DIR = pathlib.Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -416,12 +417,19 @@ def run_cmd(cmd: list[str], story_art_dir: pathlib.Path, cwd: str | None = None)
 
 
 def main():
+    db_ctx = get_db_context_or_default()
     allow_no_tests = os.environ.get("ALLOW_NO_TESTS", "1") == "1"
     story_id = os.environ.get("STORY", "").strip() or f"qa-run-{datetime.datetime.now():%Y%m%d-%H%M%S}"
     story_art_dir = QA_ART_DIR / story_id
     story_art_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"[QA] Starting QA run for story '{story_id}'. ALLOW_NO_TESTS={allow_no_tests}")
     logger.info(f"[QA] Artifacts will be saved in: {story_art_dir}")
+    # Task: DB integration - Phase 2 - Log start event with story_id
+    if db_ctx and getattr(db_ctx, "enabled", False):
+        try:
+            db_ctx.log_event("qa_start", role="qa", story_id=story_id, message=f"QA starting for story: {story_id}")
+        except Exception:
+            pass
 
     changed_paths = load_dev_snapshot(story_id)
     backend_touched = any(_matches_area(path, BACKEND_PREFIX) for path in changed_paths)
@@ -673,10 +681,43 @@ def main():
         logger.warning(f"[QA] Could not write qa_summary.json: {e}")
 
     report_path = story_art_dir / "report.json"
-    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    report_json = json.dumps(report, indent=2)
+    report_path.write_text(report_json, encoding="utf-8")
     # For orchestrator compatibility, also write a "last_report" at the top level
-    (QA_ART_DIR / "last_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (QA_ART_DIR / "last_report.json").write_text(report_json, encoding="utf-8")
     logger.info(f"[QA] QA report for {story_id} written to {report_path}")
+
+    # Task: DB integration - Phase 2 - Persist artifacts and log attempt with correct signature
+    if db_ctx and getattr(db_ctx, "enabled", False):
+        try:
+            db_ctx.save_artifact("qa", "report_json", report_json)
+            if qa_summary:
+                db_ctx.save_artifact("qa", "qa_summary", json.dumps(qa_summary, indent=2, ensure_ascii=False))
+
+            # Log QA attempt with proper parameters
+            if hasattr(db_ctx, "log_attempt"):
+                try:
+                    # Map QA status to attempt status
+                    attempt_status = "success" if status == "pass" else "error"
+                    error_msg = None if status == "pass" else f"QA failed: {status}"
+
+                    db_ctx.log_attempt(
+                        story_id=story_id,
+                        role="qa",
+                        provider="local",
+                        model="pytest",
+                        status=attempt_status,
+                        duration_ms=None,  # TODO: track QA execution time
+                        error_message=error_msg,
+                        artifacts_path=str(story_art_dir),
+                    )
+                    logger.debug(f"[QA] Logged attempt for story {story_id} with status {attempt_status}")
+                except Exception as e:
+                    logger.warning(f"[QA] Could not log attempt: {e}")
+
+            db_ctx.log_event("qa_end", role="qa", story_id=story_id, message=f"QA completed with status: {status}")
+        except Exception as e:
+            logger.debug(f"[QA][db] Skipping DB persistence: {e}")
 
 
     # The orchestrator is now responsible for all status updates.

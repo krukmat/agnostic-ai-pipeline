@@ -195,6 +195,8 @@ routing_by_complexity:
       provider: vertex_cli
       model: gemini-2.5-flash
 database:
+  adhoc_context: true  # allow DB writes from standalone role runs
+  fail_on_error: false  # log DB errors but do not abort role scripts
   enabled: true  # Fase 3: dual-write activado para pruebas
   path: data/pipeline.db
   wal_mode: true

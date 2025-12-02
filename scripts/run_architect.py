@@ -17,17 +17,19 @@ import typer
 import yaml
 
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
+from scripts.utils.db_context import get_db_context_or_default
 from scripts.utils.config_loader import load_config_base, normalize_bool
 from scripts.utils.story_manager import load_stories as _load_stories_shared, save_stories as _save_stories_shared, STORIES_PATH
 from llm import Client
 from logger import logger # Import the logger
 
 # Task: database-layer - Import dual-write support
-from src.db import get_current_context
 from pathlib import Path
 from scripts.architect_utils import (
     convert_stories_epics_to_yaml,
 )
+# Task: DB integration - Phase 2 - Import story normalization
+from scripts.fix_stories import normalize_status
 from scripts.architect.complexity_classifier import (
     classify_complexity_with_llm,
 )
@@ -417,22 +419,45 @@ async def run_architect_job(
         if outputs.get("prd_yaml"):
             (PLANNING / "prd_generated.yaml").write_text(outputs["prd_yaml"], encoding="utf-8")
 
-        db_ctx = get_current_context()
+        # Task: DB integration - Phase 2 - Use ad-hoc context for standalone runs
+        db_ctx = get_db_context_or_default()
         if db_ctx and db_ctx.enabled:
+            db_ctx.log_event("architect_start", role="architect", message=f"Generating stories (DSPy, tier={tier_value})")
+
             db_ctx.save_artifact("architect", "stories", outputs["stories_yaml"])
             db_ctx.save_artifact("architect", "epics", outputs["epics_yaml"])
             db_ctx.save_artifact("architect", "architecture", outputs["architecture_yaml"])
             if outputs.get("prd_yaml"):
                 db_ctx.save_artifact("architect", "prd", outputs["prd_yaml"])
+
+            # Task: DB integration - Phase 2 - Normalize stories before DB sync
             try:
                 stories_data = yaml.safe_load(outputs["stories_yaml"])
+                stories_list = None
                 if isinstance(stories_data, list):
-                    db_ctx.create_stories_from_list(stories_data)
+                    stories_list = stories_data
                 elif isinstance(stories_data, dict) and "stories" in stories_data:
-                    db_ctx.create_stories_from_list(stories_data["stories"])
+                    stories_list = stories_data["stories"]
+
+                if stories_list:
+                    # Normalize status and complexity before syncing to DB
+                    stories_list = normalize_status(stories_list)
+                    # Update the file with normalized data
+                    if isinstance(stories_data, list):
+                        normalized_yaml = yaml.safe_dump(stories_list, sort_keys=False, allow_unicode=True)
+                    else:
+                        stories_data["stories"] = stories_list
+                        normalized_yaml = yaml.safe_dump(stories_data, sort_keys=False, allow_unicode=True)
+                    (PLANNING / "stories.yaml").write_text(normalized_yaml, encoding="utf-8")
+                    outputs["stories_yaml"] = normalized_yaml
+
+                    # Now sync to DB with normalized data
+                    db_ctx.create_stories_from_list(stories_list)
+                    logger.info(f"[ARCHITECT] Synced {len(stories_list)} normalized stories to DB")
             except Exception as e:
                 logger.warning(f"[ARCHITECT] Could not sync stories to DB: {e}")
-            db_ctx.log_event("artifact_created", "Architect artifacts generated (DSPy)", role="architect")
+
+            db_ctx.log_event("architect_end", role="architect", message="Architect artifacts generated (DSPy)")
 
         return {
             "mode": "dspy",
@@ -514,6 +539,7 @@ async def run_architect_job(
 
 async def main() -> None:
     logger.debug("[ARCHITECT] Entered main()")
+    db_ctx = get_db_context_or_default()
     architect_mode = os.environ.get("ARCHITECT_MODE", "normal")
     concept_env = os.environ.get("CONCEPT", "").strip()
     story_id = os.environ.get("STORY", "").strip()
@@ -534,6 +560,63 @@ async def main() -> None:
         force_tier=force_tier or None,
     )
     print(json.dumps(result, indent=2))
+
+    # Normalize and persist artifacts via DB (ad-hoc if enabled)
+    try:
+        defaults = load_config_base().get("defaults", {}) if isinstance(load_config_base(), dict) else {}
+    except Exception:
+        defaults = {}
+    default_complexity = defaults.get("complexity", "medium") if isinstance(defaults, dict) else "medium"
+
+    def _normalize_stories(path):
+        if not path.exists():
+            return None, None
+        raw = path.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) if raw.strip() else []
+        if isinstance(data, dict) and "stories" in data:
+            data = data["stories"]
+        if isinstance(data, list):
+            for s in data:
+                if isinstance(s, dict):
+                    s.setdefault("status", "todo")
+                    s.setdefault("complexity", default_complexity)
+            normalized = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+            path.write_text(normalized, encoding="utf-8")
+            return data, normalized
+        return None, raw
+
+    try:
+        if db_ctx and getattr(db_ctx, "enabled", False):
+            try:
+                db_ctx.log_event("architect_start", role="architect", message="Architect run completed")
+            except Exception:
+                pass
+
+            stories_p = PLANNING / "stories.yaml"
+            stories_data, stories_yaml = _normalize_stories(stories_p)
+            if stories_yaml:
+                db_ctx.save_artifact("architect", "stories", stories_yaml)
+                if stories_data and hasattr(db_ctx, "create_stories_from_list"):
+                    try:
+                        db_ctx.create_stories_from_list(stories_data)
+                    except Exception:
+                        pass
+
+            epics_p = PLANNING / "epics.yaml"
+            if epics_p.exists():
+                db_ctx.save_artifact("architect", "epics", epics_p.read_text(encoding="utf-8"))
+            arch_p = PLANNING / "architecture.yaml"
+            if arch_p.exists():
+                db_ctx.save_artifact("architect", "architecture", arch_p.read_text(encoding="utf-8"))
+            prd_p = PLANNING / "prd.yaml"
+            if prd_p.exists():
+                db_ctx.save_artifact("architect", "prd", prd_p.read_text(encoding="utf-8"))
+            try:
+                db_ctx.log_event("architect_end", role="architect", message="Architect artifacts persisted")
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug(f"[ARCHITECT][db] Skipping DB persistence: {e}")
 
 
 app = typer.Typer(help="Architect agent CLI")

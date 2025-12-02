@@ -10,11 +10,11 @@ import yaml
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from scripts.utils.config_loader import load_config_base, normalize_bool
 from scripts.utils.yaml_sanitizer import sanitize_po_yaml, sanitize_yaml_block, normalize_po_yaml
+from scripts.utils.db_context import get_db_context_or_default
+from scripts.utils.db_context import get_db_context_or_default
+from scripts.utils.db_context import get_db_context_or_default
 from llm import Client
 from logger import logger # Import the logger
-
-# Task: database-layer - Import dual-write support
-from src.db import get_current_context
 
 DSPY_CACHE_DIR = Path(os.environ.get("DSPY_CACHEDIR", "/tmp/dspy_cache"))
 DSPY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -83,6 +83,7 @@ def _use_dspy_po() -> bool:
 
 async def main() -> None:
     ensure_dirs()
+    db_ctx = get_db_context_or_default()
 
     requirements_path = PLANNING / "requirements.yaml"
     if not requirements_path.exists():
@@ -159,15 +160,18 @@ async def main() -> None:
     else:
         logger.warning("[PO] REVIEW block missing in LLM response")
 
-    # Task: database-layer - Save artifacts to DB
-    db_ctx = get_current_context()
-    if db_ctx and db_ctx.enabled:
-        if vision_yaml:
-            db_ctx.save_artifact("po", "product_vision", sanitized_vision)
-        if review_yaml:
-            db_ctx.save_artifact("po", "product_owner_review", sanitized_review)
-        db_ctx.log_event("artifact_created", "PO artifacts generated", role="po")
-        logger.debug("[PO] Artifacts saved to database")
+    # Task: DB integration - Phase 2 - Save artifacts to DB with event logging
+    if db_ctx and getattr(db_ctx, "enabled", False):
+        try:
+            db_ctx.log_event("po_start", role="po", message="Validating product vision")
+            if vision_yaml:
+                db_ctx.save_artifact("po", "product_vision", sanitized_vision)
+            if review_yaml:
+                db_ctx.save_artifact("po", "product_owner_review", sanitized_review)
+            db_ctx.log_event("po_end", role="po", message="PO artifacts generated successfully")
+            logger.debug("[PO] Artifacts saved to database")
+        except Exception as e:
+            logger.debug(f"[PO][db] Skipping DB persistence: {e}")
 
 
 async def run_dspy_program(requirements_content: str, concept: str, existing_vision: str) -> None:
@@ -230,15 +234,19 @@ async def run_dspy_program(requirements_content: str, concept: str, existing_vis
     else:
         logger.warning("[PO][DSPY] Missing product_owner_review output from snapshot")
 
-    # Task: database-layer - Save artifacts to DB (DSPy path)
-    db_ctx = get_current_context()
-    if db_ctx and db_ctx.enabled:
-        if vision_yaml:
-            db_ctx.save_artifact("po", "product_vision", sanitized_vision)
-        if review_yaml:
-            db_ctx.save_artifact("po", "product_owner_review", sanitized_review)
-        db_ctx.log_event("artifact_created", "PO artifacts generated (DSPy)", role="po")
-        logger.debug("[PO][DSPY] Artifacts saved to database")
+    # Task: DB integration - Phase 2 - Save artifacts to DB (DSPy path) with event logging
+    db_ctx = get_db_context_or_default()
+    if db_ctx and getattr(db_ctx, "enabled", False):
+        try:
+            db_ctx.log_event("po_start", role="po", message="Validating product vision (DSPy)")
+            if vision_yaml:
+                db_ctx.save_artifact("po", "product_vision", sanitized_vision)
+            if review_yaml:
+                db_ctx.save_artifact("po", "product_owner_review", sanitized_review)
+            db_ctx.log_event("po_end", role="po", message="PO artifacts generated (DSPy)")
+            logger.debug("[PO][DSPY] Artifacts saved to database")
+        except Exception as e:
+            logger.debug(f"[PO][db] Skipping DB persistence: {e}")
 
 
 if __name__ == "__main__":

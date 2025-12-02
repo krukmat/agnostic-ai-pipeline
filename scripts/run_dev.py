@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional
 import shutil
 
 import typer
+from scripts.utils.db_context import get_db_context_or_default
 import yaml
 from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
@@ -260,6 +261,7 @@ def safe_write(rel_path: str, content: str) -> str:
 async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str, Any]]:
     from llm import Client
     from common import load_config
+    db_ctx = get_db_context_or_default()
 
     # Task: recovery-system - Check for model_override in story metadata
     model_override = story.get("metadata", {}).get("model_override", {})
@@ -523,6 +525,7 @@ def _write_dev_summary(drivers_info: Dict[str, Any], run_dir: pathlib.Path) -> N
 
 
 async def implement_story(story_id: str | None = None, retries: int = 3) -> dict:
+    db_ctx = get_db_context_or_default()
     # Phase 2: Apply driver templates (behind feature flag via config) - Task 1.3: Refactored with helpers
     try:
         cfg, drv_cfg = _load_config()
@@ -557,6 +560,13 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
 
     logger.info(f"[DEV] Implementando: {sid} - {story.get('description', '(sin desc)')} (complexity={story.get('complexity', 'n/a')})")
 
+    # Task: DB integration - Phase 2 - Log dev_start event
+    if db_ctx and getattr(db_ctx, "enabled", False):
+        try:
+            db_ctx.log_event("dev_start", role="dev", story_id=sid, message=f"Starting development for story: {sid}")
+        except Exception as e:
+            logger.debug(f"[DEV] Could not log dev_start event: {e}")
+
     files_ctx = repo_tree(limit=300)
     files = None
     last_err = None
@@ -585,6 +595,26 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     if not files:
         error_msg = last_err or "[DEV] No FILES parsed from LLM response after all retries."
         logger.error(error_msg)
+
+        # Task: DB integration - Phase 2 - Log error event and attempt
+        if db_ctx and getattr(db_ctx, "enabled", False):
+            try:
+                db_ctx.log_event("dev_end", role="dev", story_id=sid, severity="error", message=f"Dev failed: {error_msg}")
+                if hasattr(db_ctx, "log_attempt") and model_info:
+                    provider = model_info.get("provider", "unknown")
+                    model = model_info.get("model", "unknown")
+                    db_ctx.log_attempt(
+                        story_id=sid,
+                        role="dev",
+                        provider=provider,
+                        model=model,
+                        status="error",
+                        error_message=error_msg,
+                        artifacts_path=str(story_art_dir),
+                    )
+            except Exception as e:
+                logger.debug(f"[DEV] Could not log error to DB: {e}")
+
         # Task: fix-metadata-persistence - Return error dict with model_info instead of sys.exit()
         # This allows orchestrator to capture model_history even on failure
         return {
@@ -608,6 +638,38 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "files.json").write_text(json.dumps(files, indent=2, ensure_ascii=False), encoding="utf-8")
     logger.debug(f"[DEV] Artifacts for run saved to {run_dir}")
+
+    # Task: DB integration - Phase 2 - Persist artifacts and log dev_end event
+    try:
+        if db_ctx and getattr(db_ctx, "enabled", False):
+            # Store files.json content
+            db_ctx.save_artifact("dev", "files_json", json.dumps(files, ensure_ascii=False))
+            # Store summary/model info
+            attempt_status = "pass"
+            if model_info:
+                db_ctx.save_artifact("dev", "model_info", json.dumps(model_info, ensure_ascii=False))
+
+            # Task: DB integration - Phase 2 - Log story attempt with correct signature
+            if hasattr(db_ctx, "log_attempt"):
+                try:
+                    provider = model_info.get("provider", "unknown") if model_info else "unknown"
+                    model = model_info.get("model", "unknown") if model_info else "unknown"
+                    db_ctx.log_attempt(
+                        story_id=sid,
+                        role="dev",
+                        provider=provider,
+                        model=model,
+                        status="success",
+                        artifacts_path=str(story_art_dir),
+                    )
+                    logger.debug(f"[DEV] Logged attempt for story {sid}")
+                except Exception as e:
+                    logger.debug(f"[DEV] Could not log attempt: {e}")
+
+            # Log dev_end event
+            db_ctx.log_event("dev_end", role="dev", story_id=sid, message=f"Development completed for story: {sid}")
+    except Exception as e:
+        logger.debug(f"[DEV][db] Skipping DB persistence: {e}")
 
     # The orchestrator is now responsible for marking the story status.
     # We no longer call mark_in_review(sid) here.
