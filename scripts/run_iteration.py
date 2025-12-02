@@ -145,7 +145,13 @@ def main(argv: list[str]) -> int:
 
     iteration_name = args.iteration_name or env.get("ITERATION_NAME", "") or dt.datetime.utcnow().strftime("iteration-%Y%m%d-%H%M%S")
 
-    loops_option = args.loops if args.loops is not None else int(env.get("LOOPS", "1"))
+    loops_arg_provided = args.loops is not None
+    loops_env_raw = env.get("LOOPS", "")
+    loops_env_provided = bool(loops_env_raw.strip())
+    try:
+        loops_option = int(args.loops if loops_arg_provided else (loops_env_raw or "1"))
+    except ValueError:
+        loops_option = 1
     allow_no_tests = args.allow_no_tests or env.get("ALLOW_NO_TESTS", "0") == "1"
     skip_ba = args.skip_ba or env.get("SKIP_BA", "0") == "1"
     skip_po = args.skip_po or env.get("SKIP_PO", "0") == "1"
@@ -180,8 +186,26 @@ def main(argv: list[str]) -> int:
     else:
         print("[iteration] Skipping Architect planning step as requested")
 
+    # Derive MAX_LOOPS from stories.yaml only when caller did not set --loops/LOOPS explicitly
+    derived_loops = max(1, loops_option)
+    if not (loops_arg_provided or loops_env_provided):
+        try:
+            stories_path = PLANNING / "stories.yaml"
+            if stories_path.exists():
+                import yaml
+                data = yaml.safe_load(stories_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and "stories" in data:
+                    data = data["stories"]
+                if isinstance(data, list):
+                    todos = [s for s in data if isinstance(s, dict) and str(s.get("status", "")).lower() == "todo"]
+                    if todos:
+                        derived_loops = max(derived_loops, len(todos))
+                        print(f"[iteration] Derived MAX_LOOPS from stories.yaml: {derived_loops}")
+        except Exception as exc:
+            print(f"[iteration] Warning: unable to derive loops from stories.yaml ({exc})")
+
     loop_env = {
-        "MAX_LOOPS": str(max(1, loops_option)),
+        "MAX_LOOPS": str(derived_loops),
         "ALLOW_NO_TESTS": "1" if allow_no_tests else "0",
     }
     if concept:

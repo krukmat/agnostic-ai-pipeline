@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -17,6 +18,7 @@ from pathlib import Path as _Path
 import yaml as _yaml
 
 app = typer.Typer(help="Optimize DSPy programs with dspy.MIPROv2.")
+logger = logging.getLogger(__name__)
 
 
 def _examples_from_jsonl(path: Path, role: str) -> List[dspy.Example]:
@@ -182,13 +184,13 @@ def _extract_program_components(compiled_program: Any, role: str) -> Dict[str, A
                         if hasattr(demo, "inputs"):
                             try:
                                 demo_dict["inputs"] = demo.inputs()
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                logger.warning("Unable to serialize demo.inputs(): %s", exc)
                         if hasattr(demo, "outputs"):
                             try:
                                 demo_dict["outputs"] = demo.outputs()
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                logger.warning("Unable to serialize demo.outputs(): %s", exc)
                         if not demo_dict and hasattr(demo, "_store"):
                             demo_dict = {k: v for k, v in demo._store.items()}
                         demos_data.append(demo_dict)
@@ -223,8 +225,8 @@ def _configure_lm(
         if max_tokens is not None:
             try:
                 setattr(lm_obj, "max_tokens", max_tokens)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Could not set max_tokens on DSPy LM: %s", exc)
         return lm_obj
 
     if provider in {"vertex", "vertex_ai"}:
@@ -239,8 +241,8 @@ def _configure_lm(
                 vcfg = providers.get("vertex_sdk", {}) if isinstance(providers, dict) else {}
                 project_id = project_id or vcfg.get("project_id")
                 location = location or vcfg.get("location")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Vertex config load failed; falling back to env vars (%s)", exc)
         # Fallback last to env vars if still missing (no hardcoded defaults)
         project_id = project_id or os.environ.get("GCP_PROJECT")
         location = location or os.environ.get("VERTEX_LOCATION")

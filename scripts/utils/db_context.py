@@ -7,8 +7,11 @@ is not running, so Dev/QA/BA/PO/Architect can persist artifacts/attempts/events
 without a full iteration context.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -40,11 +43,12 @@ def get_db_context_or_default():
         ctx = get_current_context()
         if ctx:
             return ctx
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[db_context] Falling back to ad-hoc context (get_current_context failed: %s)", exc)
 
     try:
         # Attempt to create an ad-hoc context via dual_write helper
         return dual_write.get_or_create_adhoc_context()  # type: ignore[attr-defined]
-    except Exception:
+    except Exception as exc:
+        logger.warning("[db_context] Ad-hoc context creation failed (%s); returning stub", exc)
         return AdHocContext()

@@ -6,7 +6,7 @@ ANALYZE the REQUIREMENTS and create:
 
 ENTERPRISE GUIDELINES:
 - Capture integration points, data contracts, security, audit, and performance expectations explicitly.
-- Acceptance criteria must be exhaustive (3-5 bullet items), covering happy path, edge cases, and automated tests.
+- Acceptance criteria must be exhaustive (3-5 bullet items), covering happy path, edge cases, and automated tests; note expected test scope and destination (e.g., pytest files under project/backend-fastapi/tests).
 - Mention required test types (unit, integration, end-to-end) when relevant.
 - Reference non-functional requirements (latency, usability, accessibility, compliance) when present in requirements.
 - Ensure priorities reflect business criticality, and distribute stories across epics sensibly.

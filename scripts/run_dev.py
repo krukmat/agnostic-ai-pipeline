@@ -356,6 +356,27 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
         logger.error(f"[DEV] Developer prompt file not found: {DEV_PROMPT}")
         raise FileNotFoundError(f"Developer prompt file not found: {DEV_PROMPT}")
 
+    # Optional hard enforcement: remind the model to ship pytest files when REQUIRED_TESTS=1/FORCE_TESTS=1
+    require_tests_flag = os.environ.get("REQUIRE_TESTS", os.environ.get("FORCE_TESTS", "0")) == "1"
+    if require_tests_flag:
+        extra_tests_prompt = ""
+        # Allow override via env var pointing to a file; default to prompts/developer_tests_enforcement.md
+        tests_prompt_path = os.environ.get("TESTS_ENFORCEMENT_PROMPT_FILE")
+        if not tests_prompt_path:
+            tests_prompt_path = str((ROOT / "prompts" / "developer_tests_enforcement.md").resolve())
+        try:
+            p = pathlib.Path(tests_prompt_path)
+            if p.exists():
+                extra_tests_prompt = p.read_text(encoding="utf-8")
+        except Exception as exc:
+            logger.warning(f"[DEV] Could not load tests enforcement prompt ({tests_prompt_path}): {exc}")
+        if not extra_tests_prompt:
+            extra_tests_prompt = (
+                "CRITICAL: Tests are mandatory for this run. "
+                "Emit at least one pytest file under project/backend-fastapi/tests or project/web-express/tests aligned to the story."
+            )
+        system_prompt += f"\n\n{extra_tests_prompt}"
+
 
     story_txt = yaml.safe_dump(story, sort_keys=False, allow_unicode=True)
     user = textwrap.dedent(

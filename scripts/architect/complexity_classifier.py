@@ -9,6 +9,7 @@ from typing import Dict, Optional, Protocol, Tuple
 
 from llm import Client
 from common import ROOT
+from logger import logger
 
 
 class ComplexityCache(Protocol):
@@ -93,8 +94,8 @@ async def classify_complexity_with_llm(
         if tier:
             cache_obj.set(cache_key, tier)
             return tier
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(f"[architect] Complexity LLM classification failed, using fallback ({exc})")
 
     fallback = fallback_complexity(cleaned)
     cache_obj.set(cache_key, fallback)

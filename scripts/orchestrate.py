@@ -1070,7 +1070,10 @@ async def _process_iteration(
 
 async def main():
     max_loops = int(os.environ.get("MAX_LOOPS", "1"))
+    require_tests = os.environ.get("REQUIRE_TESTS", os.environ.get("FORCE_TESTS", "0")) == "1"
     allow_no_tests = os.environ.get("ALLOW_NO_TESTS", "0") == "1"
+    if require_tests:
+        allow_no_tests = False  # hard override when pipeline must enforce test creation/execution
     status_no_tests = os.environ.get("BACKFLOW_STATUS_FOR_NO_TESTS", "in_review")
     enable_architect_intervention = os.environ.get("ARCHITECT_INTERVENTION", "1") == "1"
 

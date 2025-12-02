@@ -129,8 +129,8 @@ def get_architect_prompt(mode: str, tier: str) -> str:
                 p = (ROOT / override_path) if not override_path.startswith("/") else Path(override_path)
                 if p.exists():
                     return p.read_text(encoding="utf-8")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(f"[ARCH] Prompt override failed for {override_path}: {exc}")
     return ARCHITECT_PROMPTS.get(tier, ARCHITECT_PROMPTS["medium"])
 
 
@@ -589,8 +589,8 @@ async def main() -> None:
         if db_ctx and getattr(db_ctx, "enabled", False):
             try:
                 db_ctx.log_event("architect_start", role="architect", message="Architect run completed")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(f"[ARCH][db] Could not log architect_start: {exc}")
 
             stories_p = PLANNING / "stories.yaml"
             stories_data, stories_yaml = _normalize_stories(stories_p)
@@ -599,8 +599,8 @@ async def main() -> None:
                 if stories_data and hasattr(db_ctx, "create_stories_from_list"):
                     try:
                         db_ctx.create_stories_from_list(stories_data)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning(f"[ARCH][db] Failed creating stories in DB: {exc}")
 
             epics_p = PLANNING / "epics.yaml"
             if epics_p.exists():
@@ -613,8 +613,8 @@ async def main() -> None:
                 db_ctx.save_artifact("architect", "prd", prd_p.read_text(encoding="utf-8"))
             try:
                 db_ctx.log_event("architect_end", role="architect", message="Architect artifacts persisted")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(f"[ARCH][db] Could not log architect_end: {exc}")
     except Exception as e:
         logger.debug(f"[ARCHITECT][db] Skipping DB persistence: {e}")
 

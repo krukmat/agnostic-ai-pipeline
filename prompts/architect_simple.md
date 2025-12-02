@@ -6,7 +6,7 @@ ANALYZE the REQUIREMENTS and create:
 
 SIMPLIFIED GUIDELINES:
 - Keep stories broad enough for developer creativity; describe the intent, not line-by-line tasks.
-- Each story still requires automated tests as part of delivery, but you can reference them at a high level.
+- Each story still requires automated tests as part of delivery; mention expected test scope and target file (e.g., pytest under project/backend-fastapi/tests).
 - Acceptance criteria should focus on observable outcomes (2 bullet points each).
 - Prioritize velocity: prefer combining related behaviour into a single story instead of splitting too much.
 

@@ -270,7 +270,7 @@ cleanup_artifacts() {
 run_test_scenario() {
   local scenario_name="$1"
   local concept="$2"
-  local max_loops="${3:-2}"
+  local max_loops="${3:-}"
   local complexity="${4:-medium}"
 
   TOTAL_TESTS=$((TOTAL_TESTS + 1))
@@ -286,18 +286,52 @@ run_test_scenario() {
 
   # Cleanup before test
   cleanup_artifacts
+  # Ensure report dir exists after cleanup
+  mkdir -p "$REPORT_DIR"
 
   # Run full iteration
   log_info "Running full pipeline iteration..."
 
+  # If MAX_LOOPS not set explicitly, derive from stories.yaml after planning (fallback to provided max_loops)
+  local derived_loops="$max_loops"
+  if [[ -n "${MAX_LOOPS:-}" ]]; then
+    derived_loops="$MAX_LOOPS"
+    log_info "Using MAX_LOOPS from environment: $derived_loops"
+  elif [[ -z "$max_loops" || "$max_loops" == "auto" ]]; then
+    if [[ -f "planning/stories.yaml" ]]; then
+      local todo_count
+      todo_count=$(python - <<'PY'
+import yaml
+from pathlib import Path
+p = Path("planning/stories.yaml")
+try:
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    if isinstance(data, dict) and "stories" in data:
+        data = data["stories"]
+    todos = [s for s in data or [] if isinstance(s, dict) and str(s.get("status","")).lower() == "todo"]
+    print(len(todos))
+except Exception:
+    print("")
+PY
+)
+      if [[ -n "$todo_count" && "$todo_count" =~ ^[0-9]+$ && "$todo_count" -gt 0 ]]; then
+        derived_loops="$todo_count"
+        log_info "Derived MAX_LOOPS from stories.yaml: $derived_loops"
+      fi
+    fi
+  fi
+  if [[ -z "$derived_loops" ]]; then
+    derived_loops=1
+  fi
+
   if [[ "$VERBOSE" == "true" ]]; then
     set +e
-    CONCEPT="$concept" MAX_LOOPS="$max_loops" make iteration 2>&1 | tee "$test_log"
+    CONCEPT="$concept" MAX_LOOPS="$derived_loops" make iteration 2>&1 | tee "$test_log"
     local exit_code=${PIPESTATUS[0]}
     set -e
   else
     set +e
-    CONCEPT="$concept" MAX_LOOPS="$max_loops" make iteration > "$test_log" 2>&1
+    CONCEPT="$concept" MAX_LOOPS="$derived_loops" make iteration > "$test_log" 2>&1
     local exit_code=$?
     set -e
   fi

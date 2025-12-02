@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 from typing import Any, Dict
 
@@ -10,6 +11,7 @@ import yaml
 import dspy
 
 
+logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 _CONFIG_CACHE: Dict[str, Any] | None = None
 
@@ -94,8 +96,8 @@ def build_lm_for_role(role: str, **override_kwargs) -> dspy.LM:
     if lm_kwargs.get("max_tokens") is not None:
         try:
             setattr(lm, "max_tokens", lm_kwargs["max_tokens"])
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Could not set max_tokens on LM (%s)", exc)
     return lm
 
 
@@ -156,7 +158,7 @@ def pick_max_tokens_for(role: str, cap_tokens: int) -> int:
         if env_tok:
             try:
                 return int(env_tok)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Invalid DSPY_MIPRO_MAX_TOKENS=%r; falling back to role defaults (%s)", env_tok, exc)
         return get_role_max_tokens(role, default=cap_tokens)
     return cap_tokens

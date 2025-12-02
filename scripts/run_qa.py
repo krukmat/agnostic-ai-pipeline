@@ -428,8 +428,8 @@ def main():
     if db_ctx and getattr(db_ctx, "enabled", False):
         try:
             db_ctx.log_event("qa_start", role="qa", story_id=story_id, message=f"QA starting for story: {story_id}")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"[QA][db] Could not log qa_start: {exc}")
 
     changed_paths = load_dev_snapshot(story_id)
     backend_touched = any(_matches_area(path, BACKEND_PREFIX) for path in changed_paths)
