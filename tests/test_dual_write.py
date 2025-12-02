@@ -2,11 +2,17 @@
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from src.db.storage import Database, reset_db
 from src.db.schema import create_schema
-from src.db.dual_write import DualWriteContext, db_enabled, get_current_context, set_current_context
+from src.db.dual_write import (
+    DualWriteContext,
+    db_enabled,
+    get_current_context,
+    set_current_context,
+    get_or_create_adhoc_context,
+)
 from src.db.repository import (
     ProjectRepository,
     IterationRepository,
@@ -327,3 +333,30 @@ class TestDbEnabled:
 
         with patch("src.db.dual_write.is_db_enabled", return_value=False):
             assert db_enabled() is False
+
+
+class TestAdhocContext:
+    """Tests for get_or_create_adhoc_context helper."""
+
+    def test_returns_none_when_db_disabled(self):
+        with patch("src.db.dual_write.is_db_enabled", return_value=False):
+            ctx = get_or_create_adhoc_context(role="dev", concept="c")
+            assert ctx is None
+
+    def test_reuses_existing_context(self):
+        dummy_ctx = object()
+        with patch("src.db.dual_write.get_current_context", return_value=dummy_ctx):
+            ctx = get_or_create_adhoc_context(role="dev", concept="c")
+            assert ctx is dummy_ctx
+
+    def test_creates_new_context_and_starts_iteration(self):
+        mock_ctx = MagicMock()
+        mock_ctx.iteration_id = None
+        with patch("src.db.dual_write.is_db_enabled", return_value=True), patch(
+            "src.db.dual_write.DualWriteContext", return_value=mock_ctx
+        ) as mock_cls:
+            ctx = get_or_create_adhoc_context(role="dev", concept="c")
+            mock_cls.assert_called_once_with("adhoc-dev", "c")
+            mock_ctx.__enter__.assert_called_once()
+            mock_ctx.start_iteration.assert_called_once()
+            assert ctx is mock_ctx

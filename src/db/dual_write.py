@@ -271,7 +271,30 @@ class DualWriteContext:
             return None
 
         db_story_id = self.get_story_db_id(story_id)
+
+        # Task: DB integration - Phase 3 - Create placeholder if story missing
+        if not db_story_id and self._iteration_id and self._stories:
+            logger.warning(f"[DualWrite] Story {story_id} not in DB, creating placeholder")
+            db_story_id = self._stories.create(
+                iteration_id=self._iteration_id,
+                story_id=story_id,
+                title=f"[Placeholder] {story_id}",
+                description="Created automatically during dev/qa run (architect not synced yet)",
+                status="doing",
+                priority=None,  # Unknown priority
+                estimate=None,
+            )
+            if db_story_id:
+                self.log_event(
+                    "story_placeholder_created",
+                    role=role,
+                    story_id=story_id,
+                    message=f"Auto-created placeholder for {story_id}",
+                    severity="warning",
+                )
+
         if not db_story_id:
+            logger.error(f"[DualWrite] Cannot log attempt for {story_id}: failed to create story")
             return None
 
         # Get attempt number
