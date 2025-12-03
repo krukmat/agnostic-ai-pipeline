@@ -80,3 +80,76 @@ def log_cycle_end(db_ctx, role: str, story_id: str, status: str, message: str) -
             db_ctx.log_event(f"{role}_end", role=role, story_id=story_id, message=message, severity=status)
         except Exception:
             logger.debug(f"[orchestrator] log_cycle_end failed for role={role}", exc_info=True)
+
+
+# --- Optional shared helpers (story/artifacts/report/db) ---
+
+def resolve_story(story_env: str | None, planning_path: Path | None = None) -> Dict[str, Any] | None:
+    """Resolve story by env ID (case-insensitive) else first TODO."""
+    stories = load_stories_from_planning(planning_path)
+    if not stories:
+        return None
+    if story_env:
+        target = story_env.strip().lower()
+        for s in stories:
+            sid = str(s.get("id", "")).strip().lower()
+            if sid == target:
+                return s
+    for s in stories:
+        if str(s.get("status", "")).lower() == "todo":
+            return s
+    return None
+
+
+def ensure_artifact_dir(root: Path, story_id: str) -> Path:
+    """Ensure artifact directory for a story exists and return it."""
+    path = root / story_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def default_run_name(now: dt.datetime | None = None, prefix: str = "run") -> str:
+    """Default run name (prefix + timestamp)."""
+    now = now or dt.datetime.utcnow()
+    return f"{prefix}-{now:%Y%m%d-%H%M%S}"
+
+
+def write_report_files(report: Dict[str, Any], story_art_dir: Path, last_report_dir: Path | None = None) -> Path:
+    """Write report.json under story artifacts and optional last_report.json."""
+    story_art_dir.mkdir(parents=True, exist_ok=True)
+    report_path = story_art_dir / "report.json"
+    report_path.write_text(yaml.safe_dump(report, sort_keys=False), encoding="utf-8")
+    if last_report_dir:
+        last_report_dir.mkdir(parents=True, exist_ok=True)
+        (last_report_dir / "last_report.json").write_text(
+            yaml.safe_dump(report, sort_keys=False),
+            encoding="utf-8",
+        )
+    return report_path
+
+
+def log_attempt_safe(
+    db_ctx,
+    *,
+    story_id: str,
+    role: str,
+    status: str,
+    provider: str = "unknown",
+    model: str = "unknown",
+    artifacts_path: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    """Wrapper around db.log_attempt that no-ops if disabled/missing."""
+    if getattr(db_ctx, "enabled", False) and hasattr(db_ctx, "log_attempt"):
+        try:
+            db_ctx.log_attempt(
+                story_id=story_id,
+                role=role,
+                status=status,
+                provider=provider,
+                model=model,
+                artifacts_path=artifacts_path,
+                error_message=error_message,
+            )
+        except Exception:
+            logger.debug(f"[orchestrator] log_attempt_safe failed for role={role}", exc_info=True)

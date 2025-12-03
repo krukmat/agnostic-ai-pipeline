@@ -56,7 +56,7 @@ roles:
   ba:
     provider: ollama  # local model for BA
     model: qwen2.5:32b
-    temperature: 0.3
+    temperature: 0.3  # balanced for requirement clarity
     max_tokens: 8192
     top_p: 0.9
   architect:
@@ -106,9 +106,9 @@ roles:
     max_tokens: 8192
     top_p: 0.9
   product_owner:
-    provider: vertex_sdk
-    model: gemini-2.5-pro
-    temperature: 0.6
+    provider: ollama  # local to avoid external token spend
+    model: qwen2.5:32b
+    temperature: 0.4  # reduce randomness for acceptance criteria alignment
     max_tokens: 8192
     top_p: 0.95
 pipeline:
@@ -179,21 +179,21 @@ qa:
 routing_by_complexity:
   dev:
     simple:
-      provider: vertex_sdk
-      model: gemini-2.5-flash
+      provider: ollama
+      model: qwen2.5-coder:32b
     medium:
-      provider: vertex_sdk
-      model: gemini-2.5-flash
+      provider: ollama
+      model: qwen2.5-coder:32b
     complex:
       provider: vertex_sdk
-      model: gemini-2.5-flash
+      model: gemini-2.5-pro
   qa:
     simple:
-      provider: vertex_cli
-      model: gemini-2.5-flash
+      provider: ollama
+      model: qwen2.5-coder:32b
     medium:
-      provider: vertex_cli
-      model: gemini-2.5-flash
+      provider: ollama
+      model: qwen2.5-coder:32b
     complex:
       provider: vertex_cli
       model: gemini-2.5-flash
