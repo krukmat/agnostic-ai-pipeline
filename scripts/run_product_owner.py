@@ -10,11 +10,12 @@ import yaml
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from scripts.utils.config_loader import load_config_base, normalize_bool
 from scripts.utils.yaml_sanitizer import sanitize_po_yaml, sanitize_yaml_block, normalize_po_yaml
+from scripts.utils.prompt_builders import build_po_user_payload
 from scripts.utils.db_context import get_db_context_or_default
-from scripts.utils.db_context import get_db_context_or_default
-from scripts.utils.db_context import get_db_context_or_default
+from scripts.utils.db_logger import DbLogger
 from llm import Client
 from logger import logger # Import the logger
+from scripts.utils.llm_runner import LLMRunner
 
 DSPY_CACHE_DIR = Path(os.environ.get("DSPY_CACHEDIR", "/tmp/dspy_cache"))
 DSPY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -83,7 +84,7 @@ def _use_dspy_po() -> bool:
 
 async def main() -> None:
     ensure_dirs()
-    db_ctx = get_db_context_or_default()
+    db = DbLogger(get_db_context_or_default())
 
     requirements_path = PLANNING / "requirements.yaml"
     if not requirements_path.exists():
@@ -120,8 +121,9 @@ async def main() -> None:
     logger.debug(f"[PO] Calling LLM via {client.provider_type} with model {client.model}, temp {client.temperature}, max_tokens {client.max_tokens}")
 
 
-    user = build_user_payload(concept, existing_vision, requirements_content)
-    response = await client.chat(system=PO_PROMPT, user=user)
+    user = build_po_user_payload(concept, existing_vision, requirements_content)
+    runner = LLMRunner([client])
+    response, _ = await runner.chat(system=PO_PROMPT, user=user, retries=1)
     save_text(DEBUG_PATH, response)
     logger.debug(f"[PO] Full response saved to {DEBUG_PATH}")
 
@@ -136,7 +138,7 @@ async def main() -> None:
             + " If you lack details for a section, return an empty list [] or a short placeholder,"
             + " but the REVIEW block is mandatory. Regenerate the entire response now."
         )
-        response = await client.chat(system=PO_PROMPT, user=retry_user)
+        response, _ = await runner.chat(system=PO_PROMPT, user=retry_user, retries=1)
         save_text(DEBUG_PATH, response)
         vision_yaml = grab_block(response, "yaml", "VISION")
         review_yaml = grab_block(response, "yaml", "REVIEW")
@@ -161,17 +163,14 @@ async def main() -> None:
         logger.warning("[PO] REVIEW block missing in LLM response")
 
     # Task: DB integration - Phase 2 - Save artifacts to DB with event logging
-    if db_ctx and getattr(db_ctx, "enabled", False):
-        try:
-            db_ctx.log_event("po_start", role="po", message="Validating product vision")
-            if vision_yaml:
-                db_ctx.save_artifact("po", "product_vision", sanitized_vision)
-            if review_yaml:
-                db_ctx.save_artifact("po", "product_owner_review", sanitized_review)
-            db_ctx.log_event("po_end", role="po", message="PO artifacts generated successfully")
-            logger.debug("[PO] Artifacts saved to database")
-        except Exception as e:
-            logger.debug(f"[PO][db] Skipping DB persistence: {e}")
+    if db.enabled:
+        db.log_event("po_start", role="po", message="Validating product vision")
+        if vision_yaml:
+            db.save_artifact("po", "product_vision", sanitized_vision)
+        if review_yaml:
+            db.save_artifact("po", "product_owner_review", sanitized_review)
+        db.log_event("po_end", role="po", message="PO artifacts generated successfully")
+        logger.debug("[PO] Artifacts saved to database")
 
 
 async def run_dspy_program(requirements_content: str, concept: str, existing_vision: str) -> None:

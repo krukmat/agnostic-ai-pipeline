@@ -18,6 +18,7 @@ import yaml
 
 from common import ensure_dirs, PLANNING, ROOT, ART, save_text
 from scripts.utils.db_context import get_db_context_or_default
+from scripts.utils.db_logger import DbLogger
 from scripts.utils.config_loader import load_config_base, normalize_bool
 from scripts.utils.story_manager import load_stories as _load_stories_shared, save_stories as _save_stories_shared, STORIES_PATH
 from llm import Client
@@ -34,6 +35,8 @@ from scripts.architect.complexity_classifier import (
     classify_complexity_with_llm,
 )
 from scripts.utils.yaml_sanitizer import sanitize_yaml_block, sanitize_requirements_yaml
+from scripts.utils.prompt_builders import build_architect_prompt
+from scripts.utils.llm_runner import LLMRunner
 from dspy_baseline.modules.architect import (
     StoriesEpicsModule,
     ArchitectureModule,
@@ -420,15 +423,15 @@ async def run_architect_job(
             (PLANNING / "prd_generated.yaml").write_text(outputs["prd_yaml"], encoding="utf-8")
 
         # Task: DB integration - Phase 2 - Use ad-hoc context for standalone runs
-        db_ctx = get_db_context_or_default()
-        if db_ctx and db_ctx.enabled:
-            db_ctx.log_event("architect_start", role="architect", message=f"Generating stories (DSPy, tier={tier_value})")
+        db = DbLogger(get_db_context_or_default())
+        if db.enabled:
+            db.log_event("architect_start", role="architect", message=f"Generating stories (DSPy, tier={tier_value})")
 
-            db_ctx.save_artifact("architect", "stories", outputs["stories_yaml"])
-            db_ctx.save_artifact("architect", "epics", outputs["epics_yaml"])
-            db_ctx.save_artifact("architect", "architecture", outputs["architecture_yaml"])
+            db.save_artifact("architect", "stories", outputs["stories_yaml"])
+            db.save_artifact("architect", "epics", outputs["epics_yaml"])
+            db.save_artifact("architect", "architecture", outputs["architecture_yaml"])
             if outputs.get("prd_yaml"):
-                db_ctx.save_artifact("architect", "prd", outputs["prd_yaml"])
+                db.save_artifact("architect", "prd", outputs["prd_yaml"])
 
             # Task: DB integration - Phase 2 - Normalize stories before DB sync
             try:
@@ -452,12 +455,12 @@ async def run_architect_job(
                     outputs["stories_yaml"] = normalized_yaml
 
                     # Now sync to DB with normalized data
-                    db_ctx.create_stories_from_list(stories_list)
+                    db.ctx.create_stories_from_list(stories_list) if hasattr(db, "ctx") else None
                     logger.info(f"[ARCHITECT] Synced {len(stories_list)} normalized stories to DB")
             except Exception as e:
                 logger.warning(f"[ARCHITECT] Could not sync stories to DB: {e}")
 
-            db_ctx.log_event("architect_end", role="architect", message="Architect artifacts generated (DSPy)")
+            db.log_event("architect_end", role="architect", message="Architect artifacts generated (DSPy)")
 
         return {
             "mode": "dspy",
@@ -490,23 +493,18 @@ async def run_architect_job(
 
     complexity_tier, arch_prompt = await _select_prompt_tier(requirements_content, force_tier, architect_mode)
 
-    if architect_mode == "review_adjustment":
-        user_input = (
-            f"CURRENT_STORIES:\n{stories_content}\n\n"
-            f"DETAIL_LEVEL: {detail_level}\nITERATION_COUNT: {iteration_count}\n"
-            "INSTRUCTION: Ajusta únicamente las historias en estado in_review o bloqueadas, "
-            "añadiendo criterios de aceptación técnicos y accionables."
-        )
-        if story_id:
-            user_input += f"\nTARGET_STORY: {story_id}"
-    else:
-        if not concept_value:
-            raise ValueError("Concept is required to run architect in normal mode.")
-        user_input = (
-            f"CONCEPT:\n{concept_value}\n\nREQUIREMENTS:\n{requirements_content}\n\n"
-            f"COMPLEXITY_TIER: {complexity_tier.upper()}\n\n"
-            "Follow the exact output format."
-        )
+    if architect_mode != "review_adjustment" and not concept_value:
+        raise ValueError("Concept is required to run architect in normal mode.")
+    user_input = build_architect_prompt(
+        concept_value=concept_value,
+        requirements_content=requirements_content,
+        complexity_tier=complexity_tier,
+        stories_content=stories_content,
+        detail_level=detail_level,
+        iteration_count=iteration_count,
+        architect_mode=architect_mode,
+        story_id=story_id,
+    )
 
     client = Client(role="architect")
 
@@ -521,7 +519,8 @@ async def run_architect_job(
     print(f"System prompt length: {len(arch_prompt)}")
     print(f"User input preview: {user_input[:300]}...")
 
-    text = await client.chat(system=arch_prompt, user=user_input)
+    runner = LLMRunner([client])
+    text, _ = await runner.chat(system=arch_prompt, user=user_input, retries=1)
 
     return await _parse_architect_response(
         text=text,
@@ -586,16 +585,14 @@ async def main() -> None:
         return None, raw
 
     try:
-        if db_ctx and getattr(db_ctx, "enabled", False):
-            try:
-                db_ctx.log_event("architect_start", role="architect", message="Architect run completed")
-            except Exception as exc:
-                logger.warning(f"[ARCH][db] Could not log architect_start: {exc}")
+        db = DbLogger(db_ctx)
+        if db.enabled:
+            db.log_event("architect_start", role="architect", message="Architect run completed")
 
             stories_p = PLANNING / "stories.yaml"
             stories_data, stories_yaml = _normalize_stories(stories_p)
             if stories_yaml:
-                db_ctx.save_artifact("architect", "stories", stories_yaml)
+                db.save_artifact("architect", "stories", stories_yaml)
                 if stories_data and hasattr(db_ctx, "create_stories_from_list"):
                     try:
                         db_ctx.create_stories_from_list(stories_data)
@@ -604,17 +601,14 @@ async def main() -> None:
 
             epics_p = PLANNING / "epics.yaml"
             if epics_p.exists():
-                db_ctx.save_artifact("architect", "epics", epics_p.read_text(encoding="utf-8"))
+                db.save_artifact("architect", "epics", epics_p.read_text(encoding="utf-8"))
             arch_p = PLANNING / "architecture.yaml"
             if arch_p.exists():
-                db_ctx.save_artifact("architect", "architecture", arch_p.read_text(encoding="utf-8"))
+                db.save_artifact("architect", "architecture", arch_p.read_text(encoding="utf-8"))
             prd_p = PLANNING / "prd.yaml"
             if prd_p.exists():
-                db_ctx.save_artifact("architect", "prd", prd_p.read_text(encoding="utf-8"))
-            try:
-                db_ctx.log_event("architect_end", role="architect", message="Architect artifacts persisted")
-            except Exception as exc:
-                logger.warning(f"[ARCH][db] Could not log architect_end: {exc}")
+                db.save_artifact("architect", "prd", prd_p.read_text(encoding="utf-8"))
+            db.log_event("architect_end", role="architect", message="Architect artifacts persisted")
     except Exception as e:
         logger.debug(f"[ARCHITECT][db] Skipping DB persistence: {e}")
 

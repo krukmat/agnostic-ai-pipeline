@@ -13,6 +13,9 @@ import shutil
 
 import typer
 from scripts.utils.db_context import get_db_context_or_default
+from scripts.utils.db_logger import DbLogger
+from scripts.utils.llm_runner import LLMRunner
+from scripts.utils.prompt_builders import build_dev_prompt
 import yaml
 from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
@@ -21,6 +24,7 @@ from drivers.registry import load_driver
 from scripts.utils.runner import driver_log_name, normalize_rc, run_driver_cmd
 from drivers.detect import has_idf, has_west
 import subprocess
+from scripts.utils.driver_command import DriverCommand
 
 # --- Paths ---
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -266,6 +270,7 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
     # Task: recovery-system - Check for model_override in story metadata
     model_override = story.get("metadata", {}).get("model_override", {})
 
+    clients = []
     if model_override:
         override_provider = model_override.get("provider")
         override_model = model_override.get("model")
@@ -335,8 +340,10 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
             logger.debug(f"[DEV] Using Vertex provider: {provider_type}")
         else:
             logger.warning(f"[DEV] Unknown provider type '{provider_type}', may not work correctly")
+        clients.append(client)
     else:
         client = Client(role="dev", complexity=story.get("complexity"))
+        clients.append(client)
 
     logger.debug(f"[DEV] LLM Client initialized: provider={client.provider_type}, model={client.model}")
 
@@ -348,19 +355,18 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
     }
 
     # Load prompt from file like other roles
-    system_prompt = ""
+    base_system_prompt = ""
     if DEV_PROMPT.exists():
-        system_prompt = DEV_PROMPT.read_text(encoding="utf-8")
-        logger.debug(f"[DEV] Loaded system prompt from {DEV_PROMPT} ({len(system_prompt)} chars)")
+        base_system_prompt = DEV_PROMPT.read_text(encoding="utf-8")
+        logger.debug(f"[DEV] Loaded system prompt from {DEV_PROMPT} ({len(base_system_prompt)} chars)")
     else:
         logger.error(f"[DEV] Developer prompt file not found: {DEV_PROMPT}")
         raise FileNotFoundError(f"Developer prompt file not found: {DEV_PROMPT}")
 
     # Optional hard enforcement: remind the model to ship pytest files when REQUIRED_TESTS=1/FORCE_TESTS=1
     require_tests_flag = os.environ.get("REQUIRE_TESTS", os.environ.get("FORCE_TESTS", "0")) == "1"
+    extra_tests_prompt = ""
     if require_tests_flag:
-        extra_tests_prompt = ""
-        # Allow override via env var pointing to a file; default to prompts/developer_tests_enforcement.md
         tests_prompt_path = os.environ.get("TESTS_ENFORCEMENT_PROMPT_FILE")
         if not tests_prompt_path:
             tests_prompt_path = str((ROOT / "prompts" / "developer_tests_enforcement.md").resolve())
@@ -375,33 +381,17 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
                 "CRITICAL: Tests are mandatory for this run. "
                 "Emit at least one pytest file under project/backend-fastapi/tests or project/web-express/tests aligned to the story."
             )
-        system_prompt += f"\n\n{extra_tests_prompt}"
 
-
-    story_txt = yaml.safe_dump(story, sort_keys=False, allow_unicode=True)
-    user = textwrap.dedent(
-        f"""\
-        STORY (YAML):
-        ```yaml
-        {story_txt}
-        ```
-
-        REPO TREE (first lines):
-        ```
-        {files_ctx}
-        ```
-        """
-    )
+    system_prompt, user = build_dev_prompt(base_system_prompt, story, files_ctx, extra_tests_prompt if require_tests_flag else "")
     logger.debug(f"[DEV] User prompt prepared ({len(user)} chars)")
 
     # Task: fix-metadata-persistence - Return model_info even when client.chat() fails
     # This ensures we can track which models were attempted even on errors
     try:
-        response = await client.chat(system=system_prompt, user=user)
+        runner = LLMRunner(clients)
+        response, model_info = await runner.chat(system=system_prompt, user=user, retries=1)
         return response, model_info
     except Exception as e:
-        # client.chat() failed, but we still return model_info for tracking
-        # The exception message becomes the error, model_info shows which model failed
         logger.debug(f"[DEV] client.chat() failed: {e}")
         return None, model_info  # Return None response but preserve model_info
 
@@ -546,7 +536,7 @@ def _write_dev_summary(drivers_info: Dict[str, Any], run_dir: pathlib.Path) -> N
 
 
 async def implement_story(story_id: str | None = None, retries: int = 3) -> dict:
-    db_ctx = get_db_context_or_default()
+    db = DbLogger(get_db_context_or_default())
     # Phase 2: Apply driver templates (behind feature flag via config) - Task 1.3: Refactored with helpers
     try:
         cfg, drv_cfg = _load_config()
@@ -582,11 +572,8 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     logger.info(f"[DEV] Implementando: {sid} - {story.get('description', '(sin desc)')} (complexity={story.get('complexity', 'n/a')})")
 
     # Task: DB integration - Phase 2 - Log dev_start event
-    if db_ctx and getattr(db_ctx, "enabled", False):
-        try:
-            db_ctx.log_event("dev_start", role="dev", story_id=sid, message=f"Starting development for story: {sid}")
-        except Exception as e:
-            logger.debug(f"[DEV] Could not log dev_start event: {e}")
+    if db.enabled:
+        db.log_event("dev_start", role="dev", story_id=sid, message=f"Starting development for story: {sid}")
 
     files_ctx = repo_tree(limit=300)
     files = None
@@ -618,23 +605,20 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
         logger.error(error_msg)
 
         # Task: DB integration - Phase 2 - Log error event and attempt
-        if db_ctx and getattr(db_ctx, "enabled", False):
-            try:
-                db_ctx.log_event("dev_end", role="dev", story_id=sid, severity="error", message=f"Dev failed: {error_msg}")
-                if hasattr(db_ctx, "log_attempt") and model_info:
-                    provider = model_info.get("provider", "unknown")
-                    model = model_info.get("model", "unknown")
-                    db_ctx.log_attempt(
-                        story_id=sid,
-                        role="dev",
-                        provider=provider,
-                        model=model,
-                        status="error",
-                        error_message=error_msg,
-                        artifacts_path=str(story_art_dir),
-                    )
-            except Exception as e:
-                logger.debug(f"[DEV] Could not log error to DB: {e}")
+        if db.enabled:
+            db.log_event("dev_end", role="dev", story_id=sid, severity="error", message=f"Dev failed: {error_msg}")
+            if model_info:
+                provider = model_info.get("provider", "unknown")
+                model = model_info.get("model", "unknown")
+                db.log_attempt(
+                    story_id=sid,
+                    role="dev",
+                    provider=provider,
+                    model=model,
+                    status="error",
+                    error_message=error_msg,
+                    artifacts_path=str(story_art_dir),
+                )
 
         # Task: fix-metadata-persistence - Return error dict with model_info instead of sys.exit()
         # This allows orchestrator to capture model_history even on failure
@@ -662,33 +646,25 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
 
     # Task: DB integration - Phase 2 - Persist artifacts and log dev_end event
     try:
-        if db_ctx and getattr(db_ctx, "enabled", False):
+        if db.enabled:
             # Store files.json content
-            db_ctx.save_artifact("dev", "files_json", json.dumps(files, ensure_ascii=False))
+            db.save_artifact("dev", "files_json", json.dumps(files, ensure_ascii=False))
             # Store summary/model info
-            attempt_status = "pass"
             if model_info:
-                db_ctx.save_artifact("dev", "model_info", json.dumps(model_info, ensure_ascii=False))
+                db.save_artifact("dev", "model_info", json.dumps(model_info, ensure_ascii=False))
 
-            # Task: DB integration - Phase 2 - Log story attempt with correct signature
-            if hasattr(db_ctx, "log_attempt"):
-                try:
-                    provider = model_info.get("provider", "unknown") if model_info else "unknown"
-                    model = model_info.get("model", "unknown") if model_info else "unknown"
-                    db_ctx.log_attempt(
-                        story_id=sid,
-                        role="dev",
-                        provider=provider,
-                        model=model,
-                        status="success",
-                        artifacts_path=str(story_art_dir),
-                    )
-                    logger.debug(f"[DEV] Logged attempt for story {sid}")
-                except Exception as e:
-                    logger.debug(f"[DEV] Could not log attempt: {e}")
-
+            provider = model_info.get("provider", "unknown") if model_info else "unknown"
+            model = model_info.get("model", "unknown") if model_info else "unknown"
+            db.log_attempt(
+                story_id=sid,
+                role="dev",
+                provider=provider,
+                model=model,
+                status="success",
+                artifacts_path=str(story_art_dir),
+            )
             # Log dev_end event
-            db_ctx.log_event("dev_end", role="dev", story_id=sid, message=f"Development completed for story: {sid}")
+            db.log_event("dev_end", role="dev", story_id=sid, message=f"Development completed for story: {sid}")
     except Exception as e:
         logger.debug(f"[DEV][db] Skipping DB persistence: {e}")
 
@@ -728,18 +704,18 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                     }
                     # Prefer running tests for backend (build often is a server)
                     if getattr(be, "test", None):
-                        rc = _run("backend", be.id, "test", be.test.command)
+                        rc = DriverCommand("backend", be.id, "test", be.test.command, run_dir).execute()
                         be_entry["commands"]["test"] = {
                             "attempted": True,
                             "rc": normalize_rc(rc, rc == 127),
-                            "log": str((run_dir / driver_log_name("backend", be.id, "test")).relative_to(ROOT)),
+                            "log": str((run_dir / f"backend_{be.id}_test.log").relative_to(ROOT)),
                         }
                     if getattr(be, "lint", None):
-                        rc = _run("backend", be.id, "lint", be.lint.command)
+                        rc = DriverCommand("backend", be.id, "lint", be.lint.command, run_dir).execute()
                         be_entry["commands"]["lint"] = {
                             "attempted": True,
                             "rc": normalize_rc(rc, rc == 127),
-                            "log": str((run_dir / driver_log_name("backend", be.id, "lint")).relative_to(ROOT)),
+                            "log": str((run_dir / f"backend_{be.id}_lint.log").relative_to(ROOT)),
                         }
                     drivers_info["backend"] = be_entry
                 except Exception as e:
@@ -761,25 +737,25 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                         "commands": {},
                     }
                     if getattr(fe, "build", None):
-                        rc = _run("web", fe.id, "build", fe.build.command)
+                        rc = DriverCommand("web", fe.id, "build", fe.build.command, run_dir).execute()
                         fe_entry["commands"]["build"] = {
                             "attempted": True,
                             "rc": normalize_rc(rc, rc == 127),
-                            "log": str((run_dir / driver_log_name("web", fe.id, "build")).relative_to(ROOT)),
+                            "log": str((run_dir / f"web_{fe.id}_build.log").relative_to(ROOT)),
                         }
                     if getattr(fe, "test", None):
-                        rc = _run("web", fe.id, "test", fe.test.command)
+                        rc = DriverCommand("web", fe.id, "test", fe.test.command, run_dir).execute()
                         fe_entry["commands"]["test"] = {
                             "attempted": True,
                             "rc": normalize_rc(rc, rc == 127),
-                            "log": str((run_dir / driver_log_name("web", fe.id, "test")).relative_to(ROOT)),
+                            "log": str((run_dir / f"web_{fe.id}_test.log").relative_to(ROOT)),
                         }
                     if getattr(fe, "lint", None):
-                        rc = _run("web", fe.id, "lint", fe.lint.command)
+                        rc = DriverCommand("web", fe.id, "lint", fe.lint.command, run_dir).execute()
                         fe_entry["commands"]["lint"] = {
                             "attempted": True,
                             "rc": normalize_rc(rc, rc == 127),
-                            "log": str((run_dir / driver_log_name("web", fe.id, "lint")).relative_to(ROOT)),
+                            "log": str((run_dir / f"web_{fe.id}_lint.log").relative_to(ROOT)),
                         }
                     drivers_info["frontend"] = fe_entry
                 except Exception as e:

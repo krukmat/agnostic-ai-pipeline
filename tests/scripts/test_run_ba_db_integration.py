@@ -1,6 +1,7 @@
 import pytest
 
 from scripts import run_ba
+from scripts.utils.db_logger import DbLogger
 
 
 class DummyCtx:
@@ -32,6 +33,7 @@ async def test_generate_requirements_logs_to_db(monkeypatch, tmp_path):
     ctx = DummyCtx()
     monkeypatch.setattr(run_ba, "_load_legacy_module", lambda: DummyLegacy())
     monkeypatch.setattr(run_ba, "get_db_context_or_default", lambda: ctx)
+    monkeypatch.setattr(run_ba, "DbLogger", lambda ctx_val=None: DbLogger(ctx))
 
     res = await run_ba.generate_requirements("concept")
     assert res["ok"] is True

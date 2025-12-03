@@ -2,6 +2,8 @@
 from __future__ import annotations
 import os, sys, json, subprocess, pathlib, re, datetime
 from scripts.utils.db_context import get_db_context_or_default
+from scripts.utils.db_logger import DbLogger
+from scripts.utils.qa_prompt_builder import build_qa_config
 BASE_DIR = pathlib.Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -13,6 +15,7 @@ from logger import logger # Import the logger
 from drivers.registry import load_driver  # P2.2: Driver integration for QA
 from scripts.utils.runner import driver_log_name, normalize_rc, run_driver_cmd
 from drivers.detect import has_idf, has_west
+from scripts.utils.driver_command import DriverCommand
 
 QA_ART_DIR = ROOT / "artifacts" / "qa"
 QA_ART_DIR.mkdir(parents=True, exist_ok=True)
@@ -416,245 +419,91 @@ def run_cmd(cmd: list[str], story_art_dir: pathlib.Path, cwd: str | None = None)
         return 1
 
 
-def main():
-    db_ctx = get_db_context_or_default()
-    allow_no_tests = os.environ.get("ALLOW_NO_TESTS", "1") == "1"
-    story_id = os.environ.get("STORY", "").strip() or f"qa-run-{datetime.datetime.now():%Y%m%d-%H%M%S}"
+def main() -> None:
+    """Execute QA checks for the current story, writing artifacts and summary."""
+    story_env = os.environ.get("STORY", "")
+    story_id, allow_no_tests, run_tests = build_qa_config(story_env)
+    cfg, drivers_cfg, targets = _load_qa_config()
+    db = get_db_context_or_default()
+    db.log_event("qa_start", role="qa", story_id=story_id, message="QA run started")
+
     story_art_dir = QA_ART_DIR / story_id
     story_art_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"[QA] Starting QA run for story '{story_id}'. ALLOW_NO_TESTS={allow_no_tests}")
-    logger.info(f"[QA] Artifacts will be saved in: {story_art_dir}")
-    # Task: DB integration - Phase 2 - Log start event with story_id
-    if db_ctx and getattr(db_ctx, "enabled", False):
-        try:
-            db_ctx.log_event("qa_start", role="qa", story_id=story_id, message=f"QA starting for story: {story_id}")
-        except Exception as exc:
-            logger.warning(f"[QA][db] Could not log qa_start: {exc}")
+    backend_tests_dir = ROOT / "project" / "backend-fastapi" / "tests"
+    web_root = ROOT / "project" / "web-express"
 
+    # Detect touched areas from dev snapshot
     changed_paths = load_dev_snapshot(story_id)
-    backend_touched = any(_matches_area(path, BACKEND_PREFIX) for path in changed_paths)
-    web_touched = any(_matches_area(path, WEB_PREFIX) for path in changed_paths)
-    other_touched = [
-        path for path in changed_paths
-        if not _matches_area(path, BACKEND_PREFIX) and not _matches_area(path, WEB_PREFIX)
-    ]
-    scoped_execution = bool(changed_paths) and not other_touched
-    run_backend_tests = True
-    run_web_tests = True
-    if scoped_execution:
-        run_backend_tests = backend_touched
-        run_web_tests = web_touched
-        if not backend_touched and not web_touched:
-            # Fall back to full run if changes are outside backend/web but scoped
-            run_backend_tests = True
-            run_web_tests = True
-        else:
-            logger.info(
-                "[QA] Scoped execution enabled. Backend touched=%s, Web touched=%s",
-                backend_touched,
-                web_touched,
-            )
-    elif changed_paths:
-        logger.info(
-            "[QA] Developer snapshot includes %d non-mapped paths. Running full QA.",
-            len(changed_paths),
+    be_has = any(_matches_area(p, BACKEND_PREFIX) for p in changed_paths)
+    web_has = any(_matches_area(p, WEB_PREFIX) for p in changed_paths)
+
+    run_backend_tests = run_tests or be_has or not changed_paths
+    run_web_tests = run_tests or web_has
+
+    be_tests_present = has_any_test(backend_tests_dir)
+    web_tests_present = has_any_web_test(web_root)
+
+    areas = {
+        "backend": {"has_tests": be_tests_present, "rc": None},
+        "web": {"has_tests": web_tests_present, "rc": None},
+        "embedded": {"has_tests": False, "rc": None},
+    }
+
+    be_rc = None
+    web_rc = None
+
+    if run_backend_tests and be_tests_present:
+        fix_backend_test_imports(backend_tests_dir)
+        be_rc = run_cmd(
+            [str(ROOT / ".venv" / "bin" / "pytest"), "-q", "--disable-warnings", "--maxfail=1"],
+            story_art_dir,
+            cwd=str(ROOT / "project" / "backend-fastapi"),
         )
     else:
-        logger.debug("[QA] No developer snapshot available. Running full QA suite.")
-
-    # Task 1.4: Use helper for config loading
-    cfg, drv_cfg, targets = _load_qa_config()
-    drivers_enabled = bool(drv_cfg.get("enabled", False))
-
-    def run_shell(area: str, driver_id: str, cmd_name: str, cmd: str) -> int:
-        log_name = driver_log_name(area, driver_id, cmd_name)
-        logf = story_art_dir / log_name
-        return run_driver_cmd(cmd, pathlib.Path(log_name).stem, ROOT, logf, logger, role="QA")
-
-    # Backend
-    be_rc = None
-    if not run_backend_tests:
         be_rc = 0
-        logger.info(f"[QA][backend] SKIP: no backend changes detected for story {story_id}")
-    elif drivers_enabled and targets.get("backend"):
-        try:
-                be = load_driver("backend", targets.get("backend"))
-                if getattr(be, "test", None):
-                    be_rc = run_shell("backend", be.id, "test", be.test.command)
-                else:
-                    be_rc = 0
-                    logger.info("[QA][backend] SKIP: backend driver has no test command")
-                if getattr(be, "lint", None):
-                    _ = run_shell("backend", be.id, "lint", be.lint.command)
-        except Exception as e:
-            logger.warning(f"[QA][backend] SKIP: backend driver test skipped due to error: {e}")
-            be_rc = 0
+    areas["backend"]["rc"] = be_rc
+
+    if run_web_tests and web_tests_present and (web_root / "package.json").exists():
+        npm_cmd = ["npm", "test", "--", "--passWithNoTests"]
+        web_rc = run_cmd(npm_cmd, story_art_dir, cwd=str(web_root))
     else:
-        be_root = ROOT / "project" / "backend-fastapi"
-        be_tests = be_root / "tests"
-        be_has = has_any_test(be_tests)
-        if be_has:
-            logger.info(f"[QA] Backend has tests in {be_tests}. Running pytest...")
-            pytest_bin = ROOT / ".venv" / "bin" / "pytest"
-            if pytest_bin.exists():
-                be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], story_art_dir=story_art_dir, cwd=str(be_root))
-                if be_rc != 0:
-                    logger.warning(f"[QA] Pytest returned {be_rc}. Checking for import errors...")
-                    missing = log_contains_import_error(story_art_dir)
-                    if any(m.startswith("backend_fastapi") or "backend-fastapi" in m for m in missing):
-                        if fix_backend_test_imports(be_tests):
-                            logger.info("[QA] Auto-corrected backend test imports. Re-running pytest.")
-                            be_rc = run_cmd([str(pytest_bin), "-q", "--disable-warnings", "--maxfail=1"], story_art_dir=story_art_dir, cwd=str(be_root))
-                        else:
-                            logger.warning("[QA] Could not auto-correct backend test imports.")
-                    else:
-                        logger.debug("[QA] No backend-fastapi related import errors found.")
-            else:
-                be_rc = 127
-                logger.error(f"[QA] Pytest binary not found: {pytest_bin}. Setting backend return code to {be_rc}.")
-        else:
-            be_rc = 0
-            logger.info("[QA][backend] SKIP: no backend tests found")
+        web_rc = 0 if not run_web_tests else None
+    areas["web"]["rc"] = web_rc
 
-    # Web
-    web_rc = None
-    if not run_web_tests:
-        web_rc = 0
-        logger.info(f"[QA][web] SKIP: no web changes detected for story {story_id}")
-    elif drivers_enabled and targets.get("frontend"):
-        try:
-                fe = load_driver("frontend", targets.get("frontend"))
-                if getattr(fe, "build", None):
-                    _ = run_shell("web", fe.id, "build", fe.build.command)
-                if getattr(fe, "test", None):
-                    web_rc = run_shell("web", fe.id, "test", fe.test.command)
-                else:
-                    web_rc = 0
-                    logger.info("[QA][web] SKIP: frontend driver has no test command")
-                if getattr(fe, "lint", None):
-                    _ = run_shell("web", fe.id, "lint", fe.lint.command)
-        except Exception as e:
-            logger.warning(f"[QA][web] SKIP: frontend driver test skipped due to error: {e}")
-            web_rc = 0
-    else:
-        web_root = ROOT / "project" / "web-express"
-        web_tests = has_any_web_test(web_root)
-        pkg_json = web_root / "package.json"
-        if not pkg_json.exists():
-            web_rc = 0 # not configured
-            logger.info("[QA][web] SKIP: package.json missing in web-express")
-        elif web_tests:
-            logger.info(f"[QA] Web has tests in {web_root}. Running npm test...")
-            # BUG-S2-001: if Jest isn't installed, skip gracefully to avoid false negatives
-            jest_bin = web_root / "node_modules" / ".bin" / "jest"
-            if not jest_bin.exists():
-                web_rc = 0
-                logger.info("[QA][web] SKIP: Jest not installed (node_modules/.bin/jest missing)")
-            else:
-                web_rc = run_cmd(["npm", "test", "--silent", "--", "--passWithNoTests"], story_art_dir=story_art_dir, cwd=str(web_root))
-        else:
-            web_rc = 0  # no tests
-            logger.info("[QA][web] SKIP: no web tests found")
-
-
-    # Embedded (P3.4): detect and optionally execute test when enabled
-    if drivers_enabled and targets.get("embedded"):
-        try:
-            emb = load_driver("embedded", targets.get("embedded"))
-            emb_flags = ((cfg.get("drivers") or {}).get("embedded") or {})
-            is_esp = emb.framework.lower().startswith("esp-idf") or emb.id.startswith("esp32")
-            is_zephyr = emb.framework.lower().startswith("zephyr")
-            ok = False
-            if is_esp:
-                ok, msg = has_idf()
-                logger.info(f"[QA][embedded] ESP‑IDF: {msg}")
-            elif is_zephyr:
-                ok, msg = has_west()
-                logger.info(f"[QA][embedded] Zephyr west: {msg}")
-            else:
-                logger.info(f"[QA][embedded] Framework '{emb.framework}' (no detection configured)")
-
-            # Optional test execution
-            if ok and emb_flags.get("run_test") and getattr(emb, "test", None):
-                logf = story_art_dir / f"embedded_{emb.id}_test.log"
-                cmd = emb.test.command
-                logger.info(f"[QA][embedded] Running 'test': {cmd}")
-                try:
-                    res = subprocess.run(cmd, shell=True, cwd=str(ROOT), capture_output=True, text=True)
-                    logf.write_text((res.stdout or "") + ("\n" + (res.stderr or "") if res.stderr else ""), encoding="utf-8")
-                    if res.returncode != 0:
-                        logger.warning(f"[QA][embedded] 'test' returned {res.returncode} (see {logf})")
-                    else:
-                        logger.info(f"[QA][embedded] 'test' completed (see {logf})")
-                except FileNotFoundError as e:
-                    logger.warning(f"[QA][embedded] command not found for 'test': {e}")
-                except Exception as e:
-                    logger.warning(f"[QA][embedded] 'test' failed: {e}")
-        except Exception as e:
-            logger.warning(f"[QA] Embedded driver detection skipped: {e}")
-
-    # Future extensions: mobile etc. (omitted for now)
-    areas = {
-        "backend": {
-            "has_tests": be_has,
-            "rc": normalize_rc(be_rc, be_rc == 127),
-            "skipped": not run_backend_tests,
-            "touched": backend_touched,
-        },
-        "web":     {
-            "has_tests": bool(web_has) if "web_has" in locals() else False,
-            "rc": normalize_rc(web_rc, web_rc == 127),
-            "skipped": not run_web_tests,
-            "touched": web_touched,
-        },
-    }
-    logger.debug(f"[QA] Test areas summary: {areas}")
-
+    # Embedded drivers (optional)
+    emb_rc = None
+    if drivers_cfg.get("enabled") and targets.get("embedded"):
+        emb = load_driver("embedded", targets["embedded"])
+        if emb and getattr(emb, "test", None):
+            emb_cmd = DriverCommand("embedded", emb.id, "test", emb.test.command, story_art_dir)
+            emb_rc = emb_cmd.execute()
+    areas["embedded"]["rc"] = emb_rc if emb_rc is not None else 0
 
     failure_details = analyze_test_failures(story_art_dir, areas, be_rc, web_rc)
     collection_errors_present = has_collection_errors(failure_details)
-    logger.debug(f"[QA] Collection errors present: {collection_errors_present}")
 
-
-    # When allow_no_tests is True, ignore test execution failures and treat as success
     if allow_no_tests:
-        # If allow_no_tests, only check if we have the structure (has_tests)
         any_has_tests = any(v["has_tests"] for v in areas.values())
-        logger.debug(f"[QA] ALLOW_NO_TESTS is True. Any area has tests: {any_has_tests}")
-
-
         if collection_errors_present:
-            status = "blocked_fatal"  # Treat collection errors as critical even in allow_no_tests
+            status = "blocked_fatal"
             code = 4
-            logger.error(f"[QA] Status: {status} (Collection errors present)")
         elif any_has_tests:
             status = "pass"
             code = 0
-            logger.info(f"[QA] Status: {status} (Tests found, no collection errors)")
         else:
             status = "no_tests"
             code = 3
-            logger.info(f"[QA] Status: {status} (No tests found)")
     else:
-        # Strict mode: treat skips as success (rc=0). Only fail on real failures or collection errors.
         any_fail = any(v["rc"] not in (0,) for v in areas.values())
-        logger.debug(f"[QA] Strict mode. Any test failed: {any_fail}")
-
         if collection_errors_present:
-            status = "blocked_fatal"  # Critical error
+            status = "blocked_fatal"
             code = 4
-            logger.error(f"[QA] Status: {status} (Collection errors present in strict mode)")
         elif any_fail:
             status = "fail"
             code = 2
-            logger.warning(f"[QA] Status: {status} (Tests failed in strict mode)")
         else:
             status = "pass"
             code = 0
-            logger.info(f"[QA] Status: {status} (All tests passed in strict mode)")
-
-
-    # Detailed failure analysis
 
     report = {
         "status": status,
@@ -664,7 +513,6 @@ def main():
         "story_context": story_id,
     }
 
-    # Task 1.4: Use helper to build standardized QA summary
     qa_summary = _build_qa_summary(
         story_art_dir,
         be_rc,
@@ -683,48 +531,30 @@ def main():
     report_path = story_art_dir / "report.json"
     report_json = json.dumps(report, indent=2)
     report_path.write_text(report_json, encoding="utf-8")
-    # For orchestrator compatibility, also write a "last_report" at the top level
     (QA_ART_DIR / "last_report.json").write_text(report_json, encoding="utf-8")
     logger.info(f"[QA] QA report for {story_id} written to {report_path}")
 
-    # Task: DB integration - Phase 2 - Persist artifacts and log attempt with correct signature
-    if db_ctx and getattr(db_ctx, "enabled", False):
-        try:
-            db_ctx.save_artifact("qa", "report_json", report_json)
-            if qa_summary:
-                db_ctx.save_artifact("qa", "qa_summary", json.dumps(qa_summary, indent=2, ensure_ascii=False))
-
-            # Log QA attempt with proper parameters
-            if hasattr(db_ctx, "log_attempt"):
-                try:
-                    # Map QA status to attempt status
-                    attempt_status = "success" if status == "pass" else "error"
-                    error_msg = None if status == "pass" else f"QA failed: {status}"
-
-                    db_ctx.log_attempt(
-                        story_id=story_id,
-                        role="qa",
-                        provider="local",
-                        model="pytest",
-                        status=attempt_status,
-                        duration_ms=None,  # TODO: track QA execution time
-                        error_message=error_msg,
-                        artifacts_path=str(story_art_dir),
-                    )
-                    logger.debug(f"[QA] Logged attempt for story {story_id} with status {attempt_status}")
-                except Exception as e:
-                    logger.warning(f"[QA] Could not log attempt: {e}")
-
-            db_ctx.log_event("qa_end", role="qa", story_id=story_id, message=f"QA completed with status: {status}")
-        except Exception as e:
-            logger.debug(f"[QA][db] Skipping DB persistence: {e}")
-
-
-    # The orchestrator is now responsible for all status updates.
-    # This script only reports the QA status.
+    if db.enabled:
+        db.save_artifact("qa", "report_json", report_json)
+        if qa_summary:
+            db.save_artifact("qa", "qa_summary", json.dumps(qa_summary, indent=2, ensure_ascii=False))
+        attempt_status = "success" if status == "pass" else "error"
+        error_msg = None if status == "pass" else f"QA failed: {status}"
+        db.log_attempt(
+            story_id=story_id,
+            role="qa",
+            provider="local",
+            model="pytest",
+            status=attempt_status,
+            duration_ms=None,
+            error_message=error_msg,
+            artifacts_path=str(story_art_dir),
+        )
+        db.log_event("qa_end", role="qa", story_id=story_id, message=f"QA completed with status: {status}")
 
     logger.info(f"[QA] Final status={status} (detail in {report_path})")
     sys.exit(code)
+
 
 def run_quality_checks(*, allow_no_tests: bool = True, story: str = "") -> dict:
     previous_story = os.environ.get("STORY")
@@ -738,7 +568,7 @@ def run_quality_checks(*, allow_no_tests: bool = True, story: str = "") -> dict:
     exit_code = 0
     try:
         main()
-    except SystemExit as exc:  # main exits via sys.exit
+    except SystemExit as exc:
         exit_code = int(exc.code or 0)
     finally:
         if previous_allow is not None:
@@ -750,7 +580,6 @@ def run_quality_checks(*, allow_no_tests: bool = True, story: str = "") -> dict:
         else:
             os.environ.pop("STORY", None)
 
-    # The orchestrator reads the global "last_report.json", so we check that one
     report_path = QA_ART_DIR / "last_report.json"
     report_data = {}
     if report_path.exists():
@@ -787,6 +616,7 @@ def serve(reload: bool = typer.Option(False, help="Auto-reload server on code ch
 
     card, handlers = qa_card()
     run_agent("qa", card, handlers, reload=reload)
+
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:

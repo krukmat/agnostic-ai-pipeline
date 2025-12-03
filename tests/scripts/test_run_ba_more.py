@@ -6,6 +6,7 @@ import pytest
 import click
 
 from scripts import run_ba
+from scripts.utils.db_logger import DbLogger
 
 
 def test_load_legacy_module_failure(monkeypatch):
@@ -37,6 +38,7 @@ def test_generate_requirements_legacy_db(monkeypatch, tmp_path):
             artifacts.append((a, k))
 
     monkeypatch.setattr(run_ba, "get_db_context_or_default", lambda: DummyDB())
+    monkeypatch.setattr(run_ba, "DbLogger", lambda ctx=None: DbLogger(DummyDB()))
 
     result = asyncio.run(run_ba.generate_requirements("demo"))
     assert result.get("ok") is True
