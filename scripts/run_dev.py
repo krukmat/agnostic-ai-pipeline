@@ -16,6 +16,7 @@ from scripts.utils.db_context import get_db_context_or_default
 from scripts.utils.db_logger import DbLogger
 from scripts.utils.llm_runner import LLMRunner
 from scripts.utils.prompt_builders import build_dev_prompt
+from scripts.checks.pipeline_guard import run_guard
 import yaml
 from scripts.utils.orchestrator_facade import load_stories_from_planning, log_cycle_end, log_cycle_start
 from common import ensure_dirs, PLANNING, ROOT
@@ -152,6 +153,38 @@ def repo_tree(limit: int = 300) -> str:
     
     logger.debug(f"[DEV] Repo tree generated and cached with {len(files)} files.")
     return content
+
+
+def _trigger_replan() -> None:
+    """
+    Attempt a replan (Architect run) when guardrail detects missing coverage.
+    Uses concept from requirements.meta.original_request if available.
+    """
+    requirements_path = PLANNING / "requirements.yaml"
+    concept = ""
+    if requirements_path.exists():
+        try:
+            raw = requirements_path.read_text(encoding="utf-8")
+            data = yaml.safe_load(raw)
+            meta = data.get("meta") if isinstance(data, dict) else {}
+            concept = meta.get("original_request", "") if isinstance(meta, dict) else ""
+        except Exception:
+            concept = ""
+    env = os.environ.copy()
+    if concept:
+        env["CONCEPT"] = concept
+    env.setdefault("ARCHITECT_MODE", "normal")
+    env.setdefault("PIPELINE_GUARD_BYPASS", "1")  # avoid guard loop inside Architect
+    try:
+        subprocess.run(
+            [sys.executable, "scripts/run_architect.py"],
+            check=True,
+            cwd=ROOT,
+            env=env,
+        )
+    except Exception as exc:
+        logger.error(f"[DEV] Replan falló: {exc}")
+        raise SystemExit(1)
 
 
 # --- LLM plumbing ---
@@ -546,6 +579,22 @@ def _write_dev_summary(drivers_info: Dict[str, Any], run_dir: pathlib.Path) -> N
 
 async def implement_story(story_id: str | None = None, retries: int = 3) -> dict:
     db = DbLogger(get_db_context_or_default())
+    guard = run_guard(check_architecture=True, allow_empty_stories=False)
+    if not guard.passed:
+        if guard.replan_required:
+            logger.error("[DEV] pipeline_guard detectó falta de cobertura/implements; replanificando...")
+            _trigger_replan()
+            guard = run_guard(check_architecture=True, allow_empty_stories=False)
+            if guard.passed:
+                logger.info("[DEV] Replan exitoso; continuando con desarrollo.")
+            else:
+                issues = "\n".join(f"- {i}" for i in guard.issues)
+                logger.error(f"[DEV] Replan no resolvió problemas:\n{issues}")
+                raise SystemExit(1)
+        else:
+            issues = "\n".join(f"- {i}" for i in guard.issues)
+            logger.error(f"[DEV] pipeline_guard falló antes de desarrollar:\n{issues}")
+            raise SystemExit(1)
     # Phase 2: Apply driver templates (behind feature flag via config) - Task 1.3: Refactored with helpers
     try:
         cfg, drv_cfg = _load_config()

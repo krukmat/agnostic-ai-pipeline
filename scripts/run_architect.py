@@ -37,10 +37,17 @@ from scripts.architect.complexity_classifier import (
 from scripts.utils.yaml_sanitizer import sanitize_yaml_block, sanitize_requirements_yaml
 from scripts.utils.prompt_builders import build_architect_prompt
 from scripts.utils.llm_runner import LLMRunner
-from dspy_baseline.modules.architect import (
-    StoriesEpicsModule,
-    ArchitectureModule,
-)
+try:
+    from dspy_baseline.modules.architect import (
+        StoriesEpicsModule,
+        ArchitectureModule,
+    )
+    _DSPY_MODULES_AVAILABLE = True
+except Exception:
+    StoriesEpicsModule = None  # type: ignore
+    ArchitectureModule = None  # type: ignore
+    _DSPY_MODULES_AVAILABLE = False
+from scripts.checks.pipeline_guard import run_guard
 
 
 def _load_config() -> dict:
@@ -64,6 +71,8 @@ DEBUG_DIR = ART / "debug"
 
 
 def _use_dspy_architect() -> bool:
+    if not _DSPY_MODULES_AVAILABLE:
+        return False
     config = load_config_base()
     features_candidate = config.get("features", {})
     features = features_candidate if isinstance(features_candidate, dict) else {}
@@ -81,6 +90,8 @@ def _run_dspy_pipeline(
     complexity_tier: str,
 ) -> dict:
     """Execute the modular DSPy pipeline (stories → architecture → PRD)."""
+    if StoriesEpicsModule is None or ArchitectureModule is None:
+        raise RuntimeError("DSPy modules not available; install dspy_baseline and dependencies.")
     tier_value = (complexity_tier or "medium").strip().lower() or "medium"
     stories_module = StoriesEpicsModule()
     architecture_module = ArchitectureModule()
@@ -165,6 +176,40 @@ def _load_stories_with_content() -> Tuple[str, List[dict]]:
 
 def save_stories(stories):
     _save_stories_shared(stories)
+
+
+def require_po_approval() -> None:
+    """Abort early if the PO review has not been approved."""
+    if os.environ.get("PIPELINE_GUARD_BYPASS", "").strip().lower() in {"1", "true", "yes"}:
+        return
+    review_path = PLANNING / "product_owner_review.yaml"
+    if not review_path.exists():
+        raise SystemExit("Falta product_owner_review.yaml: ejecuta make po antes de Architect.")
+    try:
+        review = yaml.safe_load(review_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise SystemExit(f"No se pudo leer product_owner_review.yaml ({exc}); reejecuta make po.")
+    status = str(review.get("status", "")).strip().lower()
+    if status != "approved":
+        raise SystemExit(
+            "PO en needs_adjustment: ejecuta make ba-revise && make po antes de correr Architect."
+        )
+
+
+def _run_pipeline_guard_for_architect() -> None:
+    """
+    Run guardrail checks before Architect.
+
+    We skip architecture presence to allow the first Architect run, but still
+    enforce PO approval and story integrity when stories.yaml already exists.
+    """
+    stories_path = PLANNING / "stories.yaml"
+    if not stories_path.exists():
+        return
+    guard_result = run_guard(check_architecture=False, allow_empty_stories=True)
+    if not guard_result.passed:
+        issues = "\n".join(f"- {item}" for item in guard_result.issues)
+        raise SystemExit(f"pipeline_guard detectó problemas antes de Architect:\n{issues}")
 
 
 def _build_architect_context(
@@ -401,6 +446,9 @@ async def run_architect_job(
 ) -> dict:
     logger.debug("[ARCHITECT] Starting run_architect_job")
     ensure_dirs()
+    if architect_mode == "normal":
+        require_po_approval()
+        _run_pipeline_guard_for_architect()
     ctx = _build_architect_context(concept, architect_mode, story_id, detail_level, iteration_count)
     requirements_content = ctx["requirements_content"]
     product_vision_content = ctx["vision_content"]

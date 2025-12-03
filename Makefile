@@ -57,6 +57,7 @@ plan:
 	@if [ -z "$$CONCEPT" ]; then \
 		$(PY) -c 'import sys,yaml,pathlib; from scripts.utils.yaml_sanitizer import sanitize_requirements_yaml; path=pathlib.Path("planning/requirements.yaml"); raw=path.read_text(encoding="utf-8") if path.exists() else ""; clean=sanitize_requirements_yaml(raw) if raw else ""; data=yaml.safe_load(clean) if clean else None; meta=data.get("meta") if isinstance(data, dict) else {}; concept=meta.get("original_request") if isinstance(meta, dict) else ""; sys.exit(0 if isinstance(concept,str) and concept.strip() else 1)' || { echo 'Set CONCEPT="..." or ensure planning/requirements.yaml contains meta.original_request'; exit 1; }; \
 	fi
+	CHECK_ARCHITECTURE=0 ALLOW_EMPTY_STORIES=1 $(PY) scripts/checks/pipeline_guard.py
 	CONCEPT="$$CONCEPT" \
 	FORCE_ARCHITECT_TIER="$${FORCE_ARCHITECT_TIER:-}" \
 	$(PY) scripts/run_architect.py
@@ -76,6 +77,7 @@ clean:
 	CLEAN_FLUSH="$${CLEAN_FLUSH:-$${FLUSH:-1}}" $(PY) scripts/run_cleanup.py
 
 loop:
+	CHECK_ARCHITECTURE=0 ALLOW_EMPTY_STORIES=1 $(PY) scripts/checks/pipeline_guard.py
 	LOOP_MODE="$${LOOP_MODE:-full}" MAX_LOOPS="$${MAX_LOOPS:-1}" ALLOW_NO_TESTS="$${ALLOW_NO_TESTS:-0}" ARCHITECT_INTERVENTION="$${ARCHITECT_INTERVENTION:-1}" $(PY) scripts/orchestrate.py
 
 loop-dev:

@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+import os
 
 
 @pytest.fixture
@@ -108,3 +109,14 @@ def mock_client_factory():
         return MockClient(responses)
 
     return factory
+
+
+@pytest.fixture(autouse=True)
+def pipeline_guard_bypass(monkeypatch, request):
+    """
+    Disable pipeline guard for most tests to avoid dependency on PO/stories fixtures.
+    Tests that target the guard itself can opt out by name.
+    """
+    if "pipeline_guard" in request.node.nodeid:
+        return
+    monkeypatch.setenv("PIPELINE_GUARD_BYPASS", "1")
