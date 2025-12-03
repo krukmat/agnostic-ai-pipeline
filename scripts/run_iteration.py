@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Any
 
+from scripts.utils.orchestrator_facade import build_loop_env, default_iteration_name, derive_max_loops
 from common import ensure_dirs, PLANNING, PROJECT, ROOT
 
 
@@ -143,7 +144,7 @@ def main(argv: list[str]) -> int:
     env = os.environ
     concept = args.concept or env.get("CONCEPT", "").strip()
 
-    iteration_name = args.iteration_name or env.get("ITERATION_NAME", "") or dt.datetime.utcnow().strftime("iteration-%Y%m%d-%H%M%S")
+    iteration_name = args.iteration_name or env.get("ITERATION_NAME", "") or default_iteration_name()
 
     loops_arg_provided = args.loops is not None
     loops_env_raw = env.get("LOOPS", "")
@@ -187,29 +188,14 @@ def main(argv: list[str]) -> int:
         print("[iteration] Skipping Architect planning step as requested")
 
     # Derive MAX_LOOPS from stories.yaml only when caller did not set --loops/LOOPS explicitly
-    derived_loops = max(1, loops_option)
-    if not (loops_arg_provided or loops_env_provided):
-        try:
-            stories_path = PLANNING / "stories.yaml"
-            if stories_path.exists():
-                import yaml
-                data = yaml.safe_load(stories_path.read_text(encoding="utf-8"))
-                if isinstance(data, dict) and "stories" in data:
-                    data = data["stories"]
-                if isinstance(data, list):
-                    todos = [s for s in data if isinstance(s, dict) and str(s.get("status", "")).lower() == "todo"]
-                    if todos:
-                        derived_loops = max(derived_loops, len(todos))
-                        print(f"[iteration] Derived MAX_LOOPS from stories.yaml: {derived_loops}")
-        except Exception as exc:
-            print(f"[iteration] Warning: unable to derive loops from stories.yaml ({exc})")
+    derived_loops = derive_max_loops(
+        loops_option,
+        loops_arg_provided=loops_arg_provided,
+        loops_env_provided=loops_env_provided,
+        planning_path=PLANNING,
+    )
 
-    loop_env = {
-        "MAX_LOOPS": str(derived_loops),
-        "ALLOW_NO_TESTS": "1" if allow_no_tests else "0",
-    }
-    if concept:
-        loop_env["CONCEPT"] = concept
+    loop_env = build_loop_env(concept, allow_no_tests, derived_loops)
     rc = run_command(["make", "loop"], env=loop_env)
     if rc != 0:
         print("[iteration] make loop returned non-zero exit code")
