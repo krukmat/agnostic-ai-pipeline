@@ -247,3 +247,5 @@ po_student_v1.tar.gz
 *.pth
 *.safetensors
 adapter_*.bin
+docs/RUN_ARCHITECT_TEST_COVERAGE_PLAN.md
+docs/RUN_ARCHITECT_FASE1_TASKS.md
