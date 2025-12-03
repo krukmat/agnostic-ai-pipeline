@@ -4,6 +4,7 @@ import os, sys, json, subprocess, pathlib, re, datetime
 from scripts.utils.db_context import get_db_context_or_default
 from scripts.utils.db_logger import DbLogger
 from scripts.utils.qa_prompt_builder import build_qa_config
+from scripts.utils.orchestrator_facade import log_cycle_end, log_cycle_start
 BASE_DIR = pathlib.Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -425,7 +426,7 @@ def main() -> None:
     story_id, allow_no_tests, run_tests = build_qa_config(story_env)
     cfg, drivers_cfg, targets = _load_qa_config()
     db = get_db_context_or_default()
-    db.log_event("qa_start", role="qa", story_id=story_id, message="QA run started")
+    log_cycle_start(db, "qa", story_id, "QA run started")
 
     story_art_dir = QA_ART_DIR / story_id
     story_art_dir.mkdir(parents=True, exist_ok=True)
@@ -550,7 +551,7 @@ def main() -> None:
             error_message=error_msg,
             artifacts_path=str(story_art_dir),
         )
-        db.log_event("qa_end", role="qa", story_id=story_id, message=f"QA completed with status: {status}")
+        log_cycle_end(db, "qa", story_id, status, f"QA completed with status: {status}")
 
     logger.info(f"[QA] Final status={status} (detail in {report_path})")
     sys.exit(code)

@@ -9,6 +9,7 @@ import yaml
 from logger import logger
 from common import ROOT
 from scripts.utils.config_loader import load_config_base
+from scripts.utils.orchestrator_facade import default_iteration_name
 
 
 def load_qa_defaults() -> Tuple[bool, bool]:
@@ -39,5 +40,5 @@ def build_qa_config(story_env: str = "") -> Tuple[str, bool, bool]:
     else:
         run_tests = run_tests_env == "1"
 
-    story_id = story_env.strip() or f"qa-run-{datetime.datetime.now():%Y%m%d-%H%M%S}"
+    story_id = story_env.strip() or f"qa-run-{default_iteration_name()}"
     return story_id, allow_no_tests, run_tests

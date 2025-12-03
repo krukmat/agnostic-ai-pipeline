@@ -17,6 +17,7 @@ from scripts.utils.db_logger import DbLogger
 from scripts.utils.llm_runner import LLMRunner
 from scripts.utils.prompt_builders import build_dev_prompt
 import yaml
+from scripts.utils.orchestrator_facade import load_stories_from_planning, log_cycle_end, log_cycle_start
 from common import ensure_dirs, PLANNING, ROOT
 from llm import Client
 from logger import logger # Import the logger
@@ -61,6 +62,10 @@ def _try_recover_commented_yaml(text: str) -> Any:
 
 
 def load_stories() -> List[Dict[str, Any]]:
+    primary = load_stories_from_planning(PLAN)
+    if isinstance(primary, list) and primary:
+        return primary
+
     p = PLAN / "stories.yaml"
     if not p.exists():
         logger.info("[DEV] planning/stories.yaml not found.")
@@ -572,8 +577,7 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
     logger.info(f"[DEV] Implementando: {sid} - {story.get('description', '(sin desc)')} (complexity={story.get('complexity', 'n/a')})")
 
     # Task: DB integration - Phase 2 - Log dev_start event
-    if db.enabled:
-        db.log_event("dev_start", role="dev", story_id=sid, message=f"Starting development for story: {sid}")
+    log_cycle_start(db, "dev", sid, f"Starting development for story: {sid}")
 
     files_ctx = repo_tree(limit=300)
     files = None
@@ -606,7 +610,7 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
 
         # Task: DB integration - Phase 2 - Log error event and attempt
         if db.enabled:
-            db.log_event("dev_end", role="dev", story_id=sid, severity="error", message=f"Dev failed: {error_msg}")
+            log_cycle_end(db, "dev", sid, "error", f"Dev failed: {error_msg}")
             if model_info:
                 provider = model_info.get("provider", "unknown")
                 model = model_info.get("model", "unknown")
@@ -664,7 +668,7 @@ async def implement_story(story_id: str | None = None, retries: int = 3) -> dict
                 artifacts_path=str(story_art_dir),
             )
             # Log dev_end event
-            db.log_event("dev_end", role="dev", story_id=sid, message=f"Development completed for story: {sid}")
+            log_cycle_end(db, "dev", sid, "ok", f"Development completed for story: {sid}")
     except Exception as e:
         logger.debug(f"[DEV][db] Skipping DB persistence: {e}")
 

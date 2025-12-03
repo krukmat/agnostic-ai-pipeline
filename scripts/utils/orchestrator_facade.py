@@ -62,3 +62,21 @@ def default_iteration_name(now: dt.datetime | None = None) -> str:
     """Generate default iteration name."""
     now = now or dt.datetime.utcnow()
     return now.strftime("iteration-%Y%m%d-%H%M%S")
+
+
+def log_cycle_start(db_ctx, role: str, story_id: str, message: str) -> None:
+    """Standardized start logging (no-op if logger missing)."""
+    if getattr(db_ctx, "enabled", False) and hasattr(db_ctx, "log_event"):
+        try:
+            db_ctx.log_event(f"{role}_start", role=role, story_id=story_id, message=message)
+        except Exception:
+            logger.debug(f"[orchestrator] log_cycle_start failed for role={role}", exc_info=True)
+
+
+def log_cycle_end(db_ctx, role: str, story_id: str, status: str, message: str) -> None:
+    """Standardized end logging (no-op if logger missing)."""
+    if getattr(db_ctx, "enabled", False) and hasattr(db_ctx, "log_event"):
+        try:
+            db_ctx.log_event(f"{role}_end", role=role, story_id=story_id, message=message, severity=status)
+        except Exception:
+            logger.debug(f"[orchestrator] log_cycle_end failed for role={role}", exc_info=True)
