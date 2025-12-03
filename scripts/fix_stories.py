@@ -50,6 +50,52 @@ def fix_acceptance_inline(txt:str)->str:
         out.append(line)
     return "\n".join(out)
 
+def sanitize_acceptance_bullets(txt: str) -> str:
+    """Sanitize acceptance list items to avoid YAML parse issues (colons/quotes in plain scalars)."""
+    lines = txt.splitlines()
+    out = []
+    in_acc = False
+    acc_indent = None
+
+    for line in lines:
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        if stripped.startswith("acceptance:"):
+            in_acc = True
+            acc_indent = indent
+            out.append(line)
+            continue
+
+        # exit acceptance block when indentation decreases
+        if in_acc and indent <= (acc_indent or 0) and stripped and not stripped.startswith("- "):
+            in_acc = False
+
+        if in_acc and stripped.startswith("- "):
+            content = stripped[2:]
+            # Replace patterns like "foo": "bar" -> foo=bar
+            content = re.sub(r'"([^"]+)"\s*:\s*"([^"]+)"', r'\1=\2', content)
+            # Drop remaining double quotes
+            content = content.replace('"', "")
+            # Avoid standalone colon in plain scalars
+            content = content.replace(": ", " - ")
+            out.append(f"{' ' * indent}- {content.strip()}")
+            continue
+
+        out.append(line)
+    return "\n".join(out)
+
+def repair_broken_id_lines(txt: str) -> str:
+    """Fix malformed id lines like '- id - S2' -> '- id: S2'."""
+    out = []
+    for line in txt.splitlines():
+        m = re.match(r'^(\s*)-+\s*id\s*[-–]\s*(\S+)\s*$', line)
+        if m:
+            indent, sid = m.group(1), m.group(2)
+            out.append(f"{indent}- id: {sid}")
+        else:
+            out.append(line)
+    return "\n".join(out)
 def ensure_list_top_level(data):
     # Handle cases where model returns {"stories": [...]}
     if isinstance(data, dict) and "stories" in data and isinstance(data["stories"], list):
@@ -83,10 +129,13 @@ def normalize_status(items):
             if use_analyzer:
                 auto_complexity = analyze_story_complexity(s, verbose=False)
                 print(f"[fix_stories] Missing complexity for story {s.get('id','?')}, auto-classified as {auto_complexity}")
-                s["complexity"] = auto_complexity
+                s["complexity"] = auto_complexity or default_complexity
             else:
                 print(f"[fix_stories] Missing complexity for story {s.get('id','?')}, defaulting to {default_complexity}")
-                s.setdefault("complexity", default_complexity)
+                s["complexity"] = default_complexity
+        else:
+            # Normalize casing
+            s["complexity"] = str(s.get("complexity")).lower()
         fixed.append(s)
     return fixed
 
@@ -98,26 +147,41 @@ def main():
     if not raw.strip():
         raise SystemExit("planning/stories.yaml is empty.")
 
-    # 1) uncomment structured YAML if it came with '#'
-    lines = raw.splitlines()
-    if all(l.lstrip().startswith('#') or not l.strip() for l in lines):
-        lines = uncomment_structured(lines)
-    txt = "\n".join(lines)
-
-    # 2) remove fences
-    txt = remove_fences(txt)
-
-    # 3) fix inline 'acceptance'
-    txt = fix_acceptance_inline(txt)
-
-    # 4) try to parse; if fails, show hint
+    data = None
+    # Fast path: if it already parses, skip text repairs
     try:
-        data = yaml.safe_load(txt)
-    except Exception as e:
-        print("YAML parse error:", e)
-        print("\n--- CURRENT CONTENT (for diagnostics) ---\n")
-        print(txt)
-        sys.exit(1)
+        data = yaml.safe_load(raw)
+    except Exception:
+        data = None
+
+    if data is None:
+        # 1) uncomment structured YAML if it came with '#'
+        lines = raw.splitlines()
+        if all(l.lstrip().startswith('#') or not l.strip() for l in lines):
+            lines = uncomment_structured(lines)
+        txt = "\n".join(lines)
+
+        # quick repair for malformed id lines "- id - S2" -> "- id: S2"
+        txt = re.sub(r"-\s+id\s+-\s+", "- id: ", txt)
+
+        # 2) remove fences
+        txt = remove_fences(txt)
+
+        # 3) fix inline 'acceptance'
+        txt = fix_acceptance_inline(txt)
+
+        # 4) repair malformed id lines and sanitize acceptance bullets for YAML safety
+        txt = repair_broken_id_lines(txt)
+        txt = sanitize_acceptance_bullets(txt)
+
+        # 5) try to parse; if fails, show hint
+        try:
+            data = yaml.safe_load(txt)
+        except Exception as e:
+            print("YAML parse error:", e)
+            print("\n--- CURRENT CONTENT (for diagnostics) ---\n")
+            print(txt)
+            sys.exit(1)
 
     items = ensure_list_top_level(data)
     items = normalize_status(items)

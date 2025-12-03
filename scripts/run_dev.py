@@ -275,11 +275,16 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
     # Task: recovery-system - Check for model_override in story metadata
     model_override = story.get("metadata", {}).get("model_override", {})
 
+    # Env overrides take precedence over story/config (MODEL_PROVIDER/MODEL_NAME)
+    env_provider = os.environ.get("MODEL_PROVIDER")
+    env_model = os.environ.get("MODEL_NAME")
+    use_override = bool(env_provider and env_model) or bool(model_override)
+
     clients = []
-    if model_override:
-        override_provider = model_override.get("provider")
-        override_model = model_override.get("model")
-        logger.info(f"[DEV] Using model override: provider={override_provider}, model={override_model}")
+    if use_override:
+        override_provider = env_provider or model_override.get("provider")
+        override_model = env_model or model_override.get("model")
+        logger.info(f"[DEV] Using override: provider={override_provider}, model={override_model}")
 
         # Task: fix-client-override - Load full provider config to rehydrate CLI settings
         config = load_config()
@@ -341,7 +346,6 @@ async def llm_call(story: Dict[str, Any], files_ctx: str) -> tuple[str, Dict[str
             client.oai_key = os.environ.get("OPENAI_API_KEY", "dummy")
             logger.debug(f"[DEV] Rehydrated OpenAI settings: base_url={client.oai_base}")
         elif provider_type in ("vertex_cli", "vertex_sdk"):
-            # Vertex providers are handled by PROVIDER_REGISTRY in Client.chat()
             logger.debug(f"[DEV] Using Vertex provider: {provider_type}")
         else:
             logger.warning(f"[DEV] Unknown provider type '{provider_type}', may not work correctly")

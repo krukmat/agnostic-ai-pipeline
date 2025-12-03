@@ -2,6 +2,7 @@ import json
 import types
 
 import pytest
+import yaml
 
 import scripts.fix_stories as fs
 
@@ -20,6 +21,14 @@ def test_fix_acceptance_inline_cases():
     assert "  - a" in out and "acceptance:" in out
     # flow style list should remain
     assert "[x, y]" in out
+
+
+def test_sanitize_acceptance_bullets_removes_colon_quotes():
+    txt = "- id: S1\n  acceptance:\n    - It must accept a JSON payload with \"diagram_code\" and \"diagram_type\": \"flowchart\".\n"
+    cleaned = fs.sanitize_acceptance_bullets(txt)
+    data = yaml.safe_load(cleaned)
+    assert data[0]["acceptance"][0].startswith("It must accept a JSON payload")
+    assert ":" not in data[0]["acceptance"][0]
 
 
 def test_ensure_list_top_level_errors():
