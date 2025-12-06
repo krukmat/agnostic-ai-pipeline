@@ -12,6 +12,7 @@ from typing import Dict, Any
 
 from scripts.utils.orchestrator_facade import build_loop_env, default_iteration_name, derive_max_loops
 from common import ensure_dirs, PLANNING, PROJECT, ROOT
+from scripts.run_orchestrator_agent import run_agentic_orchestrator
 
 
 def run_command(cmd: list[str], env: Dict[str, str] | None = None) -> int:
@@ -143,6 +144,8 @@ def main(argv: list[str]) -> int:
 
     env = os.environ
     concept = args.concept or env.get("CONCEPT", "").strip()
+    if not concept:
+        concept = "agentic-adhoc"
 
     iteration_name = args.iteration_name or env.get("ITERATION_NAME", "") or default_iteration_name()
 
@@ -161,32 +164,6 @@ def main(argv: list[str]) -> int:
     if concept:
         print(f"[iteration] Using concept: {concept}")
 
-    if not skip_ba:
-        if not concept:
-            print("[iteration] ERROR: provide --concept when BA step is enabled")
-            return 1
-        rc = run_command(["make", "ba"], env={"CONCEPT": concept})
-        if rc != 0:
-            return rc
-    else:
-        print("[iteration] Skipping BA step as requested")
-
-    if not skip_po:
-        po_env = {"CONCEPT": concept} if concept else None
-        rc = run_command(["make", "po"], env=po_env)
-        if rc != 0:
-            return rc
-    else:
-        print("[iteration] Skipping Product Owner step as requested")
-
-    if not skip_plan:
-        plan_env = {"CONCEPT": concept} if concept else None
-        rc = run_command(["make", "plan"], env=plan_env)
-        if rc != 0:
-            return rc
-    else:
-        print("[iteration] Skipping Architect planning step as requested")
-
     # Derive MAX_LOOPS from stories.yaml only when caller did not set --loops/LOOPS explicitly
     derived_loops = derive_max_loops(
         loops_option,
@@ -195,14 +172,19 @@ def main(argv: list[str]) -> int:
         planning_path=PLANNING,
     )
 
-    loop_env = build_loop_env(concept, allow_no_tests, derived_loops)
-    rc = run_command(["make", "loop"], env=loop_env)
-    if rc != 0:
-        print("[iteration] make loop returned non-zero exit code")
+    # Use agentic orchestrator for the full pipeline
+    max_steps = derived_loops if derived_loops > 0 else 5
+    max_actions = int(env.get("MAX_ACTIONS", "2") or 2)
+
+    # Run in-process to reuse event loop and avoid shelling out
+    import asyncio
+
+    print(f"[iteration] Running agentic orchestrator (max_steps={max_steps}, max_actions={max_actions})")
+    asyncio.run(run_agentic_orchestrator(concept, max_steps=max_steps, max_actions_per_step=max_actions))
 
     snapshot_iteration(iteration_name, concept, loops_option, allow_no_tests)
     print(f"[iteration] Completed iteration '{iteration_name}'")
-    return rc
+    return 0
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from logger import logger
 from .storage import get_db, is_db_enabled, get_db_config
 from .schema import create_schema
 from .repository import (

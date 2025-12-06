@@ -33,101 +33,62 @@ class IterationScriptTests(unittest.TestCase):
         os.environ.update(self._original_environ)
 
     def test_cli_arguments_full_flow(self) -> None:
-        """Full iteration with explicit CLI args should fan out to BA, plan, and loop."""
-        commands: List[Tuple[List[str], Dict[str, str] | None]] = []
+        """Agentic iteration should invoke orchestrator with provided args and snapshot."""
         snapshots: List[Tuple[str, str, int, bool]] = []
-
-        def fake_run(cmd: List[str], env=None) -> int:
-            commands.append((cmd, deepcopy(env) if env else None))
-            return 0
+        orchestrator_calls: List[Tuple[str, int, int]] = []
 
         def fake_snapshot(name: str, concept: str, loops: int, allow: bool) -> None:
             snapshots.append((name, concept, loops, allow))
 
-        with mock.patch.object(run_iteration, "run_command", side_effect=fake_run), mock.patch.object(
-            run_iteration, "snapshot_iteration", side_effect=fake_snapshot
+        async def fake_agentic(concept: str, max_steps: int, max_actions_per_step: int):
+            orchestrator_calls.append((concept, max_steps, max_actions_per_step))
+
+        with mock.patch.object(run_iteration, "snapshot_iteration", side_effect=fake_snapshot), mock.patch.object(
+            run_iteration, "run_agentic_orchestrator", side_effect=fake_agentic
         ):
             exit_code = run_iteration.main(
                 ["--concept", "Demo", "--loops", "2", "--allow-no-tests", "--iteration-name", "custom-iter"]
             )
 
         self.assertEqual(exit_code, 0)
-        # BA, PO, plan, loop
-        self.assertEqual(len(commands), 4)
-
-        ba_cmd, ba_env = commands[0]
-        self.assertEqual(ba_cmd, ["make", "ba"])
-        self.assertIsNotNone(ba_env)
-        self.assertEqual(ba_env.get("CONCEPT"), "Demo")
-
-        po_cmd, po_env = commands[1]
-        self.assertEqual(po_cmd, ["make", "po"])
-        self.assertIsNotNone(po_env)
-        self.assertEqual(po_env.get("CONCEPT"), "Demo")
-
-        plan_cmd, plan_env = commands[2]
-        self.assertEqual(plan_cmd, ["make", "plan"])
-        self.assertIsNotNone(plan_env)
-        self.assertEqual(plan_env.get("CONCEPT"), "Demo")
-
-        loop_cmd, loop_env = commands[3]
-        self.assertEqual(loop_cmd, ["make", "loop"])
-        self.assertIsNotNone(loop_env)
-        self.assertEqual(loop_env.get("MAX_LOOPS"), "2")
-        self.assertEqual(loop_env.get("ALLOW_NO_TESTS"), "1")
-        self.assertEqual(loop_env.get("CONCEPT"), "Demo")
-
-        self.assertEqual(len(snapshots), 1)
-        snap_name, snap_concept, snap_loops, snap_allow = snapshots[0]
-        self.assertEqual(snap_name, "custom-iter")
-        self.assertEqual(snap_concept, "Demo")
-        self.assertEqual(snap_loops, 2)
-        self.assertTrue(snap_allow)
+        self.assertEqual([("Demo", 2, 2)], orchestrator_calls)
+        self.assertEqual([("custom-iter", "Demo", 2, True)], snapshots)
 
     def test_environment_defaults_and_skips(self) -> None:
-        """Environment variables should provide defaults and skip flags."""
+        """Environment variables should provide defaults for concept/loops and run agentic orchestrator."""
         os.environ["CONCEPT"] = "Env Product"
         os.environ["LOOPS"] = "3"
         os.environ["ALLOW_NO_TESTS"] = "1"
         os.environ["SKIP_BA"] = "1"
 
-        commands: List[Tuple[List[str], Dict[str, str] | None]] = []
+        orchestrator_calls: List[Tuple[str, int, int]] = []
 
-        def fake_run(cmd: List[str], env=None) -> int:
-            commands.append((cmd, deepcopy(env) if env else None))
-            return 0
+        async def fake_agentic(concept: str, max_steps: int, max_actions_per_step: int):
+            orchestrator_calls.append((concept, max_steps, max_actions_per_step))
 
-        with mock.patch.object(run_iteration, "run_command", side_effect=fake_run), mock.patch.object(
+        with mock.patch.object(run_iteration, "run_agentic_orchestrator", side_effect=fake_agentic), mock.patch.object(
             run_iteration, "snapshot_iteration", return_value=None
         ):
             exit_code = run_iteration.main(["--skip-plan"])
 
         self.assertEqual(exit_code, 0)
-        # With SKIP_BA=1 and --skip-plan, we run PO + loop
-        self.assertEqual(len(commands), 2)
+        self.assertEqual([("Env Product", 3, 2)], orchestrator_calls)
 
-        po_cmd, po_env = commands[0]
-        self.assertEqual(po_cmd, ["make", "po"])
-        self.assertIsNotNone(po_env)
-        self.assertEqual(po_env.get("CONCEPT"), "Env Product")
+    def test_missing_concept_assigns_default(self) -> None:
+        """When concept missing, agentic iteration should still run with fallback concept."""
+        orchestrator_calls: List[Tuple[str, int, int]] = []
 
-        loop_cmd, loop_env = commands[1]
-        self.assertEqual(loop_cmd, ["make", "loop"])
-        self.assertIsNotNone(loop_env)
-        self.assertEqual(loop_env.get("MAX_LOOPS"), "3")
-        self.assertEqual(loop_env.get("ALLOW_NO_TESTS"), "1")
-        self.assertEqual(loop_env.get("CONCEPT"), "Env Product")
+        async def fake_agentic(concept: str, max_steps: int, max_actions_per_step: int):
+            orchestrator_calls.append((concept, max_steps, max_actions_per_step))
 
-    def test_missing_concept_requires_flag(self) -> None:
-        """When BA runs, concept is mandatory."""
-        with mock.patch.object(run_iteration, "run_command") as mocked_run, mock.patch.object(
-            run_iteration, "snapshot_iteration"
-        ) as mocked_snapshot:
+        with mock.patch.object(run_iteration, "run_agentic_orchestrator", side_effect=fake_agentic), mock.patch.object(
+            run_iteration, "snapshot_iteration", return_value=None
+        ):
             exit_code = run_iteration.main([])
 
-        mocked_run.assert_not_called()
-        mocked_snapshot.assert_not_called()
-        self.assertEqual(exit_code, 1)
+        self.assertEqual(exit_code, 0)
+        # Default concept applied
+        self.assertEqual(orchestrator_calls[0][0], "agentic-adhoc")
 
 
 if __name__ == "__main__":

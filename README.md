@@ -22,7 +22,7 @@ The purpose of this project is to automate the entire software development lifec
 
 - **Involved Roles** – A Business Analyst, Product Owner, Architect, Developer, QA, and an Orchestrator collaborate to transform a concept into a functional product.
 - **Generated Artifacts** – The system produces planning files (`requirements.yaml`, `stories.yaml`), source code and tests (in `project/`), and QA reports (`artifacts/qa/`).
-- **Workflow** – You can run a full cycle with `make iteration` or `make loop`, or run each role independently for debugging and granular control.
+- **Workflow** – Usa `make iteration` (orquestador agentic) o ejecuta cada rol de forma independiente para depurar o tener control granular.
 
 ```mermaid
 flowchart LR
@@ -324,7 +324,7 @@ make qa QA_RUN_TESTS=1           # Run QA with tests
 
 # Orchestration
 make iteration CONCEPT="..."     # Full BA→PO→Architect→Dev→QA cycle
-make loop MAX_LOOPS=10           # Dev↔QA loop until all stories done
+make agentic-iteration CONCEPT="..." MAX_STEPS=5 MAX_ACTIONS=2   # Iteración agentic completa
 
 # Configuration
 make show-config                 # Display current config
@@ -361,7 +361,7 @@ make fix-stories                 # Normalize stories.yaml
 ### Medium Series (Concepts & Rationale)
 
 1. **Why an Agentic, Model‑Agnostic Pipeline**
-   Replacing brittle scripts with a choreographed multi‑role loop
+   Replacing brittle scripts with a choreographed agentic loop
    https://medium.com/@iotforce/why-an-agentic-model-agnostic-pipeline-beats-a-pile-of-scripts-b57661276505
 
 2. **Inside the AI Development Team**

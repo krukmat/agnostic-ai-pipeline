@@ -18,3 +18,13 @@ Commits follow Conventional Commit prefixes (`feat:`, `fix:`, `config:`) per exi
 
 ## Agent Workflow Tips
 Before running role-specific scripts, ensure `config.yaml` reflects the desired providers via `make set-role` and quality profile via `make set-quality`. The Architect auto-selects one of three complexity tiers (simple, medium, corporate) based on `planning/requirements.yaml`; an LLM classifier evaluates the brief, falling back to word-count heuristics if needed. Simpler inputs yield fewer, broader stories; enterprise briefs expand into detailed backlogs. Store intermediate plans in `planning/` and never delete generated artifacts; instead, roll forward with additional stories or patches.
+When asked to produce a development plan, always generate a documented plan artifact (e.g., Markdown under `planning/`) rather than leaving the plan only in chat.
+
+## Additional Working Instructions (imported from Mermaid2SF)
+- Leer el documento de proyecto y respetar el plan antes de desarrollar; marcar tareas como cerradas o en revisión al finalizar y reportar bugs/incidencias en el plan.
+- Al completar cambios, reportar rutas/ubicaciones para facilitar la revisión visual y mostrar el mapa del proyecto con estado actualizado.
+- Ejecutar siempre todos los unit tests con cobertura cuando haya cambios de código; asegurarse de que linting (p. ej. ESLint) pase cuando aplique.
+- Documentar todo feature nuevo en el README o docs relacionados; si no hay tareas abiertas, revisar documentos por contenido relevante que agregar.
+- Si existe un documento de review pendiente, leerlo y aplicar correcciones requeridas; respetar coherencia con `CLAUDE.MD` y prompts aplicables.
+- Para despliegues, generar `DEPLOY_STEPS.MD` con pasos y consideraciones completas.
+- Antes de commit/push, proponer el mensaje de commit (con detalle funcional) para evaluación/autorización; no ignorar commits pendientes si se solicitan.
