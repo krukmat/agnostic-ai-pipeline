@@ -13,6 +13,7 @@ from logger import logger
 from llm import Client
 from scripts.orchestrator_runtime import execute_role, load_stories
 from a2a.metrics import save_metrics
+from scripts.orchestrator.v2_runtime import run_orchestrator_v2
 
 try:
     from src.db import DualWriteContext, db_enabled
@@ -240,6 +241,68 @@ def _write_summary(concept: str, steps: List[dict[str, Any]], termination: dict[
     logger.info(f"[orchestrator] Summary written to {path}")
 
 
+# V2 Role Handlers - Bridge between V2 orchestrator and existing role execution
+async def _v2_role_handler_ba(**kwargs) -> Dict[str, Any]:
+    """Handler for RUN_BA action in V2 orchestrator."""
+    try:
+        result = await execute_role("business_analyst", kwargs)
+        return {"status": "ok" if result.get("status") in {"ok", "success"} else "error", **result}
+    except Exception as exc:
+        logger.error(f"[v2_orchestrator] BA handler failed: {exc}")
+        return {"status": "error", "error": str(exc)}
+
+
+async def _v2_role_handler_po(**kwargs) -> Dict[str, Any]:
+    """Handler for RUN_PO action in V2 orchestrator."""
+    try:
+        result = await execute_role("product_owner", kwargs)
+        return {"status": "ok" if result.get("status") in {"ok", "success"} else "error", **result}
+    except Exception as exc:
+        logger.error(f"[v2_orchestrator] PO handler failed: {exc}")
+        return {"status": "error", "error": str(exc)}
+
+
+async def _v2_role_handler_architect(**kwargs) -> Dict[str, Any]:
+    """Handler for RUN_ARCHITECT action in V2 orchestrator."""
+    try:
+        result = await execute_role("architect", kwargs)
+        return {"status": "ok" if result.get("status") in {"ok", "success"} else "error", **result}
+    except Exception as exc:
+        logger.error(f"[v2_orchestrator] Architect handler failed: {exc}")
+        return {"status": "error", "error": str(exc)}
+
+
+async def _v2_role_handler_dev(**kwargs) -> Dict[str, Any]:
+    """Handler for RUN_DEV action in V2 orchestrator."""
+    try:
+        result = await execute_role("developer", kwargs)
+        return {"status": "ok" if result.get("status") in {"ok", "success"} else "error", **result}
+    except Exception as exc:
+        logger.error(f"[v2_orchestrator] Dev handler failed: {exc}")
+        return {"status": "error", "error": str(exc)}
+
+
+async def _v2_role_handler_qa(**kwargs) -> Dict[str, Any]:
+    """Handler for RUN_QA action in V2 orchestrator."""
+    try:
+        result = await execute_role("qa", kwargs)
+        return {"status": "ok" if result.get("status") in {"ok", "success"} else "error", **result}
+    except Exception as exc:
+        logger.error(f"[v2_orchestrator] QA handler failed: {exc}")
+        return {"status": "error", "error": str(exc)}
+
+
+def _get_v2_role_handlers() -> Dict[str, Any]:
+    """Return mapping of action tools to async handler functions for V2 orchestrator."""
+    return {
+        "RUN_BA": _v2_role_handler_ba,
+        "RUN_PO": _v2_role_handler_po,
+        "RUN_ARCHITECT": _v2_role_handler_architect,
+        "RUN_DEV": _v2_role_handler_dev,
+        "RUN_QA": _v2_role_handler_qa,
+    }
+
+
 async def run_agentic_orchestrator(concept: str, max_steps: int, max_actions_per_step: int):
     ensure_dirs()
     client = Client(role="orchestrator")
@@ -308,6 +371,11 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="Max actions to dispatch per step.",
     )
+    parser.add_argument(
+        "--use-v2",
+        action="store_true",
+        help="Use V2 deterministic orchestrator (default: use LLM-based V1).",
+    )
     return parser.parse_args()
 
 
@@ -317,6 +385,24 @@ def main():
     if not concept:
         logger.error("Concept is required (use --concept or set CONCEPT).")
         return 1
+
+    ensure_dirs()
+
+    # V2 Deterministic Orchestrator
+    if args.use_v2:
+        logger.info("[orchestrator] Using V2 deterministic orchestrator")
+        role_handlers = _get_v2_role_handlers()
+        result = asyncio.run(run_orchestrator_v2(concept, args.max_steps, role_handlers))
+        _write_summary(
+            concept,
+            result.get("steps", []),
+            {"should_stop": True, "reason": "v2_completed", "final_state": result.get("final_state")}
+        )
+        save_metrics()
+        return 0
+
+    # V1 LLM-Based Orchestrator (default)
+    logger.info("[orchestrator] Using V1 LLM-based orchestrator")
     asyncio.run(run_agentic_orchestrator(concept, args.max_steps, args.max_actions_per_step))
     return 0
 

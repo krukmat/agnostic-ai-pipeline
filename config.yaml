@@ -127,6 +127,40 @@ pipeline:
     allow_cost_increase: false
     prefer_local: true
   allow_architect_with_po_needs_adjustment: true
+
+  # V2 Orchestrator Configuration
+  use_v2_orchestrator: false
+  v2_max_steps: 20
+  v2_max_parallel_stories: 3
+
+  # Retry Policies
+  retry_policies:
+    dev:
+      max_attempts: 3
+      backoff: exponential
+    architect:
+      max_attempts: 2
+      backoff: linear
+    qa:
+      max_attempts: 2
+      backoff: none
+
+  # Escalation Policies
+  escalation_policies:
+    - condition: "dev_attempts >= 3 AND same_error_pattern"
+      action: "architect_refine"
+      reason: "Repeated Dev failures suggest architectural issue"
+    - condition: "qa_coverage < 0.8 AND tests_failed > 0"
+      action: "architect_review_tests"
+      reason: "Low coverage with failures needs design review"
+
+  # Resource Policies
+  resource_policies:
+    max_parallel_stories: 3
+    max_concurrent_dev: 2
+    max_concurrent_qa: 1
+    dev_timeout: 600
+    qa_timeout: 300
 a2a:
   execution_mode: local
   agents:
