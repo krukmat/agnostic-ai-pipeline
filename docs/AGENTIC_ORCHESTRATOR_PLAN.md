@@ -49,6 +49,12 @@ Plan para incorporar un orquestador agentic como rol que coordine BA→PO→Arch
 - Ejecución manual: `python -m scripts.run_orchestrator_agent --concept "demo" --max-steps 2 --max-actions-per-step 2`.
 - Verificar creación y contenido básico de `artifacts/iterations/latest_orchestrator_summary.json`.
 - Smoke de `make iteration` / `make loop MAX_LOOPS=1` para confirmar que la vía legacy sigue operativa.
+- ✅ **Smoke test automatizado**: `tests/smoke/test_agentic_orchestrator.py` con 5 tests incrementales:
+  1. **Trivial** (max_steps=1, max_actions=1, timeout=5min): Validación básica de inicialización
+  2. **Simple** (max_steps=2, max_actions=2, timeout=5min): BA → PO con validación de requirements.yaml
+  3. **Moderado** (max_steps=3, max_actions=3, timeout=5min): BA → PO → Architect con validación de stories.yaml
+  4. **Pipeline completo** (max_steps=6, max_actions=2, timeout=15min): BA → PO → Architect → Dev → QA con validación de todos los artifacts y ejecución de código. NOTA: Puede tardar 10-15 minutos.
+  5. **Cleanup**: Verificación de limpieza y regeneración
 
 ## Riesgos y mitigaciones
 - **Salida JSON inválida del LLM**: reintentos + mensaje de reparación; abortar limpio.

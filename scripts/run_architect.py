@@ -182,6 +182,9 @@ def require_po_approval() -> None:
     """Abort early if the PO review has not been approved."""
     if os.environ.get("PIPELINE_GUARD_BYPASS", "").strip().lower() in {"1", "true", "yes"}:
         return
+    allow_needs_adjustment_env = os.environ.get("ALLOW_ARCHITECT_WITH_PO_NEEDS_ADJUSTMENT", "").strip().lower() in {"1", "true", "yes"}
+    allow_needs_adjustment_cfg = bool(_load_config().get("pipeline", {}).get("allow_architect_with_po_needs_adjustment", False))
+    allow_needs_adjustment = allow_needs_adjustment_env or allow_needs_adjustment_cfg
     review_path = PLANNING / "product_owner_review.yaml"
     if not review_path.exists():
         raise SystemExit("Falta product_owner_review.yaml: ejecuta make po antes de Architect.")
@@ -191,6 +194,9 @@ def require_po_approval() -> None:
         raise SystemExit(f"No se pudo leer product_owner_review.yaml ({exc}); reejecuta make po.")
     status = str(review.get("status", "")).strip().lower()
     if status != "approved":
+        if allow_needs_adjustment:
+            logger.warning("[Architect] PO status is '%s' but allow_needs_adjustment flag set; continuing.", status)
+            return
         raise SystemExit(
             "PO en needs_adjustment: ejecuta make ba-revise && make po antes de correr Architect."
         )

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import pathlib
+import re
 import time
 from typing import Any, Dict, List
 
@@ -107,10 +108,26 @@ def _build_context(
 
 
 def _parse_response(raw: str) -> dict:
+    """
+    Parse LLM response, cleaning markdown code blocks if present.
+    Some LLMs (like Vertex AI) wrap JSON in ```json ... ``` despite instructions.
+    """
+    # Strip whitespace
+    cleaned = raw.strip()
+
+    # Remove markdown code blocks (```json ... ``` or ``` ... ```)
+    # Pattern: ```json\n{...}\n``` or ```\n{...}\n```
+    markdown_pattern = r'^```(?:json)?\s*\n?(.*?)\n?```$'
+    match = re.match(markdown_pattern, cleaned, re.DOTALL)
+    if match:
+        cleaned = match.group(1).strip()
+        logger.debug("[orchestrator] Removed markdown code blocks from LLM response")
+
     try:
-        return json.loads(raw)
+        return json.loads(cleaned)
     except json.JSONDecodeError as exc:
         logger.error(f"[orchestrator] Invalid JSON from LLM: {exc}")
+        logger.debug(f"[orchestrator] Raw response (first 500 chars): {raw[:500]}")
         raise
 
 

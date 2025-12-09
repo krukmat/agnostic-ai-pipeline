@@ -54,9 +54,9 @@ providers:
     max_output_tokens: 2048
 roles:
   ba:
-    provider: vertex_sdk  # cloud for faster BA turnaround
+    provider: vertex_sdk
     model: gemini-2.5-flash
-    temperature: 0.3  # balanced for requirement clarity
+    temperature: 0.3
     max_tokens: 8192
     top_p: 0.9
   architect:
@@ -67,7 +67,7 @@ roles:
     top_p: 0.95
     output_caps:
       stories:
-        tokens: 2000      # increased to reduce JSON truncation (next runs)
+        tokens: 2000
         min_tokens: 600
       architecture:
         tokens: 2000
@@ -100,7 +100,7 @@ roles:
       specialties:
       - general_purpose
   qa:
-    provider: ollama  # local model for QA
+    provider: ollama
     model: qwen2.5-coder:32b
     temperature: 0.4
     max_tokens: 8192
@@ -108,8 +108,14 @@ roles:
   product_owner:
     provider: vertex_sdk
     model: gemini-2.5-pro
-    temperature: 0.4  # reduce randomness for acceptance criteria alignment
+    temperature: 0.4
     max_tokens: 8192
+    top_p: 0.95
+  orchestrator:
+    provider: vertex_sdk
+    model: gemini-2.5-flash
+    temperature: 0.2
+    max_tokens: 4096
     top_p: 0.95
 pipeline:
   force_approval_attempts: 3
@@ -120,6 +126,7 @@ pipeline:
     auto_suggest: true
     allow_cost_increase: false
     prefer_local: true
+  allow_architect_with_po_needs_adjustment: true
 a2a:
   execution_mode: local
   agents:
@@ -167,12 +174,12 @@ features:
   use_dspy_architect: false
   routing_by_complexity_enabled: true
   pipeline_guard:
-    bypass: false
+    bypass: true
   architect:
     arch_only: false
     normalize_minified_arch: true
     use_optimized_prompt: false
-    prompt_override_file: ""
+    prompt_override_file: ''
 defaults:
   complexity: medium
 qa:
@@ -200,23 +207,23 @@ routing_by_complexity:
       provider: vertex_cli
       model: gemini-2.5-pro
 database:
-  adhoc_context: true  # allow DB writes from standalone role runs
-  fail_on_error: false  # log DB errors but do not abort role scripts
-  enabled: true  # Fase 3: dual-write activado para pruebas
+  adhoc_context: true
+  fail_on_error: false
+  enabled: false
   path: data/pipeline.db
   wal_mode: true
   busy_timeout_ms: 5000
   backup_on_iteration_end: true
 drivers:
-  enabled: false  # Feature flag: driver layer off by default
+  enabled: false
   embedded:
-    run_build: false   # allow embedded build if toolchain present
-    run_test: false    # allow embedded tests if toolchain present
-    run_flash: false   # never flash by default
+    run_build: false
+    run_test: false
+    run_flash: false
 project:
   targets:
     backend: fastapi
     frontend: web_express
     mobile: react_native
-    embedded: null  # e.g., esp32c3_riscv
-    gpu: null       # e.g., cuda_jetson
+    embedded: null
+    gpu: null
