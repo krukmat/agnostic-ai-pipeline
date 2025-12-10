@@ -40,6 +40,14 @@ If YES → Open `PHASE4_TASKS_CHECKLIST.md` and start work
 |---|----------|---------|------|--------|
 | 6 | **docs/ORCHESTRATOR_V2_PHASE4_PLAN.md** | Complete 9-task specification | 25 min | ✅ |
 | 7 | **docs/ORCHESTRATOR_V2_COMPLETE_GAP_ANALYSIS.md** | Why Phase 4 exists (gap analysis) | 20 min | ✅ |
+| 8 | **docs/ORCHESTRATOR_V2_PHASE5_PLAN.md** | Next-phase roadmap (CoT learning) | 20 min | 📋 Draft |
+
+### SUPPORT GUIDES
+
+| Document | Purpose | Time | Status |
+|----------|---------|------|--------|
+| **docs/ORCHESTRATOR_V2_USAGE.md** | How to run the agentic loop, CoT exports, config flags | 10-15 min | ✅ |
+| **docs/ORCHESTRATOR_V2_MIGRATION.md** | How to migrate from legacy orchestrator while keeping coverage | 10-15 min | ✅ |
 
 ### REFERENCE DOCUMENTS
 
@@ -142,6 +150,7 @@ If YES → Open `PHASE4_TASKS_CHECKLIST.md` and start work
 - [ ] Reference PHASE4_PLAN.md for technical details
 - [ ] Update progress grid in checklist
 - [ ] Commit after each batch completes
+- [ ] Document every new task with a planning artifact (plan + task list) under `planning/` before implementation, as required by the repository workflow.
 
 ### Final Verification (Day 9)
 
@@ -317,4 +326,3 @@ You have everything you need:
 **Status**: ✅ READY FOR USE
 
 👉 **START HERE**: Open PHASE4_EXECUTIVE_SUMMARY.md
-

@@ -106,6 +106,34 @@
 
 ---
 
+## 📘 Usage & Migration Guides
+
+### docs/ORCHESTRATOR_V2_USAGE.md
+**Status**: ✅ COMPLETE
+**Purpose**: Explain how to run the agentic loop, observe CoT exports, and leverage configuration governance.
+**Read Time**: 10-15 minutes
+**Contains**:
+- Agentic CLI invocation (`scripts/run_orchestrator_agent.py`)
+- Smoke harness usage (`scripts/run_orchestrator_smoke_tests.sh`)
+- CoT output locations (`artifacts/cot_layer6/`)
+- Key config flags (`pipeline.allow_architect_with_po_needs_adjustment`, `features.pipeline_guard.bypass`) and testing expectations
+
+**Best For**: Operators and maintainers executing or monitoring the loop.
+
+### docs/ORCHESTRATOR_V2_MIGRATION.md
+**Status**: ✅ COMPLETE
+**Purpose**: Outline the path to retire the legacy orchestrator while preserving functionality and tests.
+**Read Time**: 10-15 minutes
+**Contains**:
+- Legacy test migration (`tests/scripts/test_orchestrate_*` → agentic suites)
+- Coverage/governance checkpoints (`implements` tagging, guard bypass toggles)
+- Dual-write cleanup and legacy helpers (`scripts/orchestrate.py`)
+- Reminder: every new task requires a documented plan and related task list stored under `planning/` before implementation.
+
+**Best For**: Release engineers and QA teams overseeing the transition.
+
+---
+
 ## 📖 REFERENCE DOCUMENTS
 
 ### 5. docs/ORCHESTRATOR_V2_COMPLETE_GAP_ANALYSIS.md
@@ -171,6 +199,11 @@
 **File**: `docs/ORCHESTRATOR_V2_PHASE3_COMPLETION.md`
 **Focus**: Advanced features (Analytics, Learning, Adaptive Policy)
 **Link**: For reference on Phase 3 patterns and integration approach
+
+### Phase 5 Planning (Upcoming)
+**File**: `docs/ORCHESTRATOR_V2_PHASE5_PLAN.md`
+**Purpose**: Draft roadmap for CoT analytics, deterministic `implements`, and learning layer (post-Phase 4).
+**Status**: 📋 Planning – review before kicking off the next batch.
 
 ---
 
@@ -432,4 +465,3 @@ A: See PHASE4_EXECUTIVE_SUMMARY.md → Risk Assessment table
 **Created**: December 10, 2025
 **Last Updated**: December 10, 2025
 **Status**: ✅ COMPLETE & READY FOR USE
-

@@ -106,6 +106,13 @@ make set-role role=qa provider=ollama model="qwen2.5-coder:7b"
 
 ## Key Features
 
+### Chain-of-Thought & Learning Layer
+
+- The orchestrator logs every planner/policy/LLM decision via `scripts/orchestrator/cot_tracker.py` so you can audit CoT artifacts in `artifacts/cot_layer6/`.
+- `scripts/orchestrator/cot_analytics.py` turns those logs into JSON/Markdown summaries while `scripts/orchestrator/learning_store.py` records per-story attempts for policy feedback.
+- `scripts/orchestrator/policy_feedback.py` looks at the learning store, reprioritizes ready stories, and escalates repeat failures before developers begin work; deterministic `implements` tagging (`scripts/tools/generate_implements.py`) keeps the guard satisfied.
+- See [Project Memory](docs/PROJECT_MEMORY.md) for the narrative, references, and artifacts related to CoT, analytics, guard reports, and policy feedback.
+
 ### Complexity-Based Routing (NEW)
 
 **Automatically select different models based on story complexity** to optimize cost and quality.
@@ -356,6 +363,7 @@ make fix-stories                 # Normalize stories.yaml
 - **Database Layer**: `docs/DATABASE_LAYER_PLAN.md`
 - **Driver Layer**: `docs/DRIVER_LAYER_GUIDE.md`
 - **DSPy Baseline**: `dspy_baseline/README.md`
+- **Project Memory**: `docs/PROJECT_MEMORY.md` – consolidated view of CoT, learning store, policy feedback, guard artifacts, and key docs
 - **GitHub Pages**: Vision, fallback, cost controls → https://krukmat.github.io/agnostic-ai-pipeline/
 
 ### Medium Series (Concepts & Rationale)

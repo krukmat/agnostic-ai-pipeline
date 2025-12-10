@@ -23,6 +23,7 @@ from scripts.utils.config_loader import load_config_base, normalize_bool
 from scripts.utils.story_manager import load_stories as _load_stories_shared, save_stories as _save_stories_shared, STORIES_PATH
 from llm import Client
 from logger import logger # Import the logger
+from scripts.tools.generate_implements import ensure_story_implements
 
 # Task: database-layer - Import dual-write support
 from pathlib import Path
@@ -638,13 +639,33 @@ async def main() -> None:
             return data, normalized
         return None, raw
 
+    stories_p = PLANNING / "stories.yaml"
+    stories_yaml = None
+    stories_data = None
+    if stories_p.exists():
+        stories_data, _ = _normalize_stories(stories_p)
+        try:
+            ensure_story_implements(
+                stories_path=stories_p,
+                requirements_path=PLANNING / "requirements.yaml",
+                mapping_path=PLANNING / "fr_story_map.yaml",
+            )
+        except Exception as exc:
+            logger.warning(f"[ARCHITECT] Failed to annotate implements: {exc}")
+        if stories_p.exists():
+            stories_yaml = stories_p.read_text(encoding="utf-8")
+            try:
+                parsed = yaml.safe_load(stories_yaml)
+                if isinstance(parsed, list):
+                    stories_data = parsed
+            except Exception:
+                stories_data = None
+
     try:
         db = DbLogger(db_ctx)
         if db.enabled:
             db.log_event("architect_start", role="architect", message="Architect run completed")
 
-            stories_p = PLANNING / "stories.yaml"
-            stories_data, stories_yaml = _normalize_stories(stories_p)
             if stories_yaml:
                 db.save_artifact("architect", "stories", stories_yaml)
                 if stories_data and hasattr(db_ctx, "create_stories_from_list"):

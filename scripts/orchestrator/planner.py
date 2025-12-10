@@ -17,6 +17,8 @@ from .coherence_checker import CoherenceChecker
 from .cot_tracker import ChainOfThoughtTracker  # Phase 4: CoT tracking
 from .coherence_orchestration_integration import CoherenceOrchestrationIntegration  # Task 4: Coherence integration
 from .llm_fallback import LLMFallbackEngine  # Task 9: LLM fallback for complex cases
+from .learning_store import LearningStore
+from .policy_feedback import PolicyFeedback
 
 
 class OrchestratorPlanner:
@@ -39,6 +41,11 @@ class OrchestratorPlanner:
         self.coherence_integration = CoherenceOrchestrationIntegration(
             checker=self.coherence_checker,
             tracker=self.cot_tracker
+        )
+        self.learning_store = LearningStore()
+        self.policy_feedback = PolicyFeedback(
+            learning_store=self.learning_store,
+            config=config
         )
         # Task 9: LLM fallback engine for complex escalation decisions
         self.llm_fallback_engine = LLMFallbackEngine(
@@ -190,6 +197,11 @@ class OrchestratorPlanner:
             failed_stories=set(state.stories_failed.keys()),
             doing_stories=set(state.stories_doing.keys()),
         )
+
+        ready_stories = self.policy_feedback.prioritize_ready_stories(ready_stories)
+        feedback_actions = self.policy_feedback.plan_remediation(state)
+        if feedback_actions:
+            return feedback_actions
 
         if not ready_stories:
             # No ready stories - check if we're done or blocked

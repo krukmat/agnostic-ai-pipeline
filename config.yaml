@@ -178,6 +178,15 @@ pipeline:
     max_concurrent_qa: 1
     dev_timeout: 600
     qa_timeout: 300
+features:
+  pipeline_guard:
+    bypass: false
+  learning_store:
+    retention_per_story: 20
+  policy_feedback:
+    enabled: true
+    failure_threshold: 2
+    priority_boosts: {}
 a2a:
   execution_mode: local
   agents:

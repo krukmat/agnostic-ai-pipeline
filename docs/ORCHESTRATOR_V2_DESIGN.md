@@ -10,6 +10,14 @@
 5. **Observable by Default**: Every decision is logged and traceable
 6. **Learnable**: System captures patterns and improves over time
 
+### Phase 4 Completion Status
+
+- **Status**: ✅ All Phase 4 deliverables implemented and documented (see `docs/ORCHESTRATOR_V2_PHASE4_PLAN.md` and `docs/ORCHESTRATOR_V2_PHASE4_COMPLETION.md`).
+- **Entry point**: `scripts/run_orchestrator_agent.py` replaces the legacy orchestrator CLI for day‑to‑day execution, while `scripts/orchestrate.py` supplies `execute_role`/`load_stories` helpers until the legacy runtime is fully retired.
+- **CoT observability**: The new tracker in `scripts/orchestrator/cot_tracker.py` logs planner/policy/LLM decisions and exports JSONL/markdown summaries under `artifacts/cot_layer6/`.
+- **Policy governance**: `config.yaml` exposes `pipeline.allow_architect_with_po_needs_adjustment` and `features.pipeline_guard.bypass` for temporary relaxation during story generation; these flags should be reset once automated `implements` coverage is in place.
+- **Docs**: Usage and migration guidance now live in `docs/ORCHESTRATOR_V2_USAGE.md` and `docs/ORCHESTRATOR_V2_MIGRATION.md` so teams can learn the new workflow and retire legacy targets.
+
 ---
 
 ## Layer 1: State Machine

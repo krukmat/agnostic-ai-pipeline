@@ -10,9 +10,10 @@
 - The implementation adheres to DRY/KISS/TDD principles: helpers were reused across layers, logic is decomposed into testable units, and documentation explicitly calls out the test results that verify each behavior.
 - All 9 tasks from `PHASE4_PLAN` were executed end-to-end; the execution loop has been validated by the agentic smoke harness and by pytest suites covering runtime, architect, dev, and orchestrator helpers.
 - Key artifacts:
-  1. New runtime modules under `scripts/orchestrator/` (CoT tracker, scheduler, feedback loop).
-  2. Agentic CLI `scripts/run_orchestrator_agent.py` replacing legacy orchestrate flows.
-  3. Documentation deliverables (this report, PHASE4 indexes) now capture the Phase 4 readiness.
+1. New runtime modules under `scripts/orchestrator/` (CoT tracker, scheduler, feedback loop).
+2. Agentic CLI `scripts/run_orchestrator_agent.py` replacing legacy orchestrate flows.
+3. Documentation deliverables (this report, PHASE4 indexes) now capture the Phase 4 readiness.
+4. Usage (`docs/ORCHESTRATOR_V2_USAGE.md`) and Migration (`docs/ORCHESTRATOR_V2_MIGRATION.md`) guides that explain the agentic workflow, CoT exports, config flags, and the legacy transition steps.
 
 ## 2 Task-by-Task Results
 
@@ -70,4 +71,3 @@
 - Monitor `features.pipeline_guard.bypass`; disable it once stories include proper `implements` (automation script pending).
 - Capture CoT artifacts (`artifacts/cot/`) after each smoke run to audit reasoning (planner/LLM fallback).
 - Update README Phase 4 and migration docs (`README_PHASE4.md`, `PHASE4_TASKS_CHECKLIST.md`) with this completion report link and confirm references in `docs/ORCHESTRATOR_V2_DESIGN.md`.
-
