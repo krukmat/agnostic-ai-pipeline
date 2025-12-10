@@ -14,6 +14,8 @@ from .state_machine import PipelinePhase, PipelineState, StateMachine
 from .story_dag import StoryDAG
 from .policy_engine import PolicyEngine
 from .coherence_checker import CoherenceChecker
+from .cot_tracker import ChainOfThoughtTracker  # Phase 4: CoT tracking
+from .coherence_orchestration_integration import CoherenceOrchestrationIntegration  # Task 4: Coherence integration
 
 
 class OrchestratorPlanner:
@@ -31,7 +33,13 @@ class OrchestratorPlanner:
         self.policy_engine = policy_engine
         self.config = config
         self.coherence_checker = CoherenceChecker(config)
-        logger.info("[planner] Initialized rule-based planner (no LLM)")
+        self.cot_tracker = ChainOfThoughtTracker()  # Phase 4: CoT tracking
+        # Task 4: Coherence integration with CoT tracking
+        self.coherence_integration = CoherenceOrchestrationIntegration(
+            checker=self.coherence_checker,
+            tracker=self.cot_tracker
+        )
+        logger.info("[planner] Initialized rule-based planner with coherence integration")
 
     def plan_next_actions(self, state: PipelineState) -> List[Dict]:
         """Decide what to execute next based on state. Returns list of actions."""
@@ -57,9 +65,14 @@ class OrchestratorPlanner:
 
     def _plan_init(self, state: PipelineState) -> List[Dict]:
         """INIT phase: Check artifacts and start BA if needed."""
+        # Phase 4: Log phase entry
+        self.cot_tracker.phase = state.phase.value
+
         # If requirements exist, transition to next phase (handled by state machine)
         if state.has_requirements:
             logger.info("[planner] Requirements exist, transitioning to REQUIREMENTS phase")
+            # Phase 4: Log transition
+            self.cot_tracker.log_state_transition("INIT", "REQUIREMENTS", "requirements_found")
             return []
 
         # Start BA
@@ -77,11 +90,21 @@ class OrchestratorPlanner:
 
     def _plan_requirements(self, state: PipelineState) -> List[Dict]:
         """REQUIREMENTS phase: BA → PO → Architect transition."""
+        # Phase 4: Log phase entry
+        self.cot_tracker.phase = state.phase.value
+
         if not state.has_requirements:
             logger.debug("[planner] Waiting for BA requirements...")
             return []
 
         if not state.has_product_vision:
+            # Phase 4: Log decision
+            self.cot_tracker.log_planner_decision(
+                decision_type="requirements_validation",
+                alternatives=["RUN_PO", "skip_validation"],
+                chosen="RUN_PO",
+                confidence=1.0
+            )
             return [
                 {
                     "tool": "RUN_PO",
@@ -94,6 +117,13 @@ class OrchestratorPlanner:
             ]
 
         if not state.has_stories:
+            # Phase 4: Log decision
+            self.cot_tracker.log_planner_decision(
+                decision_type="story_generation",
+                alternatives=["RUN_ARCHITECT", "skip"],
+                chosen="RUN_ARCHITECT",
+                confidence=1.0
+            )
             return [
                 {
                     "tool": "RUN_ARCHITECT",
@@ -105,12 +135,23 @@ class OrchestratorPlanner:
                 }
             ]
 
+        # Task 4: Check coherence at post_requirements checkpoint before transitioning
+        remediation_actions = self.coherence_integration.plan_with_coherence(state)
+        if remediation_actions:
+            # Critical issues found, return remediation actions
+            return remediation_actions
+
         # Ready to transition to PLANNING
+        # Phase 4: Log transition
+        self.cot_tracker.log_state_transition("REQUIREMENTS", "PLANNING", "requirements_complete")
         self.state_machine.transition_to(PipelinePhase.PLANNING, "Requirements complete, ready for development planning")
         return self._plan_planning(state)
 
     def _plan_planning(self, state: PipelineState) -> List[Dict]:
         """PLANNING phase: Stories are available."""
+        # Phase 4: Log phase entry
+        self.cot_tracker.phase = state.phase.value
+
         if not state.has_stories:
             logger.debug("[planner] Waiting for stories...")
             return []
@@ -118,12 +159,23 @@ class OrchestratorPlanner:
         # Rebuild DAG from current state
         self._rebuild_dag_from_state(state)
 
+        # Task 4: Check coherence at post_planning checkpoint before transitioning
+        remediation_actions = self.coherence_integration.plan_with_coherence(state)
+        if remediation_actions:
+            # Critical issues found, return remediation actions
+            return remediation_actions
+
         # Ready to transition to DEVELOPMENT
+        # Phase 4: Log transition
+        self.cot_tracker.log_state_transition("PLANNING", "DEVELOPMENT", "architecture_complete")
         self.state_machine.transition_to(PipelinePhase.DEVELOPMENT, "Architecture complete, ready for development")
         return self._plan_development(state)
 
     def _plan_development(self, state: PipelineState) -> List[Dict]:
         """DEVELOPMENT phase: Execute stories with DAG and policies."""
+        # Phase 4: Log phase entry
+        self.cot_tracker.phase = state.phase.value
+
         actions = []
 
         # Get ready stories from DAG
@@ -137,6 +189,8 @@ class OrchestratorPlanner:
             # No ready stories - check if we're done or blocked
             if len(state.stories_done) == state.total_stories:
                 logger.info("[planner] All stories completed, transitioning to INTEGRATION")
+                # Phase 4: Log transition
+                self.cot_tracker.log_state_transition("DEVELOPMENT", "INTEGRATION", "all_stories_done")
                 self.state_machine.transition_to(PipelinePhase.INTEGRATION, "All stories done, running full QA")
                 return self._plan_integration(state)
 
@@ -144,6 +198,9 @@ class OrchestratorPlanner:
             blocked = self.dag.get_blocked_stories(set(state.stories_failed.keys()))
             if blocked:
                 logger.warning(f"[planner] {len(blocked)} stories blocked by failures: {blocked}")
+                # Phase 4: Log escalation
+                for story in blocked:
+                    self.cot_tracker.log_escalation_decision(story, "escalate_to_architect", "blocked_by_failures")
                 # Return to PLANNING for architect refinement
                 self.state_machine.transition_to(PipelinePhase.PLANNING, "Stories blocked by failures, need refinement")
                 return []
@@ -152,9 +209,10 @@ class OrchestratorPlanner:
             logger.debug("[planner] Waiting for in-progress stories to complete...")
             return []
 
-        # Get parallel batch
+        # Phase 4: Log DAG decision
         max_parallel = self.policy_engine.get_max_parallel_stories()
         batch = self.dag.get_parallel_batch(ready_stories, max_parallelism=max_parallel)
+        self.cot_tracker.log_dag_decision(ready_stories, batch, "parallel_batch_selection")
 
         # Plan each story in batch
         for story_id in batch:
@@ -170,6 +228,8 @@ class OrchestratorPlanner:
 
             if escalation_action:
                 logger.warning(f"[planner] Escalation for {story_id}: {escalation_action}")
+                # Phase 4: Log escalation decision
+                self.cot_tracker.log_escalation_decision(story_id, escalation_action, f"failed_{attempts}_times")
                 actions.append(
                     {
                         "tool": "RUN_ARCHITECT",
@@ -205,7 +265,23 @@ class OrchestratorPlanner:
 
     def _plan_integration(self, state: PipelineState) -> List[Dict]:
         """INTEGRATION phase: Run full QA."""
+        # Phase 4: Log phase entry
+        self.cot_tracker.phase = state.phase.value
+
         if len(state.stories_done) == state.total_stories and not state.stories_failed:
+            # Task 4: Check coherence at post_integration checkpoint before QA
+            remediation_actions = self.coherence_integration.plan_with_coherence(state)
+            if remediation_actions:
+                # Critical issues found, return remediation actions
+                return remediation_actions
+
+            # Phase 4: Log decision
+            self.cot_tracker.log_planner_decision(
+                decision_type="qa_execution",
+                alternatives=["RUN_QA_FULL", "skip_qa"],
+                chosen="RUN_QA_FULL",
+                confidence=1.0
+            )
             return [
                 {
                     "tool": "RUN_QA_FULL",
@@ -218,6 +294,33 @@ class OrchestratorPlanner:
             ]
 
         return []
+
+    def export_cot_reasoning(self, output_dir: Optional[Path] = None) -> Dict:
+        """Export CoT reasoning to JSONL and Markdown formats.
+
+        Returns dict with:
+        - thought_count: Total number of logged thoughts
+        - jsonl_path: Path to JSONL export
+        - markdown_path: Path to Markdown export
+        """
+        if output_dir is None:
+            output_dir = Path("artifacts/cot_layer6")
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        jsonl_path = output_dir / "thoughts.jsonl"
+        markdown_path = output_dir / "reasoning_chain.md"
+
+        self.cot_tracker.export_jsonl(jsonl_path)
+        self.cot_tracker.export_markdown(markdown_path)
+
+        return {
+            "thought_count": self.cot_tracker.get_thought_count(),
+            "jsonl_path": str(jsonl_path),
+            "markdown_path": str(markdown_path),
+            "by_layer": self.cot_tracker.get_thoughts_by_layer(),
+            "by_phase": {phase: len(thoughts) for phase, thoughts in self.cot_tracker.get_thoughts_by_phase().items()},
+        }
 
     def _rebuild_dag_from_state(self, state: PipelineState) -> None:
         """Rebuild DAG from current state."""
