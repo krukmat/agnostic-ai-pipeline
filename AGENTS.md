@@ -28,3 +28,5 @@ When asked to produce a development plan, always generate a documented plan arti
 - Si existe un documento de review pendiente, leerlo y aplicar correcciones requeridas; respetar coherencia con `CLAUDE.MD` y prompts aplicables.
 - Para despliegues, generar `DEPLOY_STEPS.MD` con pasos y consideraciones completas.
 - Antes de commit/push, proponer el mensaje de commit (con detalle funcional) para evaluación/autorización; no ignorar commits pendientes si se solicitan.
+- Toda solicitud de tareas debe acompañarse de una planificación explícita y un listado de actividades relacionadas con el objetivo.
+- Cumplir siempre con principios de ingeniería de software (DRY, TDD, SOLID, etc.), optimizar el uso de tokens y evitar mocks salvo dependencias externas imposibles de resolver en unit tests.
