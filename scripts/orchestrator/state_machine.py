@@ -46,6 +46,9 @@ class PipelineState:
     stories_doing: Dict[str, int] = field(default_factory=dict)  # story_id -> attempt
     stories_done: Set[str] = field(default_factory=set)
     stories_failed: Dict[str, List[str]] = field(default_factory=dict)  # story_id -> [errors]
+    story_attempts: Dict[str, int] = field(default_factory=dict)  # story_id -> attempt_count
+    story_start_times: Dict[str, float] = field(default_factory=dict)  # story_id -> timestamp
+    story_durations: Dict[str, float] = field(default_factory=dict)  # story_id -> elapsed_seconds
 
     # Dependency tracking
     story_dependencies: Dict[str, List[str]] = field(default_factory=dict)  # story_id -> [depends_on]
@@ -185,13 +188,19 @@ class StateMachine:
 
             # Update story status
             if story_id:
+                # Track attempt and duration
+                elapsed = result.get("elapsed", 0)
+                if elapsed:
+                    self.state.story_durations[story_id] = elapsed
+
                 if status in {"ok", "passed", "success"}:
                     if tool == "RUN_DEV_STORY":
                         # Dev success → mark as doing (needs QA)
                         if story_id in self.state.stories_todo:
                             self.state.stories_todo.remove(story_id)
                         self.state.stories_doing[story_id] = self.state.stories_doing.get(story_id, 0) + 1
-                        logger.debug(f"[state_machine] Story {story_id}: todo → doing")
+                        self.state.story_attempts[story_id] = self.state.story_attempts.get(story_id, 0) + 1
+                        logger.debug(f"[state_machine] Story {story_id}: todo → doing (attempt {self.state.story_attempts[story_id]})")
 
                     elif tool == "RUN_QA_STORY":
                         # QA success → mark as done
@@ -206,7 +215,8 @@ class StateMachine:
                         self.state.stories_failed[story_id] = []
                     self.state.stories_failed[story_id].append(error_msg)
                     self.state.stories_doing.pop(story_id, None)
-                    logger.warning(f"[state_machine] Story {story_id}: failed ({error_msg})")
+                    self.state.story_attempts[story_id] = self.state.story_attempts.get(story_id, 0) + 1
+                    logger.warning(f"[state_machine] Story {story_id}: failed (attempt {self.state.story_attempts[story_id]}) - {error_msg}")
 
         # Re-sync from filesystem to catch any file changes
         self._sync_state_from_filesystem()

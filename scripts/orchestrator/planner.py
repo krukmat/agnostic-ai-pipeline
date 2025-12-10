@@ -6,10 +6,14 @@ Makes decisions based on state machine, DAG, and policies (no LLM).
 
 from typing import List, Dict, Optional
 from logger import logger
+from pathlib import Path
+import yaml
+import json
 
 from .state_machine import PipelinePhase, PipelineState, StateMachine
 from .story_dag import StoryDAG
 from .policy_engine import PolicyEngine
+from .coherence_checker import CoherenceChecker
 
 
 class OrchestratorPlanner:
@@ -26,6 +30,7 @@ class OrchestratorPlanner:
         self.dag = dag
         self.policy_engine = policy_engine
         self.config = config
+        self.coherence_checker = CoherenceChecker(config)
         logger.info("[planner] Initialized rule-based planner (no LLM)")
 
     def plan_next_actions(self, state: PipelineState) -> List[Dict]:
@@ -51,7 +56,14 @@ class OrchestratorPlanner:
             return []
 
     def _plan_init(self, state: PipelineState) -> List[Dict]:
-        """INIT phase: Start BA."""
+        """INIT phase: Check artifacts and start BA if needed."""
+        # If requirements exist, transition to next phase (handled by state machine)
+        if state.has_requirements:
+            logger.info("[planner] Requirements exist, transitioning to REQUIREMENTS phase")
+            return []
+
+        # Start BA
+        logger.info("[planner] No requirements found, starting BA")
         return [
             {
                 "tool": "RUN_BA",
@@ -219,3 +231,64 @@ class OrchestratorPlanner:
             self.dag.add_story(sid, metadata, depends_on)
 
         logger.debug(f"[planner] Rebuilt DAG with {state.total_stories} stories")
+
+    def _check_and_log_coherence(self, state: PipelineState) -> None:
+        """Check coherence after phase transitions and log issues non-blocking."""
+        # Phase 2 Task 4: Coherence integration at key points
+        coherence_issues = []
+
+        # Check BA→PO alignment
+        if state.phase == PipelinePhase.REQUIREMENTS:
+            ba_output = self._load_artifact("planning/requirements.yaml")
+            po_output = self._load_artifact("planning/product_owner_review.yaml")
+            if ba_output and po_output:
+                alignment = self.coherence_checker.check_ba_po_alignment(
+                    ba_output, po_output
+                )
+                if not alignment["aligned"]:
+                    logger.warning(
+                        f"[coherence] BA→PO misalignment: {alignment['issues']}"
+                    )
+                    coherence_issues.append(
+                        {"phase": "REQUIREMENTS", "check": "BA→PO", **alignment}
+                    )
+
+        # Check Arch→Stories alignment
+        elif state.phase == PipelinePhase.PLANNING:
+            arch_output = self._load_artifact("planning/architecture.yaml")
+            stories_output = self._load_artifact("planning/stories.yaml")
+            if arch_output and stories_output:
+                alignment = self.coherence_checker.check_arch_stories_alignment(
+                    arch_output, stories_output
+                )
+                if not alignment["aligned"]:
+                    logger.warning(
+                        f"[coherence] Arch→Stories misalignment: {alignment['issues']}"
+                    )
+                    coherence_issues.append(
+                        {"phase": "PLANNING", "check": "Arch→Stories", **alignment}
+                    )
+
+        # Store coherence issues in state (can be retrieved later)
+        if coherence_issues and not hasattr(state, "coherence_issues"):
+            state.coherence_issues = []
+        if hasattr(state, "coherence_issues"):
+            state.coherence_issues.extend(coherence_issues)
+
+    def _load_artifact(self, path: str) -> Optional[Dict]:
+        """Load artifact from filesystem.
+
+        Supports both .yaml and .json files.
+        """
+        artifact_path = Path(path)
+        if artifact_path.exists():
+            try:
+                if path.endswith(".yaml") or path.endswith(".yml"):
+                    with open(artifact_path) as f:
+                        return yaml.safe_load(f)
+                elif path.endswith(".json"):
+                    with open(artifact_path) as f:
+                        return json.load(f)
+            except Exception as e:
+                logger.debug(f"[planner] Failed to load artifact {path}: {e}")
+        return None
