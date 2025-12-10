@@ -600,67 +600,119 @@ orchestration:
 
 ---
 
-### **Task 9: LLM Fallback for Complex Cases** ✅ NEW
+### **Task 9: LLM Fallback for Complex Cases** ✅ COMPLETE
 
 **Files**:
-- `scripts/orchestrator/llm_fallback.py` (NEW, 150 lines)
-- Modify `scripts/orchestrator/planner.py` (+50 lines)
+- `scripts/orchestrator/llm_fallback.py` (NEW, 320 lines)
+- Modify `scripts/orchestrator/planner.py` (+30 lines)
 
 **Purpose**: Implement LLM fallback for ambiguous/complex cases (Design line 1300)
 
 **Components**:
 
-#### 9.1 LLMFallbackEngine Class (150 lines)
+#### 9.1 LLMFallbackEngine Class (320 lines)
 
 ```python
 class LLMFallbackEngine:
     """LLM fallback for complex orchestration decisions."""
 
-    def __init__(config: Dict)
-    async def should_use_llm(decision_context: Dict) -> bool
-    async def get_llm_decision(prompt: str, context: Dict) -> Dict
-    async def escalation_planning(state, failed_stories) -> List[Dict]
+    def __init__(config: Dict, cot_tracker: Optional[ChainOfThoughtTracker])
+    def should_use_llm(decision_context: Dict) -> bool
+    def get_llm_decision(prompt: str, context: Dict) -> LLMDecision
+    def escalation_planning(state: PipelineState, failed_stories: Set[str]) -> List[Dict]
     def _build_context_prompt(context) -> str
     def _parse_llm_response(response) -> Dict
+    def _log_decision_to_cot(decision: LLMDecision, context: Dict) -> None
 ```
 
 **Methods**:
-1. `should_use_llm()` - Determine if decision needs LLM
-   - No deterministic rule matched
-   - Ambiguous case
-   - Escalation needed
+1. `should_use_llm()` - Determine if decision needs LLM (55 lines)
+   - No deterministic rule matched + high ambiguity → use LLM
+   - Multiple failures (2+) with ambiguous pattern → use LLM
+   - Epic-wide failures (>=50% stories) → use LLM
+   - Threshold-based: default 0.7 ambiguity score
    - Returns: bool
 
-2. `get_llm_decision()` - Get LLM-based decision
-   - Call LLM client
-   - Parse response
-   - Log to CoT with confidence <1.0
-   - Returns: decision dict
+2. `get_llm_decision()` - Get LLM-based decision (40 lines)
+   - Build context prompt
+   - Call LLM client (stub for now)
+   - Parse response with confidence <1.0
+   - Log to CoT tracker
+   - Returns: LLMDecision dataclass
 
-3. `escalation_planning()` - Complex escalation logic
-   - Multiple failed stories
-   - Epic-wide failures
-   - Architectural issues
-   - Returns: list of remediation actions
+3. `escalation_planning()` - Complex escalation logic (50 lines)
+   - Single story: RUN_ARCHITECT + refine_story mode
+   - 2+ stories: Check if architectural issue
+   - 3+ stories: RUN_ARCHITECT + review_architecture
+   - Returns: List[Dict] with RUN_ARCHITECT actions
 
-**Integration into Planner**:
-- In `_plan_escalation()`: check `should_use_llm()` before returning actions
-- If true: call `llm_fallback_engine.escalation_planning()`
-- Log decision to CoT with confidence score
+4. `_build_context_prompt()` - Build LLM prompt (30 lines)
+   - Include story_id, phase, error, attempts
+   - Include affected stories for epic issues
+   - Return formatted markdown-like prompt
 
-**Estimated Lines**: 200 code
+5. `_parse_llm_response()` - Parse LLM response (25 lines)
+   - Extract decision, reasoning, confidence
+   - Clamp confidence to [0.0, 1.0]
+   - Extract actions list
+   - Returns: Dict with all fields
 
-**Tests Required**: 4-5 tests
-- LLM fallback condition detection
-- LLM response parsing
-- Escalation planning
-- CoT logging with confidence
+6. `_log_decision_to_cot()` - Log to CoT (20 lines)
+   - Log LLMDecision to tracker
+   - Include confidence score <1.0
+   - Mark as llm_call kind
 
-**Estimated Test Lines**: 150 lines
+**Integration into Planner** (30 lines):
+- Initialize LLMFallbackEngine in __init__ with config + cot_tracker
+- In _plan_development blocked stories section:
+  - Build decision_context (type, failed_count, ambiguity_score)
+  - Call should_use_llm()
+  - If true: call escalation_planning() and return actions
+  - Otherwise: continue with normal planning
 
-**Total Task 9**: ~350 lines
+**Test Suite** (21 tests, 250+ lines):
+- TestLLMFallbackEngineInitialization (2): Init, tracker reference
+- TestLLMFallbackDecisionLogic (4): Complex case, simple case, escalation, threshold
+- TestContextPromptBuilding (2): Failure context, architectural context
+- TestEscalationPlanning (3): Single story, multiple, reason field
+- TestLLMResponseParsing (2): Valid response, list actions
+- TestCoTLoggingIntegration (2): Log to CoT, low confidence
+- TestFallbackTriggerScenarios (3): Repeated failures, epic failures, clear error
+- TestLLMFallbackE2E (3): Full workflow, mixed decisions, non-interference
 
-**Status**: ⏳ Closes LLM requirement from DESIGN.md
+**Total Task 9**: ~350 lines (320 code + 250 tests)
+
+**Test Results** (0.08s):
+```
+21 passed ✅
+
+Breakdown:
+- TestLLMFallbackEngineInitialization: 2/2
+- TestLLMFallbackDecisionLogic: 4/4
+- TestContextPromptBuilding: 2/2
+- TestEscalationPlanning: 3/3
+- TestLLMResponseParsing: 2/2
+- TestCoTLoggingIntegration: 2/2
+- TestFallbackTriggerScenarios: 3/3
+- TestLLMFallbackE2E: 3/3
+```
+
+**Non-blocking Architecture**:
+- Fallback engine runs when deterministic rules insufficient
+- Returns escalation actions (RUN_ARCHITECT) on complex cases
+- Logs decisions to CoT with confidence <1.0
+- Doesn't interfere with normal planning flow
+- Enabled/disabled via config (llm_fallback_enabled)
+
+**Status**: ✅ **COMPLETE** (21/21 tests passing)
+
+**Integration with Planner**:
+- File modified: `scripts/orchestrator/planner.py` (+30 lines)
+  - Import LLMFallbackEngine
+  - Initialize in __init__
+  - Add decision context building in blocked stories section (15 lines)
+  - Call should_use_llm() and escalation_planning() (10 lines)
+- Files created: `scripts/orchestrator/llm_fallback.py` (320 lines)
 
 ---
 

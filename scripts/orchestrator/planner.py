@@ -16,6 +16,7 @@ from .policy_engine import PolicyEngine
 from .coherence_checker import CoherenceChecker
 from .cot_tracker import ChainOfThoughtTracker  # Phase 4: CoT tracking
 from .coherence_orchestration_integration import CoherenceOrchestrationIntegration  # Task 4: Coherence integration
+from .llm_fallback import LLMFallbackEngine  # Task 9: LLM fallback for complex cases
 
 
 class OrchestratorPlanner:
@@ -39,7 +40,12 @@ class OrchestratorPlanner:
             checker=self.coherence_checker,
             tracker=self.cot_tracker
         )
-        logger.info("[planner] Initialized rule-based planner with coherence integration")
+        # Task 9: LLM fallback engine for complex escalation decisions
+        self.llm_fallback_engine = LLMFallbackEngine(
+            config=config,
+            cot_tracker=self.cot_tracker
+        )
+        logger.info("[planner] Initialized rule-based planner with coherence integration and LLM fallback")
 
     def plan_next_actions(self, state: PipelineState) -> List[Dict]:
         """Decide what to execute next based on state. Returns list of actions."""
@@ -201,6 +207,21 @@ class OrchestratorPlanner:
                 # Phase 4: Log escalation
                 for story in blocked:
                     self.cot_tracker.log_escalation_decision(story, "escalate_to_architect", "blocked_by_failures")
+
+                # Task 9: Check if LLM fallback needed for complex failure patterns
+                decision_context = {
+                    "type": "epic_escalation" if len(blocked) >= 3 else "escalation",
+                    "failed_count": len(blocked),
+                    "total_stories": state.total_stories,
+                    "ambiguity_score": 0.7 if len(blocked) > 1 else 0.5,
+                    "matched_rules": 1,  # We have a rule, but might need LLM for complex decisions
+                }
+
+                if self.llm_fallback_engine.should_use_llm(decision_context):
+                    logger.info(f"[planner] Using LLM fallback for complex {len(blocked)}-story failure")
+                    llm_actions = self.llm_fallback_engine.escalation_planning(state, set(blocked))
+                    return llm_actions
+
                 # Return to PLANNING for architect refinement
                 self.state_machine.transition_to(PipelinePhase.PLANNING, "Stories blocked by failures, need refinement")
                 return []
