@@ -52,6 +52,7 @@ from .adaptive_policy_engine import AdaptivePolicyEngine
 from .cot_tracker import ThoughtEntry, ChainOfThoughtTracker
 from .coherence_orchestration_integration import CoherenceOrchestrationIntegration
 from .llm_fallback import LLMFallbackEngine, LLMDecision  # Task 9: LLM fallback
+from .main_orchestration_loop import run_agentic_orchestrator_v2  # Task 5: Main loop
 
 __all__ = [
     # Phase 1 (Core)
@@ -82,4 +83,5 @@ __all__ = [
     "CoherenceOrchestrationIntegration",
     "LLMFallbackEngine",
     "LLMDecision",
+    "run_agentic_orchestrator_v2",
 ]
