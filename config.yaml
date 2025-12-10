@@ -133,19 +133,24 @@ pipeline:
   v2_max_steps: 20
   v2_max_parallel_stories: 3
 
-  # Retry Policies
+  # Retry Policies (Task 6)
   retry_policies:
     dev:
       max_attempts: 3
       backoff: exponential
+      circuit_breaker:
+        threshold: 5
+        window: 600
     architect:
       max_attempts: 2
       backoff: linear
+      escalation: manual
     qa:
       max_attempts: 2
       backoff: none
+      on_failure: return_to_dev
 
-  # Escalation Policies
+  # Escalation Policies (Task 6)
   escalation_policies:
     - condition: "dev_attempts >= 3 AND same_error_pattern"
       action: "architect_refine"
@@ -154,7 +159,19 @@ pipeline:
       action: "architect_review_tests"
       reason: "Low coverage with failures needs design review"
 
-  # Resource Policies
+  # Priority Policies (Task 6)
+  priority_policies:
+    - priority: P0
+      max_retries: 5
+      timeout_multiplier: 2.0
+    - priority: P1
+      max_retries: 3
+      timeout_multiplier: 1.0
+    - priority: P2
+      max_retries: 2
+      timeout_multiplier: 0.8
+
+  # Resource Policies (Task 6)
   resource_policies:
     max_parallel_stories: 3
     max_concurrent_dev: 2
@@ -261,3 +278,38 @@ project:
     mobile: react_native
     embedded: null
     gpu: null
+
+# Phase 4: Complete Orchestration Configuration (Task 6)
+coherence:
+  enabled: true
+  checkpoints:
+    post_requirements: true
+    post_planning: true
+    post_development: false
+    post_integration: true
+  min_coverage: 0.95
+  min_similarity: 0.75
+  llm_enabled: true
+  llm_for_checkpoints:
+    - post_integration
+  block_on_critical: true
+  auto_remediate: true
+  notify_on_warnings: true
+
+cot_tracking:
+  enabled: true
+  layer_aware: true
+  export_formats:
+    - jsonl
+    - markdown
+  output_dir: artifacts/cot_layer6
+
+orchestration:
+  llm_fallback:
+    enabled: true
+    use_for:
+      - escalation_planning
+      - complex_decisions
+    llm_role: orchestrator
+    max_tokens: 2000
+    temperature: 0.3
