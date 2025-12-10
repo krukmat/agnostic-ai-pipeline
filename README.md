@@ -22,7 +22,7 @@ The purpose of this project is to automate the entire software development lifec
 
 - **Involved Roles** – A Business Analyst, Product Owner, Architect, Developer, QA, and an Orchestrator collaborate to transform a concept into a functional product.
 - **Generated Artifacts** – The system produces planning files (`requirements.yaml`, `stories.yaml`), source code and tests (in `project/`), and QA reports (`artifacts/qa/`).
-- **Workflow** – Usa `make iteration` (orquestador agentic) o ejecuta cada rol de forma independiente para depurar o tener control granular.
+- **Workflow** – Use `make iteration` or the agentic orchestrator (`make agentic-iteration`) to run the full loop, or execute each role independently when you need granular debugging.
 
 ```mermaid
 flowchart LR
@@ -111,7 +111,7 @@ make set-role role=qa provider=ollama model="qwen2.5-coder:7b"
 - The orchestrator logs every planner/policy/LLM decision via `scripts/orchestrator/cot_tracker.py` so you can audit CoT artifacts in `artifacts/cot_layer6/`.
 - `scripts/orchestrator/cot_analytics.py` turns those logs into JSON/Markdown summaries while `scripts/orchestrator/learning_store.py` records per-story attempts for policy feedback.
 - `scripts/orchestrator/policy_feedback.py` looks at the learning store, reprioritizes ready stories, and escalates repeat failures before developers begin work; deterministic `implements` tagging (`scripts/tools/generate_implements.py`) keeps the guard satisfied.
-- See [Project Memory](docs/PROJECT_MEMORY.md) for the narrative, references, and artifacts related to CoT, analytics, guard reports, and policy feedback.
+- See the [implementation details](docs/PROJECT_MEMORY.md) for the narrative, references, and artifacts related to CoT, analytics, guard reports, and policy feedback.
 
 ### Complexity-Based Routing (NEW)
 
@@ -363,8 +363,7 @@ make fix-stories                 # Normalize stories.yaml
 - **Database Layer**: `docs/DATABASE_LAYER_PLAN.md`
 - **Driver Layer**: `docs/DRIVER_LAYER_GUIDE.md`
 - **DSPy Baseline**: `dspy_baseline/README.md`
-- **Project Memory**: `docs/PROJECT_MEMORY.md` – consolidated view of CoT, learning store, policy feedback, guard artifacts, and key docs
-- **GitHub Pages**: Vision, fallback, cost controls → https://krukmat.github.io/agnostic-ai-pipeline/
+- **New Orchestrator agentic and Chain-of-thought LLM independent scope**: `docs/PROJECT_MEMORY.md` – compact overview of the agentic orchestrator, CoT/logging, learning store, guard artifacts, and how the BA→PO→Arch→Dev→QA loop is orchestrated without overloading this README.
 
 ### Medium Series (Concepts & Rationale)
 
