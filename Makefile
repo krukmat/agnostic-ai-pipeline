@@ -11,23 +11,18 @@ help:
 	@echo "  plan         -> Arquitecto + normaliza historias"
 	@echo "  dev          -> Developer (toma siguiente 'todo')"
 	@echo "  qa           -> QA textual (+tests si QA_RUN_TESTS=1)"
-	@echo "  loop         -> Orquestador Dev→QA (auto-promueve, LOOP_MODE=dev_only para solo Dev)"
-	@echo "  loop-dev     -> Development loop (solo dev, no QA)"
-	@echo "  iteration    -> BA→PO→Architect→Dev→QA en cadena + snapshot bajo artifacts/iterations/"
+	@echo "  agentic-iteration -> Iteración agentic (LLM orquestador) con CONCEPT"
 	@echo "  fix-stories  -> Normaliza planning/stories.yaml"
 	@echo "  show-config  -> Muestra config.yaml"
 	@echo "  set-role     -> role=<ba|architect|dev|qa> provider=<ollama|openai> model=..."
 	@echo "  set-quality  -> profile=<low|normal|high> [role=...]"
 	@echo "  clean        -> Limpia artifacts/ y reestablece planning/ + project/ (usa CLEAN_FLUSH=0 para conservarlos)"
 	@echo "  warmup       -> Inicia los servicios A2A remotos necesarios"
-	@echo "  spike        -> BA→PO→Architect→Dev sin QA para pruebas de concepto"
+	@echo "  spike        -> (deprecated) BA→PO→Architect→Dev sin QA; usar agentic-iteration"
 
 spike:
-	@echo "==> Ejecutando spike (BA→PO→Architect→Dev)..."
-	$(MAKE) ba CONCEPT="$${CONCEPT}"
-	$(MAKE) po
-	$(MAKE) plan
-	LOOP_MODE=dev_only $(MAKE) loop
+	@echo "==> Spike deprecated. Use 'make agentic-iteration CONCEPT=\"...\" MAX_STEPS=2 MAX_ACTIONS=2' en su lugar."
+	@exit 1
 
 setup:
 	python3 -m venv .venv || true
@@ -77,20 +72,20 @@ clean:
 	CLEAN_FLUSH="$${CLEAN_FLUSH:-$${FLUSH:-1}}" $(PY) scripts/run_cleanup.py
 
 loop:
-	CHECK_ARCHITECTURE=0 ALLOW_EMPTY_STORIES=1 $(PY) scripts/checks/pipeline_guard.py
-	LOOP_MODE="$${LOOP_MODE:-full}" MAX_LOOPS="$${MAX_LOOPS:-1}" ALLOW_NO_TESTS="$${ALLOW_NO_TESTS:-0}" ARCHITECT_INTERVENTION="$${ARCHITECT_INTERVENTION:-1}" $(PY) scripts/orchestrate.py
+	@echo "==> Target loop deprecated. Use agentic-iteration."
+	@exit 1
 
 loop-dev:
-	@echo "==> Ejecutando development loop (solo dev, no QA)..."
-	@while $(PY) -c "import yaml,sys; stories=yaml.safe_load(open('planning/stories.yaml')); [sys.exit(1) for s in stories if isinstance(s,dict) and s.get('status')=='todo']" 2>/dev/null; do \
-		echo "==> Ejecutando siguiente historia 'todo'..."; \
-		$(MAKE) dev DEV_RETRIES=$${DEV_RETRIES:-4} || { echo "==> Dev falló, reintentando..."; sleep 2; }; \
-		sleep 1; \
-	done || echo "==> Todas las historias procesadas o archivo vacío"
-	@echo "==> Development loop completado"
+	@echo "==> Target loop-dev deprecated. Use agentic-iteration."
+	@exit 1
 
 fix-stories:
 	$(PY) scripts/fix_stories.py
+
+agentic-iteration:
+	@if [ -z "$$CONCEPT" ]; then echo 'Set CONCEPT="..."'; exit 1; fi
+	@echo "==> Ejecutando iteración agentic con concepto: $${CONCEPT}"
+	$(PY) scripts/run_orchestrator_agent.py --concept "$${CONCEPT}" $${MAX_STEPS:+--max-steps $${MAX_STEPS}} $${MAX_ACTIONS:+--max-actions-per-step $${MAX_ACTIONS}}
 
 # Database observability targets (Fase 5)
 db-stats:

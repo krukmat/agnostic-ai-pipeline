@@ -23,6 +23,7 @@ from scripts.utils.config_loader import load_config_base, normalize_bool
 from scripts.utils.story_manager import load_stories as _load_stories_shared, save_stories as _save_stories_shared, STORIES_PATH
 from llm import Client
 from logger import logger # Import the logger
+from scripts.tools.generate_implements import ensure_story_implements
 
 # Task: database-layer - Import dual-write support
 from pathlib import Path
@@ -182,6 +183,9 @@ def require_po_approval() -> None:
     """Abort early if the PO review has not been approved."""
     if os.environ.get("PIPELINE_GUARD_BYPASS", "").strip().lower() in {"1", "true", "yes"}:
         return
+    allow_needs_adjustment_env = os.environ.get("ALLOW_ARCHITECT_WITH_PO_NEEDS_ADJUSTMENT", "").strip().lower() in {"1", "true", "yes"}
+    allow_needs_adjustment_cfg = bool(_load_config().get("pipeline", {}).get("allow_architect_with_po_needs_adjustment", False))
+    allow_needs_adjustment = allow_needs_adjustment_env or allow_needs_adjustment_cfg
     review_path = PLANNING / "product_owner_review.yaml"
     if not review_path.exists():
         raise SystemExit("Falta product_owner_review.yaml: ejecuta make po antes de Architect.")
@@ -191,6 +195,9 @@ def require_po_approval() -> None:
         raise SystemExit(f"No se pudo leer product_owner_review.yaml ({exc}); reejecuta make po.")
     status = str(review.get("status", "")).strip().lower()
     if status != "approved":
+        if allow_needs_adjustment:
+            logger.warning("[Architect] PO status is '%s' but allow_needs_adjustment flag set; continuing.", status)
+            return
         raise SystemExit(
             "PO en needs_adjustment: ejecuta make ba-revise && make po antes de correr Architect."
         )
@@ -632,13 +639,33 @@ async def main() -> None:
             return data, normalized
         return None, raw
 
+    stories_p = PLANNING / "stories.yaml"
+    stories_yaml = None
+    stories_data = None
+    if stories_p.exists():
+        stories_data, _ = _normalize_stories(stories_p)
+        try:
+            ensure_story_implements(
+                stories_path=stories_p,
+                requirements_path=PLANNING / "requirements.yaml",
+                mapping_path=PLANNING / "fr_story_map.yaml",
+            )
+        except Exception as exc:
+            logger.warning(f"[ARCHITECT] Failed to annotate implements: {exc}")
+        if stories_p.exists():
+            stories_yaml = stories_p.read_text(encoding="utf-8")
+            try:
+                parsed = yaml.safe_load(stories_yaml)
+                if isinstance(parsed, list):
+                    stories_data = parsed
+            except Exception:
+                stories_data = None
+
     try:
         db = DbLogger(db_ctx)
         if db.enabled:
             db.log_event("architect_start", role="architect", message="Architect run completed")
 
-            stories_p = PLANNING / "stories.yaml"
-            stories_data, stories_yaml = _normalize_stories(stories_p)
             if stories_yaml:
                 db.save_artifact("architect", "stories", stories_yaml)
                 if stories_data and hasattr(db_ctx, "create_stories_from_list"):

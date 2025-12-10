@@ -14,6 +14,7 @@ import yaml
 from common import ensure_dirs, PLANNING, ART, ROOT, save_text
 from llm import Client
 from logger import logger
+from scripts.utils.yaml_sanitizer import sanitize_requirements_yaml
 
 BA_PROMPT = (ROOT / "prompts" / "ba.md").read_text(encoding="utf-8")
 DEBUG_DIR = ART / "debug"
@@ -37,6 +38,9 @@ async def generate_requirements(concept: str) -> dict:
     if concept:
         meta = yaml.safe_dump({"meta": {"original_request": concept}}, sort_keys=False).strip()
         requirements_text = f"{meta}\n\n{requirements_text}".strip()
+
+    # Sanitize YAML to remove markdown code blocks (```yaml ... ```)
+    requirements_text = sanitize_requirements_yaml(requirements_text)
 
     output_path = PLANNING / "requirements.yaml"
     output_path.write_text(requirements_text + "\n", encoding="utf-8")

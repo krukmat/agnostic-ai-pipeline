@@ -31,14 +31,19 @@ def sanitize_po_yaml(content: str) -> str:
     """Product Owner-specific normalization with backtick cleanup."""
     if not content.strip():
         return content
+
+    # First, remove markdown code blocks (```yaml ... ``` or ``` ... ```)
+    cleaned = sanitize_yaml_block(content)
+
     try:
-        data = yaml.safe_load(content)
+        data = yaml.safe_load(cleaned)
     except yaml.YAMLError:
-        cleaned = re.sub(r'`([^`]+?)`', r"\1", content)
+        # If still failing, try removing inline backticks
+        cleaned = re.sub(r'`([^`]+?)`', r"\1", cleaned)
         try:
             data = yaml.safe_load(cleaned)
         except yaml.YAMLError:
-            return content.strip()
+            return cleaned.strip()
     return yaml.safe_dump(
         data,
         sort_keys=False,
@@ -54,6 +59,17 @@ def sanitize_requirements_yaml(content: str) -> str:
     cleaned = sanitize_yaml_block(content)
     # Strip bold markers that break YAML (`**text**`)
     cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned)
+    # Drop stray REQUIREMENTS literals the LLM may emit as separators
+    cleaned = "\n".join(
+        line for line in cleaned.splitlines()
+        if not line.strip().upper().startswith("REQUIREMENTS")
+    )
+    # Quote concurrency lines to avoid bare colon parsing issues
+    cleaned = re.sub(
+        r'(?m)^(\s*concurrency:\s*)(.+)$',
+        lambda m: f"{m.group(1)}\"{m.group(2).strip()}\"",
+        cleaned,
+    )
     return cleaned
 
 

@@ -22,7 +22,7 @@ The purpose of this project is to automate the entire software development lifec
 
 - **Involved Roles** – A Business Analyst, Product Owner, Architect, Developer, QA, and an Orchestrator collaborate to transform a concept into a functional product.
 - **Generated Artifacts** – The system produces planning files (`requirements.yaml`, `stories.yaml`), source code and tests (in `project/`), and QA reports (`artifacts/qa/`).
-- **Workflow** – You can run a full cycle with `make iteration` or `make loop`, or run each role independently for debugging and granular control.
+- **Workflow** – Usa `make iteration` (orquestador agentic) o ejecuta cada rol de forma independiente para depurar o tener control granular.
 
 ```mermaid
 flowchart LR
@@ -105,6 +105,13 @@ make set-role role=qa provider=ollama model="qwen2.5-coder:7b"
 ---
 
 ## Key Features
+
+### Chain-of-Thought & Learning Layer
+
+- The orchestrator logs every planner/policy/LLM decision via `scripts/orchestrator/cot_tracker.py` so you can audit CoT artifacts in `artifacts/cot_layer6/`.
+- `scripts/orchestrator/cot_analytics.py` turns those logs into JSON/Markdown summaries while `scripts/orchestrator/learning_store.py` records per-story attempts for policy feedback.
+- `scripts/orchestrator/policy_feedback.py` looks at the learning store, reprioritizes ready stories, and escalates repeat failures before developers begin work; deterministic `implements` tagging (`scripts/tools/generate_implements.py`) keeps the guard satisfied.
+- See [Project Memory](docs/PROJECT_MEMORY.md) for the narrative, references, and artifacts related to CoT, analytics, guard reports, and policy feedback.
 
 ### Complexity-Based Routing (NEW)
 
@@ -324,7 +331,7 @@ make qa QA_RUN_TESTS=1           # Run QA with tests
 
 # Orchestration
 make iteration CONCEPT="..."     # Full BA→PO→Architect→Dev→QA cycle
-make loop MAX_LOOPS=10           # Dev↔QA loop until all stories done
+make agentic-iteration CONCEPT="..." MAX_STEPS=5 MAX_ACTIONS=2   # Iteración agentic completa
 
 # Configuration
 make show-config                 # Display current config
@@ -356,12 +363,13 @@ make fix-stories                 # Normalize stories.yaml
 - **Database Layer**: `docs/DATABASE_LAYER_PLAN.md`
 - **Driver Layer**: `docs/DRIVER_LAYER_GUIDE.md`
 - **DSPy Baseline**: `dspy_baseline/README.md`
+- **Project Memory**: `docs/PROJECT_MEMORY.md` – consolidated view of CoT, learning store, policy feedback, guard artifacts, and key docs
 - **GitHub Pages**: Vision, fallback, cost controls → https://krukmat.github.io/agnostic-ai-pipeline/
 
 ### Medium Series (Concepts & Rationale)
 
 1. **Why an Agentic, Model‑Agnostic Pipeline**
-   Replacing brittle scripts with a choreographed multi‑role loop
+   Replacing brittle scripts with a choreographed agentic loop
    https://medium.com/@iotforce/why-an-agentic-model-agnostic-pipeline-beats-a-pile-of-scripts-b57661276505
 
 2. **Inside the AI Development Team**

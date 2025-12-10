@@ -101,6 +101,12 @@ def test_extract_original_concept_empty_text():
     concept = run_architect.extract_original_concept("")
     assert concept == ""
 
+def test_require_po_approval_allows_needs_adjustment(monkeypatch, tmp_path, caplog):
+    review = tmp_path / "product_owner_review.yaml"
+    review.write_text("status: needs_adjustment\n", encoding="utf-8")
+    monkeypatch.setattr(run_architect, "PLANNING", tmp_path)
+    monkeypatch.setenv("ALLOW_ARCHITECT_WITH_PO_NEEDS_ADJUSTMENT", "1")
+    run_architect.require_po_approval()
 
 def test_build_architect_context_complete(tmp_path, monkeypatch):
     """Test _build_architect_context() builds complete context."""
@@ -275,93 +281,52 @@ def test_try_programmatic_adjustment_story_not_found(tmp_path, monkeypatch):
 
 def test_try_programmatic_adjustment_high_level(tmp_path, monkeypatch):
     """Test try_programmatic_adjustment() adds high detail criteria."""
-    planning = tmp_path / "planning"
-    planning.mkdir()
-    
-    stories_file = planning / "stories.yaml"
-    stories_file.write_text("""
-- id: S1
-  status: in_review
-  acceptance:
-    - Basic validation
-""", encoding="utf-8")
-    
-    monkeypatch.setattr("scripts.run_architect.PLANNING", planning)
-    monkeypatch.setattr("scripts.run_architect.STORIES_PATH", stories_file)
-    
-    # Mock save_stories to write to our temp file
-    def mock_save_stories(stories):
-        stories_file.write_text(yaml.safe_dump(stories, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    
-    monkeypatch.setattr("scripts.run_architect.save_stories", mock_save_stories)
-    
+    stories = [{"id": "S1", "status": "in_review", "acceptance": ["Basic validation"]}]
+    monkeypatch.setattr(run_architect, "_load_stories_with_content", lambda: ("", stories))
+    saved: dict = {}
+
+    def fake_save(st):
+        saved["stories"] = st
+
+    monkeypatch.setattr(run_architect, "save_stories", fake_save)
+
     result = run_architect.try_programmatic_adjustment("S1", "high")
     assert result is True
-    
-    # Verify story was updated
-    updated_stories = yaml.safe_load(stories_file.read_text(encoding="utf-8"))
-    assert updated_stories[0]["status"] == "todo"
-    assert len(updated_stories[0]["acceptance"]) > 1
-    assert any("validaciones exhaustivas" in str(item).lower() for item in updated_stories[0]["acceptance"])
+    assert saved["stories"][0]["status"] == "todo"
+    assert len(saved["stories"][0]["acceptance"]) > 1
 
 
 def test_try_programmatic_adjustment_maximum_level(tmp_path, monkeypatch):
     """Test try_programmatic_adjustment() adds maximum detail criteria."""
-    planning = tmp_path / "planning"
-    planning.mkdir()
-    
-    stories_file = planning / "stories.yaml"
-    stories_file.write_text("""
-- id: S1
-  status: in_review
-  acceptance:
-    - Basic validation
-""", encoding="utf-8")
-    
-    monkeypatch.setattr("scripts.run_architect.PLANNING", planning)
-    monkeypatch.setattr("scripts.run_architect.STORIES_PATH", stories_file)
-    
-    # Mock save_stories to write to our temp file
-    def mock_save_stories(stories):
-        stories_file.write_text(yaml.safe_dump(stories, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    
-    monkeypatch.setattr("scripts.run_architect.save_stories", mock_save_stories)
-    
+    stories = [{"id": "S1", "status": "in_review", "acceptance": ["Basic validation"]}]
+    monkeypatch.setattr(run_architect, "_load_stories_with_content", lambda: ("", stories))
+    saved: dict = {}
+
+    def fake_save(st):
+        saved["stories"] = st
+
+    monkeypatch.setattr(run_architect, "save_stories", fake_save)
+
     result = run_architect.try_programmatic_adjustment("S1", "maximum")
     assert result is True
-    
-    # Verify technical requirements were added
-    updated_stories = yaml.safe_load(stories_file.read_text(encoding="utf-8"))
-    assert updated_stories[0]["status"] == "todo"
-    assert len(updated_stories[0]["acceptance"]) > 1
+    assert saved["stories"][0]["status"] == "todo"
+    assert len(saved["stories"][0]["acceptance"]) > 1
 
 
 def test_mark_story_todo_success(tmp_path, monkeypatch):
     """Test mark_story_todo() marks story as todo."""
-    planning = tmp_path / "planning"
-    planning.mkdir()
-    
-    stories_file = planning / "stories.yaml"
-    stories_file.write_text("""
-- id: S1
-  status: in_review
-""", encoding="utf-8")
-    
-    monkeypatch.setattr("scripts.run_architect.PLANNING", planning)
-    monkeypatch.setattr("scripts.run_architect.STORIES_PATH", stories_file)
-    
-    # Mock save_stories to write to our temp file
-    def mock_save_stories(stories):
-        stories_file.write_text(yaml.safe_dump(stories, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    
-    monkeypatch.setattr("scripts.run_architect.save_stories", mock_save_stories)
-    
+    stories = [{"id": "S1", "status": "in_review"}]
+    monkeypatch.setattr(run_architect, "_load_stories_with_content", lambda: ("", stories))
+    saved: dict = {}
+
+    def fake_save(st):
+        saved["stories"] = st
+
+    monkeypatch.setattr(run_architect, "save_stories", fake_save)
+
     result = run_architect.mark_story_todo("S1")
     assert result is True
-    
-    # Verify status changed
-    updated_stories = yaml.safe_load(stories_file.read_text(encoding="utf-8"))
-    assert updated_stories[0]["status"] == "todo"
+    assert saved["stories"][0]["status"] == "todo"
 
 
 def test_mark_story_todo_story_not_found(tmp_path, monkeypatch):

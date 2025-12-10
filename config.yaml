@@ -54,9 +54,9 @@ providers:
     max_output_tokens: 2048
 roles:
   ba:
-    provider: vertex_sdk  # cloud for faster BA turnaround
+    provider: vertex_sdk
     model: gemini-2.5-flash
-    temperature: 0.3  # balanced for requirement clarity
+    temperature: 0.3
     max_tokens: 8192
     top_p: 0.9
   architect:
@@ -67,7 +67,7 @@ roles:
     top_p: 0.95
     output_caps:
       stories:
-        tokens: 2000      # increased to reduce JSON truncation (next runs)
+        tokens: 2000
         min_tokens: 600
       architecture:
         tokens: 2000
@@ -100,7 +100,7 @@ roles:
       specialties:
       - general_purpose
   qa:
-    provider: ollama  # local model for QA
+    provider: ollama
     model: qwen2.5-coder:32b
     temperature: 0.4
     max_tokens: 8192
@@ -108,8 +108,14 @@ roles:
   product_owner:
     provider: vertex_sdk
     model: gemini-2.5-pro
-    temperature: 0.4  # reduce randomness for acceptance criteria alignment
+    temperature: 0.4
     max_tokens: 8192
+    top_p: 0.95
+  orchestrator:
+    provider: vertex_sdk
+    model: gemini-2.5-flash
+    temperature: 0.2
+    max_tokens: 4096
     top_p: 0.95
 pipeline:
   force_approval_attempts: 3
@@ -120,6 +126,67 @@ pipeline:
     auto_suggest: true
     allow_cost_increase: false
     prefer_local: true
+  allow_architect_with_po_needs_adjustment: true
+
+  # V2 Orchestrator Configuration
+  use_v2_orchestrator: false
+  v2_max_steps: 20
+  v2_max_parallel_stories: 3
+
+  # Retry Policies (Task 6)
+  retry_policies:
+    dev:
+      max_attempts: 3
+      backoff: exponential
+      circuit_breaker:
+        threshold: 5
+        window: 600
+    architect:
+      max_attempts: 2
+      backoff: linear
+      escalation: manual
+    qa:
+      max_attempts: 2
+      backoff: none
+      on_failure: return_to_dev
+
+  # Escalation Policies (Task 6)
+  escalation_policies:
+    - condition: "dev_attempts >= 3 AND same_error_pattern"
+      action: "architect_refine"
+      reason: "Repeated Dev failures suggest architectural issue"
+    - condition: "qa_coverage < 0.8 AND tests_failed > 0"
+      action: "architect_review_tests"
+      reason: "Low coverage with failures needs design review"
+
+  # Priority Policies (Task 6)
+  priority_policies:
+    - priority: P0
+      max_retries: 5
+      timeout_multiplier: 2.0
+    - priority: P1
+      max_retries: 3
+      timeout_multiplier: 1.0
+    - priority: P2
+      max_retries: 2
+      timeout_multiplier: 0.8
+
+  # Resource Policies (Task 6)
+  resource_policies:
+    max_parallel_stories: 3
+    max_concurrent_dev: 2
+    max_concurrent_qa: 1
+    dev_timeout: 600
+    qa_timeout: 300
+features:
+  pipeline_guard:
+    bypass: false
+  learning_store:
+    retention_per_story: 20
+  policy_feedback:
+    enabled: true
+    failure_threshold: 2
+    priority_boosts: {}
 a2a:
   execution_mode: local
   agents:
@@ -167,12 +234,12 @@ features:
   use_dspy_architect: false
   routing_by_complexity_enabled: true
   pipeline_guard:
-    bypass: false
+    bypass: true
   architect:
     arch_only: false
     normalize_minified_arch: true
     use_optimized_prompt: false
-    prompt_override_file: ""
+    prompt_override_file: ''
 defaults:
   complexity: medium
 qa:
@@ -200,23 +267,58 @@ routing_by_complexity:
       provider: vertex_cli
       model: gemini-2.5-pro
 database:
-  adhoc_context: true  # allow DB writes from standalone role runs
-  fail_on_error: false  # log DB errors but do not abort role scripts
-  enabled: true  # Fase 3: dual-write activado para pruebas
+  adhoc_context: true
+  fail_on_error: false
+  enabled: false
   path: data/pipeline.db
   wal_mode: true
   busy_timeout_ms: 5000
   backup_on_iteration_end: true
 drivers:
-  enabled: false  # Feature flag: driver layer off by default
+  enabled: false
   embedded:
-    run_build: false   # allow embedded build if toolchain present
-    run_test: false    # allow embedded tests if toolchain present
-    run_flash: false   # never flash by default
+    run_build: false
+    run_test: false
+    run_flash: false
 project:
   targets:
     backend: fastapi
     frontend: web_express
     mobile: react_native
-    embedded: null  # e.g., esp32c3_riscv
-    gpu: null       # e.g., cuda_jetson
+    embedded: null
+    gpu: null
+
+# Phase 4: Complete Orchestration Configuration (Task 6)
+coherence:
+  enabled: true
+  checkpoints:
+    post_requirements: true
+    post_planning: true
+    post_development: false
+    post_integration: true
+  min_coverage: 0.95
+  min_similarity: 0.75
+  llm_enabled: true
+  llm_for_checkpoints:
+    - post_integration
+  block_on_critical: true
+  auto_remediate: true
+  notify_on_warnings: true
+
+cot_tracking:
+  enabled: true
+  layer_aware: true
+  export_formats:
+    - jsonl
+    - markdown
+  output_dir: artifacts/cot_layer6
+
+orchestration:
+  llm_fallback:
+    enabled: true
+    use_for:
+      - escalation_planning
+      - complex_decisions
+    llm_role: orchestrator
+    max_tokens: 2000
+    temperature: 0.3
