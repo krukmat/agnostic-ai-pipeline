@@ -73,8 +73,8 @@ roles:
         tokens: 2000
         min_tokens: 600
   dev:
-    provider: codex_cli
-    model: gpt-5.1-codex-max
+    provider: vertex_sdk
+    model: gemini-2.5-pro
     temperature: 0.2
     max_tokens: 8192
     top_p: 0.5
@@ -129,7 +129,7 @@ pipeline:
   allow_architect_with_po_needs_adjustment: true
 
   # V2 Orchestrator Configuration
-  use_v2_orchestrator: false
+  use_v2_orchestrator: true
   v2_max_steps: 20
   v2_max_parallel_stories: 3
 
