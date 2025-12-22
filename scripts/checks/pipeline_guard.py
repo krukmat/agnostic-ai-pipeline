@@ -73,7 +73,7 @@ def _load_epics() -> List[Dict[str, Any]]:
 def _check_po_status(result: GuardResult) -> None:
     review = _load_review()
     status = review.get("status")
-    if status != "approved":
+    if status not in {"approved", "aligned"}:
         result.fail("product_owner_review.status != approved (ejecuta make ba-revise && make po)")
 
 

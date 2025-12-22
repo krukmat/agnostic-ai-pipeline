@@ -280,9 +280,29 @@ async def _parse_architect_response(
         match = pattern.search(text)
         return match.group(1).strip() if match else ""
 
+    def grab_marker_block(marker: str) -> str:
+        pattern = re.compile(
+            rf"\[\[\s*##\s*{re.escape(marker)}\s*##\s*\]\]\s*([\s\S]+?)(?=\n\[\[\s*##|\Z)",
+            re.MULTILINE,
+        )
+        match = pattern.search(text)
+        if not match:
+            return ""
+        content = match.group(1)
+        cut_points = []
+        for token in ("\n```", "\n---"):
+            idx = content.find(token)
+            if idx != -1:
+                cut_points.append(idx)
+        if cut_points:
+            content = content[: min(cut_points)]
+        return content.strip()
+
     prd_content = grab("yaml", "PRD")
-    arch_content = grab("yaml", "ARCHITECTURE")
+    arch_content = grab("yaml", "ARCHITECTURE") or grab_marker_block("architecture_yaml")
     tasks_content = grab("csv", "TASKS")
+    epics_content = grab("yaml", "EPICS") or grab_marker_block("epics_yaml")
+    stories_content = grab("yaml", "STORIES") or grab_marker_block("stories_yaml")
 
     if not prd_content and not allow_partial_blocks:
         text = await client.chat(system=arch_prompt, user=user_input)
@@ -309,8 +329,8 @@ async def _parse_architect_response(
 
     (PLANNING / "prd.yaml").write_text(sanitize_yaml_block(prd_content), encoding="utf-8")
     (PLANNING / "architecture.yaml").write_text(sanitize_yaml_block(arch_content), encoding="utf-8")
-    (PLANNING / "epics.yaml").write_text(sanitize_yaml_block(grab("yaml", "EPICS")), encoding="utf-8")
-    (PLANNING / "stories.yaml").write_text(sanitize_yaml_block(grab("yaml", "STORIES")), encoding="utf-8")
+    (PLANNING / "epics.yaml").write_text(sanitize_yaml_block(epics_content), encoding="utf-8")
+    (PLANNING / "stories.yaml").write_text(sanitize_yaml_block(stories_content), encoding="utf-8")
     (PLANNING / "tasks.csv").write_text(tasks_content or "", encoding="utf-8")
 
     return {
@@ -626,7 +646,33 @@ async def main() -> None:
         if not path.exists():
             return None, None
         raw = path.read_text(encoding="utf-8")
-        data = yaml.safe_load(raw) if raw.strip() else []
+        if not raw.strip():
+            return [], ""
+        try:
+            data = yaml.safe_load(raw)
+        except yaml.YAMLError as exc:
+            logger.warning(f"[ARCHITECT] stories.yaml invalid YAML; attempting sanitize: {exc}")
+            try:
+                from scripts.fix_stories import (
+                    remove_fences,
+                    fix_acceptance_inline,
+                    repair_broken_id_lines,
+                    sanitize_acceptance_bullets,
+                    uncomment_structured,
+                )
+            except Exception:
+                return None, raw
+            cleaned = "\n".join(uncomment_structured(raw.splitlines()))
+            cleaned = remove_fences(cleaned)
+            cleaned = repair_broken_id_lines(cleaned)
+            cleaned = fix_acceptance_inline(cleaned)
+            cleaned = sanitize_acceptance_bullets(cleaned)
+            try:
+                data = yaml.safe_load(cleaned)
+            except yaml.YAMLError as exc2:
+                logger.error(f"[ARCHITECT] stories.yaml sanitize failed: {exc2}")
+                return None, raw
+            raw = cleaned
         if isinstance(data, dict) and "stories" in data:
             data = data["stories"]
         if isinstance(data, list):
