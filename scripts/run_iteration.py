@@ -144,8 +144,6 @@ def main(argv: list[str]) -> int:
 
     env = os.environ
     concept = args.concept or env.get("CONCEPT", "").strip()
-    if not concept:
-        concept = "agentic-adhoc"
 
     iteration_name = args.iteration_name or env.get("ITERATION_NAME", "") or default_iteration_name()
 
@@ -161,9 +159,6 @@ def main(argv: list[str]) -> int:
     skip_po = args.skip_po or env.get("SKIP_PO", "0") == "1"
     skip_plan = args.skip_plan or env.get("SKIP_PLAN", "0") == "1"
 
-    if concept:
-        print(f"[iteration] Using concept: {concept}")
-
     # Derive MAX_LOOPS from stories.yaml only when caller did not set --loops/LOOPS explicitly
     derived_loops = derive_max_loops(
         loops_option,
@@ -171,6 +166,15 @@ def main(argv: list[str]) -> int:
         loops_env_provided=loops_env_provided,
         planning_path=PLANNING,
     )
+
+    if not concept and not skip_ba:
+        print('[iteration] Set CONCEPT="..." when BA is enabled')
+        return 1
+    if not concept:
+        concept = "agentic-adhoc"
+
+    if concept:
+        print(f"[iteration] Using concept: {concept}")
 
     # Use agentic orchestrator for the full pipeline
     max_steps = derived_loops if derived_loops > 0 else 5

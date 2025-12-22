@@ -48,7 +48,8 @@ def get_db_context_or_default():
 
     try:
         # Attempt to create an ad-hoc context via dual_write helper
-        return dual_write.get_or_create_adhoc_context()  # type: ignore[attr-defined]
+        adhoc_ctx = dual_write.get_or_create_adhoc_context()  # type: ignore[attr-defined]
+        return adhoc_ctx or AdHocContext()
     except Exception as exc:
         logger.warning("[db_context] Ad-hoc context creation failed (%s); returning stub", exc)
         return AdHocContext()

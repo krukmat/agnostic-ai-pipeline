@@ -14,15 +14,14 @@ def test_main_skips_steps_with_flags(monkeypatch, tmp_path):
     stories = "- id: S1\n  status: todo\n- id: S2\n  status: todo\n"
     (ri.PLANNING / "stories.yaml").write_text(stories, encoding="utf-8")
 
-    # Stub ensure_dirs and run_command to avoid external calls
+    # Stub ensure_dirs and orchestrator to avoid external calls
     monkeypatch.setattr(ri, "ensure_dirs", lambda: None)
     calls = []
 
-    def fake_run_command(cmd, env=None):
-        calls.append((cmd, env))
-        return 0
+    async def fake_orchestrator(concept, max_steps, max_actions_per_step):
+        calls.append((concept, max_steps, max_actions_per_step))
 
-    monkeypatch.setattr(ri, "run_command", fake_run_command)
+    monkeypatch.setattr(ri, "run_agentic_orchestrator", fake_orchestrator)
 
     rc = ri.main([
         "--concept", "demo",
@@ -32,8 +31,8 @@ def test_main_skips_steps_with_flags(monkeypatch, tmp_path):
         "--skip-plan",
     ])
     assert rc == 0
-    # Should still invoke make loop once
-    assert any("loop" in cmd for cmd, _ in calls)
+    # Should run orchestrator once
+    assert calls
     # Snapshot should exist
     snap = tmp_path / "artifacts" / "iterations" / "iter-test" / "summary.json"
     assert snap.exists()

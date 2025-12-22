@@ -75,12 +75,13 @@ class IterationScriptTests(unittest.TestCase):
         self.assertEqual([("Env Product", 3, 2)], orchestrator_calls)
 
     def test_missing_concept_assigns_default(self) -> None:
-        """When concept missing, agentic iteration should still run with fallback concept."""
+        """When concept missing and BA is skipped, agentic iteration should still run."""
         orchestrator_calls: List[Tuple[str, int, int]] = []
 
         async def fake_agentic(concept: str, max_steps: int, max_actions_per_step: int):
             orchestrator_calls.append((concept, max_steps, max_actions_per_step))
 
+        os.environ["SKIP_BA"] = "1"
         with mock.patch.object(run_iteration, "run_agentic_orchestrator", side_effect=fake_agentic), mock.patch.object(
             run_iteration, "snapshot_iteration", return_value=None
         ):

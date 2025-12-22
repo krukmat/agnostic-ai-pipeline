@@ -22,6 +22,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SUMMARY_PATH = ROOT / "artifacts" / "iterations" / "latest_orchestrator_summary.json"
+SMOKE_FLAG = "RUN_AGENTIC_SMOKE"
+
+
+def _require_smoke_enabled() -> None:
+    if os.environ.get(SMOKE_FLAG) != "1":
+        pytest.skip(f"Agentic smoke tests require LLM access. Set {SMOKE_FLAG}=1 to run.")
 
 
 def _run_orchestrator(concept: str, max_steps: int = 1, max_actions: int = 1, timeout: int = 300) -> subprocess.CompletedProcess:
@@ -87,6 +93,7 @@ def test_orchestrator_trivial_concept():
     Test 1: Concepto trivial con límites estrictos (1 step, 1 action).
     Debería ejecutar al menos BA y terminar rápidamente.
     """
+    _require_smoke_enabled()
     concept = "Health check endpoint"
     proc = _run_orchestrator(concept, max_steps=1, max_actions=1)
 
@@ -123,6 +130,7 @@ def test_orchestrator_simple_concept():
     Debería ejecutar BA → PO y posiblemente Architect.
     Valida que se generen artifacts reales (requirements.yaml).
     """
+    _require_smoke_enabled()
     concept = "Simple calculator API with add and subtract"
     proc = _run_orchestrator(concept, max_steps=2, max_actions=2)
 
@@ -167,6 +175,7 @@ def test_orchestrator_moderate_concept():
     Debería ejecutar BA → PO → Architect y potencialmente iniciar Dev.
     Valida que se generen todos los artifacts del pipeline.
     """
+    _require_smoke_enabled()
     concept = "User authentication API with JWT tokens and refresh"
     proc = _run_orchestrator(concept, max_steps=3, max_actions=3)
 
@@ -242,6 +251,7 @@ def test_orchestrator_full_pipeline():
 
     Tiempo estimado: 10-15 minutos.
     """
+    _require_smoke_enabled()
     # Limpiar artifacts antiguos para forzar ejecución completa del pipeline
     planning_dir = ROOT / "planning"
     if planning_dir.exists():
@@ -374,6 +384,7 @@ def test_orchestrator_cleanup():
     Test 4: Verificar que el orquestrador limpia correctamente.
     Elimina el summary file si existe para no contaminar siguientes tests.
     """
+    _require_smoke_enabled()
     if SUMMARY_PATH.exists():
         SUMMARY_PATH.unlink()
 

@@ -44,6 +44,7 @@ def test_run_iteration_uses_default_concept_and_derived_loops(monkeypatch, tmp_p
 
     monkeypatch.setattr(run_iteration, "run_agentic_orchestrator", fake_agentic)
     monkeypatch.setattr(run_iteration, "snapshot_iteration", lambda *a, **k: None)
+    monkeypatch.setenv("SKIP_BA", "1")
 
     rc = run_iteration.main([])
     assert rc == 0

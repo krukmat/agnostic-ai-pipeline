@@ -50,7 +50,9 @@ def mock_role_handlers():
         "RUN_PO": AsyncMock(return_value={"status": "ok"}),
         "RUN_ARCHITECT": AsyncMock(return_value={"status": "ok"}),
         "RUN_DEV": AsyncMock(return_value={"status": "ok"}),
+        "RUN_DEV_STORY": AsyncMock(return_value={"status": "ok"}),
         "RUN_QA": AsyncMock(return_value={"status": "ok"}),
+        "RUN_QA_FULL": AsyncMock(return_value={"status": "ok"}),
     }
 
 
@@ -357,7 +359,9 @@ class TestOrchestratorV2Integration:
             "RUN_PO": AsyncMock(return_value={"status": "ok"}),
             "RUN_ARCHITECT": AsyncMock(return_value={"status": "ok"}),
             "RUN_DEV": AsyncMock(return_value={"status": "ok"}),
+            "RUN_DEV_STORY": AsyncMock(return_value={"status": "ok"}),
             "RUN_QA": AsyncMock(return_value={"status": "ok"}),
+            "RUN_QA_FULL": AsyncMock(return_value={"status": "ok"}),
         }
 
         # Run

@@ -56,7 +56,11 @@ class ParallelismScheduler:
             disk_percent = disk.percent
 
             # CPU context switches as proxy for I/O
-            io_percent = min(100, psutil.cpu_count() * 10)  # Simplified
+            try:
+                cpu_count = psutil.cpu_count() or 1
+            except Exception:
+                cpu_count = 1
+            io_percent = min(100, cpu_count * 10)  # Simplified
 
             metrics = {
                 "cpu_percent": cpu_percent,

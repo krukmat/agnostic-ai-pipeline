@@ -299,7 +299,9 @@ def _get_v2_role_handlers() -> Dict[str, Any]:
         "RUN_PO": _v2_role_handler_po,
         "RUN_ARCHITECT": _v2_role_handler_architect,
         "RUN_DEV": _v2_role_handler_dev,
+        "RUN_DEV_STORY": _v2_role_handler_dev,
         "RUN_QA": _v2_role_handler_qa,
+        "RUN_QA_FULL": _v2_role_handler_qa,
     }
 
 
@@ -387,9 +389,11 @@ def main():
         return 1
 
     ensure_dirs()
+    config = load_config()
 
     # V2 Deterministic Orchestrator
-    if args.use_v2:
+    use_v2_config = bool(config.get("pipeline", {}).get("use_v2_orchestrator", False))
+    if args.use_v2 or use_v2_config:
         logger.info("[orchestrator] Using V2 deterministic orchestrator")
         role_handlers = _get_v2_role_handlers()
         result = asyncio.run(run_orchestrator_v2(concept, args.max_steps, role_handlers))

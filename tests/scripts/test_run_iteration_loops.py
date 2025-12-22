@@ -17,13 +17,18 @@ def test_derived_loops_from_stories(tmp_path, monkeypatch):
     monkeypatch.setattr(run_iteration, "PLANNING", planning)
     monkeypatch.setattr(run_iteration, "ensure_dirs", lambda: None)
 
-    commands = []
+    calls = []
 
-    def fake_run(cmd, env=None):
-        commands.append((cmd, dict(env) if env else {}))
-        return 0
+    async def fake_orchestrator(concept, max_steps, max_actions_per_step):
+        calls.append(
+            {
+                "concept": concept,
+                "max_steps": max_steps,
+                "max_actions_per_step": max_actions_per_step,
+            }
+        )
 
-    monkeypatch.setattr(run_iteration, "run_command", fake_run)
+    monkeypatch.setattr(run_iteration, "run_agentic_orchestrator", fake_orchestrator)
     monkeypatch.setattr(run_iteration, "snapshot_iteration", lambda *args, **kwargs: None)
 
     # Skip BA/PO/plan to avoid concept requirement
@@ -39,7 +44,5 @@ def test_derived_loops_from_stories(tmp_path, monkeypatch):
     exit_code = run_iteration.main([])
     assert exit_code == 0
 
-    # Last command should be make loop with MAX_LOOPS=2 (from stories)
-    loop_cmd, loop_env = commands[-1]
-    assert loop_cmd == ["make", "loop"]
-    assert loop_env.get("MAX_LOOPS") == "2"
+    assert calls
+    assert calls[0]["max_steps"] == 2

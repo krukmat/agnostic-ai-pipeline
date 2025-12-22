@@ -87,6 +87,11 @@ agentic-iteration:
 	@echo "==> Ejecutando iteración agentic con concepto: $${CONCEPT}"
 	$(PY) scripts/run_orchestrator_agent.py --concept "$${CONCEPT}" $${MAX_STEPS:+--max-steps $${MAX_STEPS}} $${MAX_ACTIONS:+--max-actions-per-step $${MAX_ACTIONS}}
 
+agentic-iteration-v2:
+	@if [ -z "$$CONCEPT" ]; then echo 'Set CONCEPT="..."'; exit 1; fi
+	@echo "==> Ejecutando iteración agentic V2 con concepto: $${CONCEPT}"
+	$(PY) scripts/run_orchestrator_agent.py --concept "$${CONCEPT}" --use-v2 $${MAX_STEPS:+--max-steps $${MAX_STEPS}}
+
 # Database observability targets (Fase 5)
 db-stats:
 	@echo "==> Database Statistics"

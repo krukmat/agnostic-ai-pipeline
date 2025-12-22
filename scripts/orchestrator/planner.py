@@ -86,6 +86,10 @@ class OrchestratorPlanner:
             logger.info("[planner] Requirements exist, transitioning to REQUIREMENTS phase")
             # Phase 4: Log transition
             self.cot_tracker.log_state_transition("INIT", "REQUIREMENTS", "requirements_found")
+            self.state_machine.transition_to(
+                PipelinePhase.REQUIREMENTS,
+                "Requirements found, moving to validation",
+            )
             return []
 
         # Start BA

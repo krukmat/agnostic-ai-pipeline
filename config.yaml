@@ -129,7 +129,7 @@ pipeline:
   allow_architect_with_po_needs_adjustment: true
 
   # V2 Orchestrator Configuration
-  use_v2_orchestrator: true
+  use_v2_orchestrator: false
   v2_max_steps: 20
   v2_max_parallel_stories: 3
 
@@ -234,7 +234,7 @@ features:
   use_dspy_architect: false
   routing_by_complexity_enabled: true
   pipeline_guard:
-    bypass: true
+    bypass: false
   architect:
     arch_only: false
     normalize_minified_arch: true

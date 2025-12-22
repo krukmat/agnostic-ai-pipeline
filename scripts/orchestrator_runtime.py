@@ -4,7 +4,7 @@ import asyncio
 import pathlib
 from typing import Any, Dict
 
-from common import load_config
+from common import PLANNING, load_config
 from logger import logger
 from scripts.utils.orchestrator_facade import load_stories_from_planning
 
@@ -176,4 +176,4 @@ async def execute_role(role: str, payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def load_stories() -> list[dict[str, Any]]:
     """Load stories from planning/stories.yaml (no DB integration)."""
-    return load_stories_from_planning()
+    return load_stories_from_planning(PLANNING)
