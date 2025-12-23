@@ -360,17 +360,32 @@ class OrchestratorPlanner:
         }
 
     def _rebuild_dag_from_state(self, state: PipelineState) -> None:
-        """Rebuild DAG from current state."""
+        """Rebuild DAG from current state using actual story IDs from state, not sequential generation."""
         self.dag = StoryDAG()
 
-        for story_id in range(1, state.total_stories + 1):
-            sid = f"S{story_id}"
+        # Use actual story IDs from state.stories_todo, stories_done, and stories_failed
+        # instead of generating sequential IDs based on count only
+        all_stories = (
+            state.stories_todo +
+            list(state.stories_done) +
+            list(state.stories_failed.keys())
+        )
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_stories = []
+        for sid in all_stories:
+            if sid not in seen:
+                unique_stories.append(sid)
+                seen.add(sid)
+
+        for sid in unique_stories:
             metadata = {"priority": "P1"}  # Default, will be overridden by actual story data
 
             depends_on = state.story_dependencies.get(sid, [])
             self.dag.add_story(sid, metadata, depends_on)
 
-        logger.debug(f"[planner] Rebuilt DAG with {state.total_stories} stories")
+        logger.debug(f"[planner] Rebuilt DAG with {len(unique_stories)} stories from state: {unique_stories}")
 
     def _check_and_log_coherence(self, state: PipelineState) -> None:
         """Check coherence after phase transitions and log issues non-blocking."""

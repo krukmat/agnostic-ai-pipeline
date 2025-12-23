@@ -74,13 +74,13 @@ roles:
         min_tokens: 600
   dev:
     provider: ollama
-    model: qwen2.5-coder:14b
+    model: deepseek-coder-v2:lite
     temperature: 0.2
     max_tokens: 8192
     top_p: 0.5
     backup_models:
     - provider: ollama
-      model: qwen2.5-coder:7b
+      model: mistral:7b-instruct
       reason: Faster fallback for limited memory
       cost_tier: free
       specialties:
