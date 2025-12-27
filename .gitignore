@@ -195,6 +195,7 @@ data/pipeline.db-shm
 # Reportes y logs del pipeline
 artifacts/dev/test_*
 artifacts/qa/test_*
+inference_results/
 
 # Archivos temporales
 *.tmp
@@ -224,6 +225,7 @@ debug_architect_response_retry_arch.txt
 debug_architect_response_retry_prd.txt
 gcloud-creds.md
 model_backup_test.md
+post_training/*
 
 # Documentación interna y análisis
 docs/analysis/
@@ -252,3 +254,7 @@ docs/RUN_ARCHITECT_FASE1_TASKS.md
 docs/run_scripts_refactor_plan.md
 docs/UI.md
 Chain-of-thought
+docs/PHASE_0_DETAILED_MAP.md
+docs/POST_TRAINING_EXPLAINED.md
+docs/POST_TRAINING_STRATEGY_V2.md
+docs/POST_TRAINING_STRATEGY.md

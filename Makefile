@@ -266,3 +266,6 @@ vertex-ping:
 
 provider-vertex-cli:
 	@python3 scripts/providers/vertex_cli.py < prompts/vertex_payload.json
+
+# Post-training targets
+include post_training/Makefile.posttrain.mk
