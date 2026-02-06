@@ -261,7 +261,44 @@ class Client:
         )
 
 
+    async def _augment_with_graph_rag(self, user: str) -> str:
+        """
+        F1-T5: Optionally augment user prompt with Graph RAG context.
+
+        Returns: augmented user prompt (or original if RAG disabled/unavailable)
+        Injection point: provides project knowledge graph context before LLM call.
+        """
+        try:
+            cfg = load_config()
+            graph_rag_cfg = cfg.get("graph_rag", {})
+            if not graph_rag_cfg.get("enabled", False):
+                return user
+
+            # Lazy import to avoid hard dependency
+            from graph_rag.retrieval import AgentRetriever
+            from graph_rag.engine import GraphRAGEngine
+
+            engine = GraphRAGEngine.instance(graph_rag_cfg)
+            retriever = AgentRetriever(engine)
+            context = await retriever.retrieve_for_role(self.role, user)
+
+            if context:
+                return (
+                    f"## Relevant Project Context (from Knowledge Graph)\n\n"
+                    f"{context}\n\n"
+                    f"---\n\n"
+                    f"## Task\n\n"
+                    f"{user}"
+                )
+        except Exception as exc:
+            logger.warning(f"[LLM] Graph RAG augmentation failed for role {self.role}: {exc}")
+
+        return user  # Fallback to original
+
     async def chat(self, system: str, user: str) -> str:
+        # F1-T5: Graph RAG augmentation (optional)
+        user = await self._augment_with_graph_rag(user)
+
         if recommend_model and _reco_enabled():
             prompt = f"{system.strip()}\n\n{user.strip()}"
             try:

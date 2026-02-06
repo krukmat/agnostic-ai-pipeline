@@ -267,5 +267,26 @@ vertex-ping:
 provider-vertex-cli:
 	@python3 scripts/providers/vertex_cli.py < prompts/vertex_payload.json
 
+# Phase 1: Graph RAG with LightRAG (F1-T6: Makefile targets)
+.PHONY: rag-index rag-status rag-query rag-visualize
+
+rag-index:
+	@echo "==> Building/updating Knowledge Graph from pipeline artifacts"
+	$(PY) -c "import asyncio; from graph_rag.ingestion import ingest_pipeline_artifacts; from graph_rag.engine import GraphRAGEngine; from scripts.llm import load_config; cfg = load_config(); engine = GraphRAGEngine(cfg.get('graph_rag', {})); asyncio.run(engine.initialize()); asyncio.run(ingest_pipeline_artifacts(engine)); asyncio.run(engine.finalize())"
+	@echo "✓ Graph RAG Knowledge Graph indexed"
+
+rag-status:
+	@echo "==> Graph RAG Status"
+	@ls -lah artifacts/graph_rag/ 2>/dev/null || echo "  (KG not yet created - run 'make rag-index' first)"
+
+rag-query:
+	@if [ -z "$$QUERY" ]; then echo "Usage: make rag-query QUERY=\"your question\" [MODE=mix]"; exit 1; fi
+	@MODE=$${MODE:-mix} $(PY) -c "import asyncio; from graph_rag.engine import GraphRAGEngine; from graph_rag.retrieval import AgentRetriever; from scripts.llm import load_config; cfg = load_config(); engine = GraphRAGEngine(cfg.get('graph_rag', {})); asyncio.run(engine.initialize()); retriever = AgentRetriever(engine); result = asyncio.run(retriever.retrieve_for_role('architect', '$$QUERY')); print(result); asyncio.run(engine.finalize())"
+
+rag-visualize:
+	@echo "==> Starting LightRAG WebUI at http://localhost:9621"
+	@echo "    (Ctrl+C to stop)"
+	@lightrag-server --working-dir ./artifacts/graph_rag --port 9621
+
 # Post-training targets
 include post_training/Makefile.posttrain.mk

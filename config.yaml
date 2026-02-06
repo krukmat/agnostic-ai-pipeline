@@ -309,3 +309,24 @@ orchestration:
     llm_role: orchestrator
     max_tokens: 2000
     temperature: 0.3
+
+# Phase 1: Graph RAG with LightRAG (F1-T5: LLM Client Integration)
+graph_rag:
+  enabled: true                                # F1-T5: Enable Graph RAG context augmentation
+  working_dir: "./artifacts/graph_rag"
+  llm_model: "qwen2.5:7b-instruct"            # For entity extraction
+  embedding_model: "bge-m3"                    # Multilingual embeddings (1024-dim)
+  embedding_dim: 1024
+  chunk_token_size: 1200
+  top_k: 60
+  default_mode: "mix"                          # Graph + vector combined (recommended)
+  auto_ingest: true                            # Auto-ingest artifacts after each step
+  sources:                                     # Directories to ingest
+    - "planning/"
+    - "project/"
+    - "artifacts/"
+    - "docs/"
+  # Note: Role-specific policies configured in AgentRetriever.ROLE_POLICIES
+  # - architect: mode=hybrid (graph-heavy for design relationships)
+  # - dev: mode=local (nearby entities for code)
+  # - others: mode=mix (balanced)
