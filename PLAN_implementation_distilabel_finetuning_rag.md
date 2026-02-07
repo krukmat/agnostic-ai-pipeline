@@ -25,6 +25,8 @@
    - Ajuste de latencia target para Graph RAG en modo `mix`.
 5. **Estimación económica revisada**:
    - Se reduce el rango esperado de un ciclo inicial mediante estrategia híbrida y gates de calidad por lote.
+6. **Guardrails de costo obligatorios**:
+   - Presupuesto máximo por fase, stop conditions automáticas y promoción por evidencia (no por volumen de datos).
 
 ---
 
@@ -60,13 +62,15 @@
 
 ### Datasets actuales (insuficientes para fine-tuning)
 
-| Rol | Ejemplos | Mínimo requerido | Gap |
+| Rol | Ejemplos | Mínimo fase inicial (cost-aware) | Gap |
 |-----|----------|-------------------|-----|
-| BA | 85 (ba_train_plus_more.jsonl) | 500 | -415 |
-| PO | 319 (teacher dataset) | 400 | -81 |
-| Architect | 16 (gold_v2) | 600 | -584 |
-| Dev | ~rollouts (infraestructura DPO) | 1000 | ~-1000 |
-| QA | 3 | 300 | -297 |
+| BA | 85 (ba_train_plus_more.jsonl) | 250 | -165 |
+| PO | 319 (teacher dataset) | 350 | -31 |
+| Architect | 16 (gold_v2) | 250 | -234 |
+| Dev | ~rollouts (infraestructura DPO) | 400 | ~-400 |
+| QA | 3 | 150 | -147 |
+
+> Nota: estos mínimos son para **v1 de bajo costo**. Solo escalar a 500+/1000+ ejemplos por rol si la evaluación offline demuestra mejora consistente.
 
 ---
 
@@ -184,12 +188,27 @@ Justificación:
 - Menos conflictos de versiones (vLLM, distilabel, lightrag)
 - Instalaciones más rápidas y baratas en runners
 
+### D7: Cost guards (obligatorio para viabilidad)
+
+**Decisión**: ningún ciclo avanza de fase sin cumplir gates técnicos y de costo.
+
+Guardrails:
+1. **Cap por fase**:
+   - Fase 2 (Distilabel): detener al alcanzar `budget_usd` configurado.
+   - Fase 3 (Fine-tune): 1 rol por vez, sin paralelizar entrenamientos.
+2. **Early stop por calidad**:
+   - Si un lote no mejora calidad vs baseline en 2 iteraciones consecutivas, detener generación/entrenamiento.
+3. **Promoción por evidencia**:
+   - Solo entrenar un rol cuando su evaluación offline supere baseline con margen mínimo predefinido.
+4. **Fallback explícito**:
+   - Si 72B no mejora calidad por costo, volver a 14B/32B y reforzar filtering/prompting.
+
 ---
 
 ## Fases de Implementación
 
 ### FASE 1: Graph RAG con LightRAG
-**Duración estimada**: ~2 semanas
+**Duración estimada**: ~1-2 semanas
 **GPU requerida**: No (solo CPU local + Ollama)
 **Costo**: $0
 
@@ -524,11 +543,11 @@ async def chat(self, system: str, user: str, **kwargs):
 graph_rag:
   enabled: true
   working_dir: "./artifacts/graph_rag"
-  llm_model: "qwen2.5-coder:7b"           # Para entity extraction
+  llm_model: "qwen2.5:7b-instruct"        # Para entity extraction
   embedding_model: "bge-m3"                # Multilingual embeddings
   embedding_dim: 1024
   chunk_token_size: 1200
-  top_k: 60
+  top_k: 40
   default_mode: "mix"                      # Graph + vector combined
   auto_ingest: true                        # Ingest artifacts after each step
   sources:
@@ -540,11 +559,11 @@ graph_rag:
 roles:
   architect:
     provider: ollama
-    model: qwen2.5-coder:14b
+    model: qwen2.5:14b-instruct
     graph_rag:                              # NUEVO
       enabled: true
       mode: "hybrid"                        # Graph-heavy para arquitectura
-      top_k: 60
+      top_k: 40
 
   dev:
     provider: ollama
@@ -552,7 +571,7 @@ roles:
     graph_rag:                              # NUEVO
       enabled: true
       mode: "local"                         # Entidades locales para código
-      top_k: 40
+      top_k: 30
 ```
 
 ##### F1-T6: Crear Makefile targets para Graph RAG
@@ -599,9 +618,9 @@ tests/
 ---
 
 ### FASE 2: Distilabel - Pipeline de Datos Sintéticos
-**Duración estimada**: ~2 semanas
+**Duración estimada**: ~1-2 semanas
 **GPU requerida**: Sí (preferible A100/L40S, pero con ejecución híbrida)
-**Costo estimado**: $30-90 GPU rental (enfoque tiered)
+**Costo estimado**: $15-60 GPU rental (enfoque tiered + quality gates)
 
 #### Objetivo
 Implementar pipelines Distilabel para generar datos sintéticos de entrenamiento usando estrategia tiered (Qwen2.5-14B/32B + 72B selectivo), reemplazando la dependencia de Gemini (comercial).
@@ -765,9 +784,9 @@ training/scripts/
 ---
 
 ### FASE 3: Fine-Tuning con Modelos Abiertos
-**Duración estimada**: ~2 semanas
+**Duración estimada**: ~1-2 semanas
 **GPU requerida**: Sí (A100 40-80GB)
-**Costo estimado**: $30-70 GPU rental (entrenamiento incremental por rol)
+**Costo estimado**: $20-50 GPU rental (entrenamiento incremental por rol)
 
 #### Objetivo
 Fine-tune modelos especializados por rol usando datasets generados por Distilabel, 100% con modelos abiertos.
@@ -1043,10 +1062,10 @@ NEW:  docs/GETTING_STARTED_FINETUNING.md
 | Fase | GPU | Costo Estimado | Notas |
 |------|-----|----------------|-------|
 | Fase 1 (RAG) | No | $0 | Solo CPU local |
-| Fase 2 (Distilabel) | A100/L40S, ~12-30h | $30-90 | Generación híbrida 14B/32B + 72B selectivo |
-| Fase 3 (Fine-tune) | A100 40GB, ~10-20h | $30-70 | Entrenamiento priorizado por rol (no todo en paralelo) |
+| Fase 2 (Distilabel) | A100/L40S, ~8-20h | $15-60 | Generación híbrida 14B/32B + 72B selectivo |
+| Fase 3 (Fine-tune) | A100 40GB, ~8-16h | $20-50 | Entrenamiento priorizado por rol (no todo en paralelo) |
 | Fase 4 (Integración) | No | $0 | Solo documentación |
-| **TOTAL** | - | **$60-160** | Ciclo inicial optimizado por costo |
+| **TOTAL** | - | **$35-110** | Ciclo inicial optimizado por costo |
 
 ---
 
@@ -1070,14 +1089,14 @@ NEW:  docs/GETTING_STARTED_FINETUNING.md
 | Métrica | Target | Medición |
 |---------|--------|----------|
 | **Graph RAG retrieval hit-rate** | >80% | Top-5 entidades contienen respuesta relevante |
-| **Graph RAG latency** | <250ms p95 (modo `mix`) | Benchmark local CPU/GPU ligera |
+| **Graph RAG latency** | <800ms p95 CPU local / <250ms p95 en entorno acelerado | Benchmark reproducible por perfil |
 | **Graph RAG multi-hop accuracy** | >70% | Queries que requieren graph traversal (e.g., dependencias) |
 | **Distilabel dataset quality** | >0.85 avg score | Auto-evaluación del teacher |
 | **Fine-tuned BA pass@1** | >30% (+15% vs baseline) | Held-out concepts |
 | **Fine-tuned Architect acceptance** | >80% | Human eval 20 examples |
 | **Fine-tuned PO** | ≥0.841 (fix regression) | product_owner_metric |
 | **Pipeline end-to-end** | Completa sin errores | `make iteration` con modelos fine-tuned + RAG |
-| **Costo por ciclo** | <$160 (objetivo inicial) | GPU rental tracking |
+| **Costo por ciclo** | <$110 (objetivo inicial) | GPU rental tracking |
 
 ---
 

@@ -40,12 +40,11 @@ except Exception as exc:  # pragma: no cover - recommender optional
 PROVIDER_REGISTRY: dict[str, Any] = {}
 _providers_import_err: Exception | None = None
 
-# AP-1-T3: TECH DEBT - High cyclomatic complexity in this module
-# Current issue: High CC in __init__ (CC=61), _cli_chat_async (CC=55), _cli_chat (CC=53)
+# TECH DEBT - High cyclomatic complexity in this module
+# Current issue: High CC in _cli_chat_async, _cli_chat
 # Root cause: Multiple provider handling, fallback logic, and CLI bridging mixed in main logic
 # Refactor plan: Extract provider-specific logic to separate provider classes or factories
-# Priority: Medium (preexistente al proyecto Graph RAG, no bloquea Fase 1)
-# Related issue: Should be refactored in backlog after Fase 1 stabilization
+# Priority: Medium
 
 try:
     from .providers import PROVIDER_REGISTRY  # type: ignore
@@ -172,7 +171,7 @@ class Client:
         cfg = load_config()
         self.cfg = cfg
 
-        # AP-1-T3: Extract initialization steps to reduce CC (target ≤15)
+        # Extract initialization steps to reduce CC
         # Detect legacy format: if role is a provider name and we have legacy_args, it's legacy mode
         is_legacy_mode = (
             isinstance(role, str) and
@@ -669,28 +668,32 @@ class Client:
 
         raise RuntimeError("Google Gemini response did not contain text output.")
 
-    async def _cli_chat_async(self, system: str, user: str) -> str:
-        """Async version of _cli_chat using asyncio subprocess.
+    # ========================================================================
+    # CLI Chat Refactoring - Helper Methods (CC Reduction)
+    # ========================================================================
 
-        Task: fix async CLI execution - native async subprocess instead of thread pool
+    def _build_cli_command_args(self, system: str, user: str, prompt_text: str) -> list:
         """
-        start_time = time.perf_counter()
-        logger.debug(f"[LLM] _cli_chat_async: Entered for provider {self.provider_type}")
+        Build CLI command arguments with flags and settings.
 
-        if not self.cli_command:
-            label = self.provider_type.upper()
-            logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
-            raise RuntimeError(f"{label}_NO_COMMAND")
+        Extracted helper to reduce CC in _cli_chat and _cli_chat_async.
+        Handles: model flag, temperature flag, max-tokens flag, system prompt flag.
 
-        # Build command arguments
-        cmd_args = list(self.cli_command)
+        Args:
+            system: System prompt
+            user: User prompt
+            prompt_text: Formatted prompt text
+
+        Returns:
+            List of command arguments with all flags appended
+
+        CC: ≤ 5 (follows Phase 1 standards)
+        """
+        cmd_args = list(self.cli_command)  # Copy command list
         if self.cli_extra_args:
             cmd_args.extend(self.cli_extra_args)
-
         if self.cli_debug and self.cli_debug_args:
             cmd_args.extend(self.cli_debug_args)
-
-        logger.debug(f"[LLM] _cli_chat_async: Full command args: {cmd_args}")
 
         def _has_flag(flag: str) -> bool:
             for arg in cmd_args:
@@ -698,24 +701,55 @@ class Client:
                     return True
             return False
 
+        # Append model flag
         if self.cli_append_model_flag and not _has_flag("--model"):
             cmd_args.extend(["--model", self.model])
 
+        # Append temperature flag
         if self.cli_append_temperature_flag and not _has_flag("--temperature"):
             cmd_args.extend(["--temperature", str(self.temperature)])
 
+        # Append max-tokens flag (provider-specific)
         if self.provider_type == "claude_cli":
             if not _has_flag("--settings"):
-                settings_json = json.dumps({"max_tokens_to_sample": self.max_tokens}, separators=(',', ':'))
+                settings_json = json.dumps(
+                    {"max_tokens_to_sample": self.max_tokens},
+                    separators=(',', ':')
+                )
                 cmd_args.extend(["--settings", settings_json])
         elif self.cli_append_max_tokens_flag and not _has_flag("--max-tokens"):
             cmd_args.extend(["--max-tokens", str(self.max_tokens)])
 
-        if self.cli_append_system_prompt and self.provider_type != "claude_cli" and not _has_flag("--system-prompt"):
+        # Append system prompt flag
+        if (self.cli_append_system_prompt and
+            self.provider_type != "claude_cli" and
+            not _has_flag("--system-prompt")):
             cmd_args.extend(["--system-prompt", system])
 
+        return cmd_args
+
+    def _prepare_cli_input(
+        self, system: str, user: str
+    ) -> tuple:
+        """
+        Prepare CLI input based on format configuration.
+
+        Extracted helper to reduce CC in _cli_chat and _cli_chat_async.
+        Handles: JSON input, text input, direct argument input.
+
+        Args:
+            system: System prompt
+            user: User prompt
+
+        Returns:
+            Tuple of (input_data: str|None, prompt_text: str)
+
+        CC: ≤ 5 (follows Phase 1 standards)
+        """
+        # Build prompt text
         prompt_template = self.cli_prompt_template or (
-            "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
+            "System: {system}\n\nUser: {user}\n\n"
+            "Settings: temperature={temperature}, max_tokens={max_tokens}"
         )
 
         if self.provider_type == "claude_cli" and self.cli_input_format == "stdin_text":
@@ -732,6 +766,7 @@ class Client:
         # Prepare input based on format
         input_data = None
         normalized_format = (self.cli_input_format or "").lower()
+
         if normalized_format in ("stdin", "stdin_json", "json"):
             payload = {
                 "system": system,
@@ -747,9 +782,103 @@ class Client:
             input_data = prompt_text
             logger.debug("[LLM] CLI input format: stdin (text payload)")
         else:
-            cmd_args.append(prompt_text)
             logger.debug("[LLM] CLI input format: direct argument (combined prompt)")
 
+        return input_data, prompt_text
+
+    def _handle_cli_error(
+        self, returncode: int, stdout_text: str, stderr_text: str
+    ) -> str:
+        """
+        Extract error message from CLI command execution.
+
+        Extracted helper to reduce CC in _cli_chat and _cli_chat_async.
+        Tries multiple sources: stdout JSON, stderr, generic message.
+
+        Args:
+            returncode: Process return code
+            stdout_text: Process stdout
+            stderr_text: Process stderr
+
+        Returns:
+            Error message string
+
+        CC: ≤ 5 (follows Phase 1 standards)
+        """
+        error_msg = "Unknown error"
+
+        # Try to parse JSON error from stdout (some CLIs return errors in JSON)
+        if stdout_text:
+            try:
+                data = json.loads(stdout_text.strip())
+                if isinstance(data, dict) and data.get("is_error"):
+                    error_msg = data.get("result") or data.get("error") or error_msg
+            except json.JSONDecodeError:
+                pass
+
+        # Fall back to stderr
+        if error_msg == "Unknown error" and stderr_text:
+            error_msg = stderr_text.strip()[:200]
+
+        return error_msg
+
+    def _process_cli_response(self, response: str) -> str:
+        """
+        Clean and parse CLI response.
+
+        Extracted helper to reduce CC in _cli_chat and _cli_chat_async.
+        Handles: ANSI code removal, JSON parsing, whitespace trimming.
+
+        Args:
+            response: Raw response from CLI
+
+        Returns:
+            Processed response string
+
+        CC: ≤ 5 (follows Phase 1 standards)
+        """
+        # Remove ANSI escape codes if configured
+        if self.cli_output_clean:
+            response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
+            response = response.strip()
+            logger.debug("[LLM] CLI response cleaned.")
+
+        # Parse JSON if configured
+        if self.cli_parse_json:
+            parsed = self._parse_cli_json_output(response)
+            if parsed is not None:
+                response = parsed
+            else:
+                logger.warning(f"[LLM] Failed to parse JSON from response: {response[:500]}")
+
+        return response
+
+    async def _cli_chat_async(self, system: str, user: str) -> str:
+        """Async version of _cli_chat using asyncio subprocess.
+
+        Refactored to use helper methods for CC reduction.
+        Uses native async subprocess instead of thread pool.
+        """
+        start_time = time.perf_counter()
+        logger.debug(f"[LLM] _cli_chat_async: Entered for provider {self.provider_type}")
+
+        if not self.cli_command:
+            label = self.provider_type.upper()
+            logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
+            raise RuntimeError(f"{label}_NO_COMMAND")
+
+        # Use helper to prepare input
+        input_data, prompt_text = self._prepare_cli_input(system, user)
+
+        # Use helper to build command args
+        cmd_args = self._build_cli_command_args(system, user, prompt_text)
+
+        # Handle direct argument input format (append to cmd_args)
+        normalized_format = (self.cli_input_format or "").lower()
+        if normalized_format not in ("stdin", "stdin_json", "json", "stdin_text", "stdin-raw", "text"):
+            cmd_args.append(prompt_text)
+
+        logger.debug(f"[LLM] _cli_chat_async: Full command args: {cmd_args}")
         logger.debug(f"[LLM] _cli_chat_async: Input data length: {len(input_data) if input_data else 0} chars")
 
         try:
@@ -808,17 +937,8 @@ class Client:
             stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
 
             if returncode != 0:
-                error_msg = "Unknown error"
-                if stdout_text:
-                    try:
-                        data = json.loads(stdout_text.strip())
-                        if isinstance(data, dict) and data.get("is_error"):
-                            error_msg = data.get("result") or data.get("error") or error_msg
-                    except json.JSONDecodeError:
-                        pass
-
-                if error_msg == "Unknown error" and stderr_text:
-                    error_msg = stderr_text.strip()[:200]
+                # Use helper to extract error message
+                error_msg = self._handle_cli_error(returncode, stdout_text, stderr_text)
 
                 self._log_cli_operation(
                     cmd_args,
@@ -838,18 +958,8 @@ class Client:
             if stderr_text and (self.cli_log_stderr or self.cli_debug):
                 logger.info(f"[LLM] Stderr from {self.provider_type.upper()}: {stderr_text.strip()}")
 
-            if self.cli_output_clean:
-                response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
-                response = response.strip()
-                logger.debug("[LLM] CLI response cleaned.")
-
-            if self.cli_parse_json:
-                # This logic is now robust enough for any provider.
-                parsed = self._parse_cli_json_output(response)
-                if parsed is not None:
-                    response = parsed
-                else:
-                    logger.warning(f"[LLM] Failed to parse JSON from response: {response[:500]}")
+            # Use helper to process response
+            response = self._process_cli_response(response)
 
             if not response:
                 self._log_cli_operation(
@@ -883,7 +993,10 @@ class Client:
             raise
 
     def _cli_chat(self, system: str, user: str) -> str:
-        """Execute configured CLI provider command and return response with timing and logging."""
+        """Execute configured CLI provider command and return response with timing and logging.
+
+        Refactored to use helper methods for CC reduction.
+        """
         logger.debug(f"[LLM] _cli_chat: Entered for provider {self.provider_type}")
         if not self.cli_command:
             label = self.provider_type.upper()
@@ -894,81 +1007,18 @@ class Client:
         logger.debug(f"[LLM] _cli_chat: Command to execute: {self.cli_command}")
         logger.debug(f"[LLM] Starting CLI chat for provider '{self.provider_type}'. Command: {self.cli_command}")
 
+        # Use helper to prepare input
+        input_data, prompt_text = self._prepare_cli_input(system, user)
 
-        # Build command arguments
-        cmd_args = list(self.cli_command)  # Copy the command list
-        if self.cli_extra_args:
-            cmd_args.extend(self.cli_extra_args)
+        # Use helper to build command args
+        cmd_args = self._build_cli_command_args(system, user, prompt_text)
 
-        if self.cli_debug and self.cli_debug_args:
-            cmd_args.extend(self.cli_debug_args)
+        # Handle direct argument input format (append to cmd_args)
+        normalized_format = (self.cli_input_format or "").lower()
+        if normalized_format not in ("stdin", "stdin_json", "json", "stdin_text", "stdin-raw", "text"):
+            cmd_args.append(prompt_text)
 
         logger.debug(f"[LLM] _cli_chat: Full command args: {cmd_args}")
-
-        def _has_flag(flag: str) -> bool:
-            for arg in cmd_args:
-                if arg == flag or arg.startswith(f"{flag}="):
-                    return True
-            return False
-
-        if self.cli_append_model_flag and not _has_flag("--model"):
-            cmd_args.extend(["--model", self.model])
-
-        if self.cli_append_temperature_flag and not _has_flag("--temperature"):
-            cmd_args.extend(["--temperature", str(self.temperature)])
-
-        if self.provider_type == "claude_cli":
-            if not _has_flag("--settings"):
-                # The Claude CLI uses the API parameter name `max_tokens_to_sample` within its settings.
-                # Wrap in quotes to ensure proper shell interpretation.
-                settings_json = json.dumps({"max_tokens_to_sample": self.max_tokens}, separators=(',', ':'))
-                # The settings_json is already a string, it will be properly quoted by subprocess
-                cmd_args.extend(["--settings", settings_json])
-        elif self.cli_append_max_tokens_flag and not _has_flag("--max-tokens"):
-            cmd_args.extend(["--max-tokens", str(self.max_tokens)])
-
-        # The system prompt is now combined with the user prompt for stdin_text format
-        if self.cli_append_system_prompt and self.provider_type != "claude_cli" and not _has_flag("--system-prompt"):
-            cmd_args.extend(["--system-prompt", system])
-
-        prompt_template = self.cli_prompt_template or (
-            "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
-        )
-        
-        # For claude_cli with stdin_text, we combine system and user prompts.
-        if self.provider_type == "claude_cli" and self.cli_input_format == "stdin_text":
-            prompt_text = f"{system}\n\n{user}"
-        else:
-            prompt_text = prompt_template.format(
-                system=system,
-                user=user,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                model=self.model,
-            )
-
-        # Prepare input based on format
-        input_data = None
-        normalized_format = (self.cli_input_format or "").lower()
-        if normalized_format in ("stdin", "stdin_json", "json"):
-            payload = {
-                "system": system,
-                "user": user,
-                "model": self.model,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "prompt": prompt_text,
-            }
-            input_data = json.dumps(payload, ensure_ascii=False)
-            logger.debug("[LLM] CLI input format: stdin (JSON payload)")
-        elif normalized_format in ("stdin_text", "stdin-raw", "text"):
-            input_data = prompt_text
-            logger.debug("[LLM] CLI input format: stdin (text payload)")
-        else:
-            cmd_args.append(prompt_text)
-            logger.debug("[LLM] CLI input format: direct argument (combined prompt)")
-
-
         logger.debug(f"[LLM] _cli_chat: About to execute subprocess. Input format: {self.cli_input_format}")
         logger.debug(f"[LLM] _cli_chat: Input data length: {len(input_data) if input_data else 0} chars")
 
@@ -1004,20 +1054,9 @@ class Client:
             stderr_text = result.stderr or ""
             stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
 
-
             if result.returncode != 0:
-                error_msg = "Unknown error"
-                # Claude CLI can return errors in stdout as JSON, even with a non-zero exit code.
-                if result.stdout:
-                    try:
-                        data = json.loads(result.stdout.strip())
-                        if isinstance(data, dict) and data.get("is_error"):
-                            error_msg = data.get("result") or data.get("error") or error_msg
-                    except json.JSONDecodeError:
-                        pass  # Not a JSON error, fall back to stderr.
-
-                if error_msg == "Unknown error" and result.stderr:
-                    error_msg = result.stderr.strip()[:200]
+                # Use helper to extract error message
+                error_msg = self._handle_cli_error(result.returncode, result.stdout, result.stderr)
 
                 # Log timing and error for debugging
                 self._log_cli_operation(
@@ -1038,18 +1077,8 @@ class Client:
             if result.stderr and (self.cli_log_stderr or self.cli_debug):
                 logger.info(f"[LLM] Stderr from {self.provider_type.upper()}: {result.stderr.strip()}")
 
-            # Clean response if configured
-            if self.cli_output_clean:
-                # Remove ANSI escape codes
-                response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
-                # Trim whitespace
-                response = response.strip()
-                logger.debug("[LLM] CLI response cleaned.")
-
-            if self.cli_parse_json:
-                parsed = self._parse_cli_json_output(response)
-                if parsed is not None:
-                    response = parsed
+            # Use helper to process response
+            response = self._process_cli_response(response)
 
             if not response:
                 self._log_cli_operation(

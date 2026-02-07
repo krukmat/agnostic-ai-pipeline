@@ -33,6 +33,94 @@ ROLE_SKILLS = {
 }
 
 
+# ============================================================================
+# Post-Step Hook System for Auto-Ingestion
+# ============================================================================
+
+
+class HookRegistry:
+    """
+    Post-step hook system for auto-ingestion.
+
+    Allows registering callbacks that fire after pipeline step completion.
+    Enables automatic ingestion of artifacts into Graph RAG without blocking
+    the pipeline if ingestion fails.
+
+    Target CC: ≤3 per method (following Phase 1 standards)
+    """
+
+    def __init__(self):
+        """Initialize empty hook registry."""
+        self._hooks: list = []
+
+    def register(self, hook) -> None:
+        """
+        Register a post-step hook.
+
+        Args:
+            hook: Callable with signature (step_name, artifacts, metadata) -> None
+
+        CC: 1 (single statement)
+        """
+        self._hooks.append(hook)
+
+    async def fire(self, step_name: str, artifacts: list, metadata: Dict[str, Any]) -> None:
+        """
+        Fire all registered hooks.
+
+        Calls each hook with step_name, artifacts, and metadata.
+        Continues execution even if a hook fails (hooks should not block pipeline).
+
+        Args:
+            step_name: Name of completed step (ba, architect, dev, qa)
+            artifacts: List of artifact file paths
+            metadata: Dict with role, iteration, timestamp, etc.
+
+        CC: 2-3 (for loop + try/except)
+        """
+        for hook in self._hooks:
+            try:
+                await hook(step_name, artifacts, metadata)
+            except Exception as e:
+                logger.error(f"[hooks] Hook failed for {step_name}: {e}")
+                # Continue to next hook - pipeline should not be blocked
+
+
+def _collect_dev_artifacts(dev_result: Dict[str, Any], story: Dict[str, Any]) -> list:
+    """
+    Extract artifact file paths from dev step result.
+
+    Extracted helper to reduce CC in _process_story() and support hook system.
+
+    Args:
+        dev_result: Result dict from execute_role("developer", ...)
+        story: Current story dict
+
+    Returns:
+        List of Path objects for generated artifacts
+
+    CC: 2-3 (simple extraction logic)
+    """
+    artifacts = []
+    artifacts_dir = dev_result.get("artifacts_dir")
+
+    if not artifacts_dir:
+        return artifacts
+
+    try:
+        artifacts_path = pathlib.Path(artifacts_dir)
+        if artifacts_path.exists():
+            artifacts = [a for a in artifacts_path.rglob("*") if a.is_file()]
+    except Exception as e:
+        logger.warning(f"[hooks] Could not collect artifacts from {artifacts_dir}: {e}")
+
+    return artifacts
+
+
+# Global hook registry instance
+_hook_registry = HookRegistry()
+
+
 async def _local_business_analyst_handler(**payload: Any) -> Dict[str, Any]:
     concept = (payload.get("concept") or "").strip()
     if not concept:
@@ -805,6 +893,16 @@ async def _process_story(
             )
             db_ctx.update_story_status(sid, "in_progress")
 
+    # Fire post-step hooks for auto-ingestion
+    if dev_status == "ok":
+        artifacts = _collect_dev_artifacts(dev_result, story)
+        await _hook_registry.fire("dev", artifacts, {
+            "role": "dev",
+            "iteration": story_dev_attempts.get(sid, 0),
+            "timestamp": datetime.datetime.now().isoformat(),
+            "story_id": sid
+        })
+
     if dev_status != "ok":
         dev_attempt_count = story_dev_attempts.get(sid, 0)
         exit_code = int(dev_result.get("exit_code", 1))
@@ -1084,6 +1182,12 @@ async def main():
     # Task: recovery-system - Read max_recovery_attempts from config
     config = load_config()
     max_recovery_attempts = config.get("pipeline", {}).get("max_recovery_attempts", 2)
+
+    # Register auto-ingest hook if enabled
+    if config.get("graph_rag", {}).get("auto_ingest", False):
+        from graph_rag.ingestion import auto_ingest_hook
+        _hook_registry.register(auto_ingest_hook)
+        logger.info("[hooks] Registered auto-ingest hook (auto_ingest=true)")
 
     logger.info(
         f"[loop] Starting orchestrator. Max loops: {max_loops}, Allow no tests: {allow_no_tests}, "

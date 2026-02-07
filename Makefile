@@ -280,13 +280,43 @@ rag-status:
 	@ls -lah artifacts/graph_rag/ 2>/dev/null || echo "  (KG not yet created - run 'make rag-index' first)"
 
 rag-query:
-	@if [ -z "$$QUERY" ]; then echo "Usage: make rag-query QUERY=\"your question\" [MODE=mix]"; exit 1; fi
-	@MODE=$${MODE:-mix} $(PY) -c "import asyncio; from graph_rag.engine import GraphRAGEngine; from graph_rag.retrieval import AgentRetriever; from scripts.llm import load_config; cfg = load_config(); engine = GraphRAGEngine(cfg.get('graph_rag', {})); asyncio.run(engine.initialize()); retriever = AgentRetriever(engine); result = asyncio.run(retriever.retrieve_for_role('architect', '$$QUERY')); print(result); asyncio.run(engine.finalize())"
+	@if [ -z "$$QUERY" ]; then echo "Usage: make rag-query QUERY=\"your question\" [MODE=mix|hybrid|local|global|naive] [ROLE=architect]"; exit 1; fi
+	@MODE=$${MODE:-mix} ROLE=$${ROLE:-architect} $(PY) scripts/rag_query_cli.py --query "$$QUERY" --mode "$$MODE" --role "$$ROLE"
 
 rag-visualize:
 	@echo "==> Starting LightRAG WebUI at http://localhost:9621"
 	@echo "    (Ctrl+C to stop)"
 	@lightrag-server --working-dir ./artifacts/graph_rag --port 9621
+
+.PHONY: test-fast test-rag-real test-no-integration test-integration test-integration-real test-with-integration test-all
+
+test-fast:
+	@echo "==> Running fast tests (excluding integration_real)"
+	PYTHONPATH=. $(PY) -m pytest -m "not integration_real" -q
+
+test-no-integration:
+	@echo "==> Running unit-only profile (no integration)"
+	PYTHONPATH=. $(PY) -m pytest -m "unit and not integration and not integration_real" -q
+
+test-integration:
+	@echo "==> Running integration profile (integration marker)"
+	PYTHONPATH=. $(PY) -m pytest -m "integration and not integration_real" -q
+
+test-integration-real:
+	@echo "==> Running integration_real profile"
+	PYTHONPATH=. $(PY) -m pytest -m integration_real -q
+
+test-with-integration:
+	@echo "==> Running unit + integration + integration_real profile"
+	PYTHONPATH=. $(PY) -m pytest -m "unit or integration or integration_real" -q
+
+test-all:
+	@echo "==> Running full test suite (optional deps may be skipped)"
+	PYTHONPATH=. $(PY) -m pytest -q
+
+test-rag-real:
+	@echo "==> Running real Graph RAG integration tests"
+	PYTHONPATH=. $(PY) -m pytest -m integration_real -q
 
 # Post-training targets
 include post_training/Makefile.posttrain.mk

@@ -1,7 +1,7 @@
 """
 AgentRetriever - Role-based retrieval adapter for pipeline agents.
 
-F1-T4: Retrieval adapter with per-role policies.
+Retrieval adapter with per-role policies.
 Each role gets a configured retrieval strategy optimized for its task.
 
 Policies are defined by:
@@ -13,11 +13,10 @@ Role-specific examples:
 - Architect: mode="hybrid" (graph-heavy for design relationships)
 - Dev: mode="local" (nearby entities for code specifics)
 - BA/PO/QA: mode="mix" (balanced graph + vector)
-
-Related to: PLAN_implementation_distilabel_finetuning_rag.md - F1-T4
 """
 
 from typing import Optional
+import time
 import logging
 
 logger = logging.getLogger(__name__)
@@ -75,24 +74,18 @@ class AgentRetriever:
         """
         self.engine = engine
 
-    async def retrieve_for_role(
-        self,
-        role: str,
-        query: str,
-        override_policy: Optional[dict] = None,
-    ) -> str:
+    def _resolve_policy(self, role: str, override_policy: Optional[dict]) -> dict:
         """
-        Retrieve context appropriate for the agent's role.
+        Resolve policy for a role with optional overrides.
 
-        Uses role-specific policy unless overridden.
+        Extracted helper to reduce retrieve_for_role CC.
 
         Args:
             role: Agent role (ba, product_owner, architect, dev, qa)
-            query: Query string
             override_policy: Optional dict to override {mode, top_k, context_only}
 
         Returns:
-            Context string formatted for the agent
+            Resolved policy dict with mode, top_k, context_only
         """
         # Get role policy with fallback
         policy = self.ROLE_POLICIES.get(role, {
@@ -105,33 +98,75 @@ class AgentRetriever:
         if override_policy:
             policy = {**policy, **override_policy}
 
+        return policy
+
+    async def retrieve_for_role(
+        self,
+        role: str,
+        query: str,
+        override_policy: Optional[dict] = None,
+    ) -> str:
+        """
+        Retrieve context appropriate for the agent's role.
+        Includes timing instrumentation for performance profiling.
+
+        Uses role-specific policy unless overridden.
+        Policy resolution delegated to _resolve_policy helper.
+
+        Args:
+            role: Agent role (ba, product_owner, architect, dev, qa)
+            query: Query string
+            override_policy: Optional dict to override {mode, top_k, context_only}
+
+        Returns:
+            Context string formatted for the agent
+        """
+        retrieval_start = time.perf_counter()
+
+        # Resolve policy via extracted helper
+        policy = self._resolve_policy(role, override_policy)
+
         logger.info(
             f"[{role.upper()}] Retrieving context with mode={policy['mode']}, "
             f"top_k={policy['top_k']}"
         )
 
         try:
+            engine_start = time.perf_counter()
             if policy.get("context_only"):
                 # Return raw context for agent's own prompt construction
+                # Pass top_k from policy to engine for role-based retrieval
                 result = await self.engine.get_context_only(
                     question=query,
                     mode=policy["mode"],
+                    top_k=policy["top_k"],
                 )
             else:
                 # Return LLM-generated response
+                # Pass top_k from policy to engine for role-based retrieval
                 result = await self.engine.query(
                     question=query,
                     mode=policy["mode"],
+                    top_k=policy["top_k"],
                 )
+            engine_time = time.perf_counter() - engine_start
 
-            # Log retrieval success
+            total_time = time.perf_counter() - retrieval_start
+
+            # Log retrieval success with metrics
             result_preview = result[:100] + "..." if len(result) > 100 else result
+            logger.info(
+                f"[{role.upper()}] Retrieval complete: "
+                f"total_time={total_time:.3f}s engine_time={engine_time:.3f}s "
+                f"result_size={len(result)} chars context_only={policy.get('context_only', False)}"
+            )
             logger.debug(f"✓ Retrieved {len(result)} chars: {result_preview}")
 
             return result
 
         except Exception as e:
-            logger.error(f"✗ Retrieval failed for {role}: {e}")
+            total_time = time.perf_counter() - retrieval_start
+            logger.error(f"✗ Retrieval failed for {role} after {total_time:.3f}s: {e}")
             raise
 
     async def batch_retrieve(
@@ -197,6 +232,6 @@ class AgentRetriever:
             "naive": "Vector similarity only (like ChromaDB). Fast but misses relationships.",
             "local": "Entities + immediate neighbors in graph. Good for code-specific context.",
             "global": "Community summaries from KG. Good for high-level architecture.",
-            "hybrid": "local + global combined. Recommended for architects.",
+            "hybrid": "Combines local entities/relationships with global community context. Recommended for architects.",
             "mix": "graph traversal + vector similarity combined. Balanced approach.",
         }

@@ -106,6 +106,48 @@ make set-role role=qa provider=ollama model="qwen2.5-coder:7b"
 
 ## Key Features
 
+### Graph RAG (LightRAG) + Real Integration
+
+A Graph RAG layer has been added to provide structured context to agents (not only vector similarity).
+
+- **Engine**: `graph_rag/engine.py` (initialize/ingest/query/stream/cache)
+- **Ingestion**: `graph_rag/ingestion.py` (deduplication + state tracking)
+- **Retrieval**: `graph_rag/retrieval.py` (role-based policies)
+- **Operational runbook**: `docs/GRAPH_RAG_REAL_INTEGRATION_RUNBOOK.md`
+
+```mermaid
+flowchart LR
+  A[planning/project/artifacts/docs] --> B[PipelineIngestion]
+  B --> C[LightRAG Knowledge Graph]
+  C --> D[AgentRetriever]
+  D --> E[BA/PO/Architect/Dev/QA]
+```
+
+#### Test strategy (fast vs real)
+
+- `unit/integration` for fast feedback (general CI)
+- `integration_real` to validate real environment behavior (LightRAG + Ollama)
+
+```mermaid
+flowchart TD
+  T1[make test-fast] --> U[pytest -m "not integration_real"]
+  T2[make test-rag-real] --> R[pytest -m integration_real]
+  R -->|environment ready| P[real PASS]
+  R -->|missing preconditions| S[SKIP with explicit reason]
+```
+
+Key commands:
+
+```bash
+make test-fast
+make test-no-integration
+make test-integration
+make test-integration-real
+make test-with-integration
+make test-all
+make test-rag-real
+```
+
 ### Chain-of-Thought & Learning Layer
 
 - The orchestrator logs every planner/policy/LLM decision via `scripts/orchestrator/cot_tracker.py` so you can audit CoT artifacts in `artifacts/cot_layer6/`.
@@ -331,7 +373,7 @@ make qa QA_RUN_TESTS=1           # Run QA with tests
 
 # Orchestration
 make iteration CONCEPT="..."     # Full BA→PO→Architect→Dev→QA cycle
-make agentic-iteration CONCEPT="..." MAX_STEPS=5 MAX_ACTIONS=2   # Iteración agentic completa
+make agentic-iteration CONCEPT="..." MAX_STEPS=5 MAX_ACTIONS=2   # Full agentic iteration
 
 # Configuration
 make show-config                 # Display current config

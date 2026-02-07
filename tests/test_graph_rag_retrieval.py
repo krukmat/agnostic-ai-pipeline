@@ -1,5 +1,5 @@
 """
-F1-T4: Unit tests for AgentRetriever (role-based policies).
+Unit tests for AgentRetriever (role-based policies).
 
 Focus: Policy routing, context_only flag, role-specific behavior.
 No mocking for policy logic - verify actual policy dict structure.

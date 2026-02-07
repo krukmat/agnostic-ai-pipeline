@@ -1,15 +1,13 @@
 """
 PipelineIngestion - Ingest pipeline artifacts into Knowledge Graph.
 
-F1-T3: Pipeline artifact ingestion with MD5 deduplication.
+Pipeline artifact ingestion with MD5 deduplication.
 Only ingests new/modified files to reduce ingestion cost.
 
 LightRAG automatically extracts entities and relationships from documents.
 Example: ingesting stories.yaml automatically extracts:
   - Entities: S1, S3, AuthService, Database
   - Relations: S3 --depends_on--> S1, S3 --tested_by--> test_auth.py
-
-Related to: PLAN_implementation_distilabel_finetuning_rag.md - F1-T3
 """
 
 import asyncio
@@ -102,11 +100,81 @@ class PipelineIngestion:
 
         return stats
 
+    def _should_ingest_file(self, file: Path) -> bool:
+        """
+        Determine if a file should be ingested (not directory, not duplicate).
+
+        Extracted helper to reduce _ingest_directory CC.
+
+        Args:
+            file: File path to check
+
+        Returns:
+            True if file should be ingested, False if directory or already ingested
+        """
+        # Skip directories
+        if not file.is_file():
+            return False
+
+        # Check if already ingested (via MD5 hash)
+        try:
+            content = file.read_text(errors="ignore")
+            file_hash = hashlib.md5(content.encode()).hexdigest()
+            if file_hash in self.ingested_hashes:
+                return False
+            return True
+        except Exception as e:
+            logger.warning(f"Could not read {file}: {e}")
+            return False
+
+    def _build_file_metadata(self, file: Path, content: str, content_type: str) -> str:
+        """
+        Build tagged content with source and type metadata.
+
+        Extracted helper to reduce _ingest_directory CC.
+
+        Args:
+            file: Source file path
+            content: File content
+            content_type: Type of content (planning, code, artifacts, docs)
+
+        Returns:
+            Content with [Source: path] and [Type: content_type] tags prepended
+        """
+        tagged_content = (
+            f"[Source: {file}] [Type: {content_type}]\n\n"
+            f"{content}"
+        )
+        return tagged_content
+
+    async def _process_single_file(self, file: Path, content_type: str, stats: Dict) -> None:
+        """Process a single file for ingestion with dedup check.
+
+        Args:
+            file: File path to process
+            content_type: Type of content (planning, code, artifacts, docs)
+            stats: Mutable stats dict to update in-place
+        """
+        if not self._should_ingest_file(file):
+            if file.is_file():
+                stats["skipped_files"] += 1
+            return
+
+        try:
+            content = file.read_text(errors="ignore")
+            file_hash = hashlib.md5(content.encode()).hexdigest()
+            tagged_content = self._build_file_metadata(file, content, content_type)
+            await self.engine.ingest(tagged_content)
+            self.ingested_hashes[file_hash] = str(file)
+            stats["new_files"] += 1
+            logger.debug(f"  ✓ {file}")
+        except Exception as e:
+            logger.error(f"  ✗ Failed to ingest {file}: {e}")
+            stats["errors"] += 1
+
     async def _ingest_directory(self, path: str, content_type: str) -> Dict:
         """
         Ingest all matching files in directory with deduplication.
-
-        Only ingests files with new MD5 hashes (i.e., modified files).
 
         Args:
             path: Directory path relative to repo root
@@ -117,7 +185,6 @@ class PipelineIngestion:
         """
         patterns = self.CONTENT_TYPES.get(content_type, ["*"])
         base = Path(path)
-
         stats = {"new_files": 0, "skipped_files": 0, "errors": 0}
 
         if not base.exists():
@@ -125,36 +192,9 @@ class PipelineIngestion:
             return stats
 
         logger.info(f"Ingesting {path}...")
-
         for pattern in patterns:
             for file in base.rglob(pattern):
-                if not file.is_file():
-                    continue
-
-                try:
-                    content = file.read_text(errors="ignore")
-                    file_hash = hashlib.md5(content.encode()).hexdigest()
-
-                    if file_hash in self.ingested_hashes:
-                        stats["skipped_files"] += 1
-                        continue
-
-                    # Prepend metadata for better entity extraction
-                    # [Source: path] tags help LightRAG understand artifact origins
-                    tagged_content = (
-                        f"[Source: {file}] [Type: {content_type}]\n\n"
-                        f"{content}"
-                    )
-
-                    await self.engine.ingest(tagged_content)
-                    self.ingested_hashes[file_hash] = str(file)
-                    stats["new_files"] += 1
-
-                    logger.debug(f"  ✓ {file}")
-
-                except Exception as e:
-                    logger.error(f"  ✗ Failed to ingest {file}: {e}")
-                    stats["errors"] += 1
+                await self._process_single_file(file, content_type, stats)
 
         return stats
 
@@ -223,7 +263,7 @@ async def ingest_pipeline_artifacts(
     """
     Convenience function for one-shot ingestion of all pipeline artifacts.
 
-    F1-T3: Smoke test for ingestion (used in setup_graph_rag.py).
+    Smoke test for ingestion (used in setup_graph_rag.py).
 
     Args:
         engine: GraphRAGEngine instance
@@ -234,3 +274,80 @@ async def ingest_pipeline_artifacts(
     """
     ingestion = PipelineIngestion(engine, state_dir)
     return await ingestion.ingest_all()
+
+
+# ============================================================================
+# Auto-Ingest Hook Listener
+# ============================================================================
+
+
+async def _ingest_single_artifact(artifact, ingestion, metadata) -> bool:
+    """Ingest a single artifact file. Returns True if ingested successfully."""
+    if not isinstance(artifact, (str, Path)):
+        return False
+    artifact_path = Path(artifact)
+    if not artifact_path.exists():
+        logger.debug(f"[auto-ingest] Skipped (not found): {artifact_path}")
+        return False
+    content = artifact_path.read_text(errors="ignore")
+    await ingestion.ingest_artifact(content, metadata)
+    return True
+
+
+async def _setup_ingestion(cfg):
+    """Setup engine and PipelineIngestion from config."""
+    from graph_rag.engine import GraphRAGEngine
+    from graph_rag.config import GraphRAGConfig
+
+    graph_cfg = GraphRAGConfig(cfg.get("graph_rag", {}))
+    engine = await GraphRAGEngine.get_instance(graph_cfg.config)
+    return PipelineIngestion(engine)
+
+
+async def _ingest_artifacts_batch(ingestion, artifacts, metadata) -> int:
+    """Ingest a batch of artifacts, returns count of successfully ingested."""
+    ingested_count = 0
+    for artifact in artifacts:
+        try:
+            if await _ingest_single_artifact(artifact, ingestion, metadata):
+                ingested_count += 1
+        except Exception as e:
+            logger.warning(f"[auto-ingest] Failed to ingest {artifact}: {e}")
+    return ingested_count
+
+
+async def auto_ingest_hook(
+    step_name: str,
+    artifacts: list,
+    metadata: Dict[str, any]
+) -> None:
+    """
+    Post-step hook for automatic ingestion of artifacts.
+
+    Called after pipeline steps (dev, architect, qa, ba) complete.
+    Respects auto_ingest config flag - does nothing if disabled.
+    Does NOT raise exceptions - pipeline continues even if ingestion fails.
+
+    Args:
+        step_name: Name of completed step (ba, architect, dev, qa)
+        artifacts: List of artifact file paths (Path objects)
+        metadata: Dict with {role, iteration, timestamp, story_id, ...}
+    """
+    from common import load_config
+
+    try:
+        cfg = load_config()
+    except Exception as e:
+        logger.error(f"✗ Auto-ingest: Could not load config: {e}")
+        return
+
+    if not cfg.get("graph_rag", {}).get("auto_ingest", False):
+        logger.debug(f"[auto-ingest] Skipped: auto_ingest=false (step={step_name})")
+        return
+
+    try:
+        ingestion = await _setup_ingestion(cfg)
+        count = await _ingest_artifacts_batch(ingestion, artifacts, metadata)
+        logger.info(f"✓ Auto-ingest: {count}/{len(artifacts)} artifacts from {step_name}")
+    except Exception as e:
+        logger.error(f"✗ Auto-ingest failed for {step_name}: {e}")

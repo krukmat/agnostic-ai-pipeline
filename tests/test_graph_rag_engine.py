@@ -1,19 +1,21 @@
 """
-F1-T2: Unit tests for GraphRAGEngine singleton wrapper.
+Unit tests for GraphRAGEngine singleton wrapper.
 
-TDD Approach: Tests written FIRST, implementation validated after.
 Focus: Core engine behavior, lazy initialization, singleton pattern.
-No mocking - real LightRAG backend integration.
-
-Related: PLAN_implementation_distilabel_finetuning_rag.md - F1-T2
 """
 
 import pytest
 import asyncio
 import tempfile
+import importlib.util
 from pathlib import Path
 
 from graph_rag.engine import GraphRAGEngine
+from tests.utils.real_env import is_real_rag_env_ready
+
+
+HAS_LIGHTRAG = importlib.util.find_spec("lightrag") is not None
+REAL_READY, REAL_REASON = is_real_rag_env_ready()
 
 
 @pytest.fixture
@@ -37,6 +39,7 @@ def config(temp_rag_dir):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not HAS_LIGHTRAG, reason="lightrag-hku no instalado en este entorno")
 async def test_engine_initialization(config):
     """Test lazy initialization of GraphRAGEngine."""
     engine = GraphRAGEngine(config)
@@ -50,6 +53,7 @@ async def test_engine_initialization(config):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not HAS_LIGHTRAG, reason="lightrag-hku no instalado en este entorno")
 async def test_document_ingestion(config):
     """Test document insertion into KG."""
     engine = GraphRAGEngine(config)
@@ -62,8 +66,10 @@ async def test_document_ingestion(config):
     await engine.finalize()
 
 
-@pytest.mark.skip(reason="Integration test - verified in setup_graph_rag.py")
+@pytest.mark.integration
 @pytest.mark.asyncio
+@pytest.mark.integration_real
+@pytest.mark.skipif((not HAS_LIGHTRAG) or (not REAL_READY), reason=REAL_REASON if not REAL_READY else "lightrag-hku no instalado en este entorno")
 async def test_retrieval_context_only(config):
     """Test context-only retrieval (no LLM generation)."""
     engine = GraphRAGEngine(config)
@@ -81,8 +87,10 @@ async def test_retrieval_context_only(config):
     await engine.finalize()
 
 
-@pytest.mark.skip(reason="Integration test - verified in setup_graph_rag.py")
+@pytest.mark.integration
 @pytest.mark.asyncio
+@pytest.mark.integration_real
+@pytest.mark.skipif((not HAS_LIGHTRAG) or (not REAL_READY), reason=REAL_REASON if not REAL_READY else "lightrag-hku no instalado en este entorno")
 async def test_retrieval_modes(config):
     """Test different retrieval modes."""
     engine = GraphRAGEngine(config)
@@ -110,6 +118,7 @@ async def test_singleton_pattern(config):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not HAS_LIGHTRAG, reason="lightrag-hku no instalado en este entorno")
 async def test_initialization_idempotent(config):
     """Test that initialize() can be called multiple times safely."""
     engine = GraphRAGEngine(config)

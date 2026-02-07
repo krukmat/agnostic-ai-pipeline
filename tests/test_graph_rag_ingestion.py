@@ -1,5 +1,5 @@
 """
-F1-T3: Unit tests for PipelineIngestion (MD5 dedup, incremental).
+Unit tests for PipelineIngestion (MD5 dedup, incremental).
 
 Focus: Deduplication logic, directory traversal, state persistence.
 CC ≤ 3: Simple linear logic for each test.

@@ -1,23 +1,27 @@
 """
-F1-T7: End-to-End Graph RAG tests.
+End-to-End Graph RAG tests.
 
 Tests complete pipeline:
 1. Ingest artifacts (planning, code, docs)
 2. Query knowledge graph with different modes
 3. Verify role-based retrieval policies
 4. Test multi-hop query capability (Graph RAG strength)
-
-Related: PLAN_implementation_distilabel_finetuning_rag.md - F1-T7
 """
 
 import pytest
 import tempfile
 import asyncio
+import importlib.util
 from pathlib import Path
 
 from graph_rag.engine import GraphRAGEngine
 from graph_rag.ingestion import PipelineIngestion
 from graph_rag.retrieval import AgentRetriever
+from tests.utils.real_env import is_real_rag_env_ready
+
+
+HAS_LIGHTRAG = importlib.util.find_spec("lightrag") is not None
+REAL_READY, REAL_REASON = is_real_rag_env_ready()
 
 
 @pytest.fixture
@@ -56,8 +60,10 @@ class AuthService:
         yield tmpdir
 
 
-@pytest.mark.skip(reason="Integration test - requires full event loop management")
+@pytest.mark.integration
 @pytest.mark.asyncio
+@pytest.mark.integration_real
+@pytest.mark.skipif((not HAS_LIGHTRAG) or (not REAL_READY), reason=REAL_REASON if not REAL_READY else "lightrag-hku no instalado en este entorno")
 async def test_e2e_ingest_and_query(temp_project_dir):
     """Test complete ingest → query flow."""
     config = {
@@ -71,49 +77,90 @@ async def test_e2e_ingest_and_query(temp_project_dir):
     engine = GraphRAGEngine(config)
     await engine.initialize()
 
-    # Ingest
     ingestion = PipelineIngestion(engine)
-    # Would call: await ingestion.ingest_all()
+    await ingestion.ingest_all()
 
-    # Query
     retriever = AgentRetriever(engine)
-    # Would query: context = await retriever.retrieve_for_role("architect", "What depends on S1?")
+    context = await retriever.retrieve_for_role("architect", "What depends on S1?")
+    assert context
+    assert isinstance(context, str)
+    assert len(context) > 0
 
     await engine.finalize()
 
 
 def test_acceptance_criteria_f1t7():
     """
-    Verify F1-T7 acceptance criteria (non-async check).
+    Verify acceptance criteria with structural validation.
 
-    Criteria:
-    - [ ] `make rag-index` constructs Knowledge Graph without error
-    - [ ] `make rag-query QUERY="..."` returns entities and relationships
-    - [ ] `make rag-query QUERY="..." MODE=hybrid` performs graph traversal
-    - [ ] Graph RAG-enhanced pipeline produces context-rich responses
-    - [ ] Retrieval latency < 100ms p95 (verified in setup_graph_rag.py)
-    - [ ] `make rag-visualize` launches LightRAG WebUI
-    - [ ] All unit tests pass (13/15, 2 integration tests skipped)
+    Validates:
+    - Makefile targets exist (rag-index, rag-query, rag-visualize)
+    - AgentRetriever has role-based policies
+    - Retrieval modes documented
+    - GraphRAGEngine can be initialized
     """
-    # Verified by: setup_graph_rag.py smoke test (all modes tested, latencies 1-4s)
-    # Verified by: 13/15 unit tests PASSED
-    # Verified by: Makefile targets created for rag-index, rag-query, rag-visualize
-    assert True  # Acceptance criteria documented and smoke-tested
+    from graph_rag.retrieval import AgentRetriever
+    from graph_rag.engine import GraphRAGEngine
+    from pathlib import Path
+
+    # Verify Makefile targets exist
+    makefile_path = Path(__file__).parent.parent / "Makefile"
+    assert makefile_path.exists(), "Makefile should exist"
+    makefile_content = makefile_path.read_text()
+    assert "rag-index:" in makefile_content, "Makefile should have rag-index target"
+    assert "rag-query:" in makefile_content, "Makefile should have rag-query target"
+    assert "rag-visualize:" in makefile_content, "Makefile should have rag-visualize target"
+
+    # Verify AgentRetriever has role policies
+    policies = AgentRetriever.ROLE_POLICIES
+    assert len(policies) >= 4, "Should have policies for at least 4 roles"
+    for role in ["ba", "product_owner", "architect", "dev", "qa"]:
+        assert role in policies, f"Should have policy for role: {role}"
+        policy = policies[role]
+        assert "mode" in policy, f"{role} policy should have 'mode'"
+        assert "top_k" in policy, f"{role} policy should have 'top_k'"
+        assert policy["mode"] in ["naive", "local", "global", "hybrid", "mix"], \
+            f"{role} should use valid retrieval mode"
+
+    # Verify retrieval modes are documented
+    modes = AgentRetriever.explain_modes()
+    assert len(modes) == 5, "Should document 5 retrieval modes"
+
+    # Verify GraphRAGEngine config structure
+    config = {"working_dir": "/tmp/test_kg", "llm_model": "test"}
+    engine = GraphRAGEngine(config)
+    assert engine.config is not None, "Engine should be initialized with config"
 
 
-def test_graph_rag_advantages():
+def test_graph_rag_design_validates_requirements():
     """
-    Verify Graph RAG solves requirements vs Vector RAG.
+    Verify Graph RAG architecture meets design requirements.
 
-    Vector RAG (ChromaDB):
-    - ✗ Only vector similarity search
-    - ✗ Cannot understand relationships
-
-    Graph RAG (LightRAG):
-    - ✓ Extracts entities (S1, S3, ADR-002)
-    - ✓ Captures relationships (depends_on, designed_by)
-    - ✓ Multi-hop queries: "stories depending on S1 designed by ADR-002"
-    - ✓ 6000x fewer tokens than MS GraphRAG
-    - ✓ ~80ms latency vs 50ms vector only (acceptable trade-off for graph capability)
+    Graph RAG capabilities vs Vector RAG:
+    - Retrieval modes support different access patterns
+    - Role-based policies enable tailored context per agent
+    - Multi-hop traversal via graph structure (entities + relationships)
+    - Integration with LLM pipeline for augmented queries
     """
-    assert True  # Design validated in PLAN_implementation_distilabel_finetuning_rag.md
+    from graph_rag.retrieval import AgentRetriever
+
+    # Verify retrieval modes support different patterns
+    modes = AgentRetriever.explain_modes()
+    assert modes["local"] != modes["global"], "Modes should offer different strategies"
+    assert "relationship" in modes["hybrid"].lower() or \
+           "entit" in modes["hybrid"].lower(), \
+           "Hybrid mode should address relationship queries"
+
+    # Verify role-specific policies
+    policies = AgentRetriever.ROLE_POLICIES
+    architect_mode = policies["architect"]["mode"]
+    dev_mode = policies["dev"]["mode"]
+    assert architect_mode != dev_mode, \
+        "Different roles should have different retrieval modes"
+
+    # Verify policy attributes for multi-hop capability
+    for role, policy in policies.items():
+        assert "mode" in policy, f"{role} should specify retrieval mode"
+        assert "top_k" in policy, f"{role} should specify result count"
+        # Higher top_k enables multi-hop traversal
+        assert policy["top_k"] > 20, f"{role} should allow sufficient results for traversal"
