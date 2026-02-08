@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Phase2A Synthetic Sample",
+  "type": "object",
+  "required": [
+    "instruction",
+    "input",
+    "output",
+    "role",
+    "metadata"
+  ],
+  "properties": {
+    "instruction": {"type": "string"},
+    "input": {"type": "string"},
+    "output": {"type": "string"},
+    "reasoning": {"type": "string"},
+    "role": {
+      "type": "string",
+      "enum": ["ba", "product_owner", "architect", "dev", "qa"]
+    },
+    "quality_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "quality_feedback": {"type": "string"},
+    "metadata": {
+      "type": "object",
+      "required": ["timestamp", "trace_id", "batch_id", "mode"],
+      "properties": {
+        "timestamp": {"type": "string"},
+        "trace_id": {"type": "string"},
+        "batch_id": {"type": "integer"},
+        "mode": {"type": "string", "enum": ["local", "gpu"]}
+      }
+    }
+  }
+}

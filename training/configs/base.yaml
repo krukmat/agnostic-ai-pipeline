@@ -1,0 +1,9 @@
+output_dir: training/datasets
+execution:
+  default_mode: local
+quality_thresholds:
+  ba: 0.85
+  product_owner: 0.85
+  architect: 0.85
+  dev: 0.85
+  qa: 0.85

@@ -11,6 +11,7 @@ Learn more (Medium): Why an Agentic, Model‑Agnostic Pipeline beats a pile of s
 - [Key Features](#key-features)
   - [Complexity-Based Routing](#complexity-based-routing-new)
   - [DSPy Programs & Optimization](#dspy-programs--tuning)
+  - [Distilabel Phase 2A (Local/Dev-First)](#distilabel-phase-2a-localdev-first)
   - [Database Layer](#database-layer-optional)
   - [Driver Layer](#driver-layer)
 - [Advanced Topics](#advanced-topics)
@@ -249,6 +250,32 @@ Artifacts saved to: `artifacts/dspy/optimizer/<role>/`
 
 **Documentation**: See Medium article Part 5 (link below) and `dspy_baseline/README.md`
 
+### Distilabel Phase 2A (Local/Dev-First)
+
+Phase 2A provides synthetic-data infrastructure without requiring GPU, aligned with the implementation contract and ready for later GPU execution.
+
+- **Pipelines**: `training/pipelines/*` (BA/PO/Architect/Dev/QA)
+- **Reusable steps**: `training/steps/*` (CoT generator, quality filter, format validator, validator adapter)
+- **Runtime helpers**: `training/llm_mock.py`, `training/checkpoint.py`
+- **CLI**: `training/scripts/run_synthetic_pipeline.py`
+- **Validation**: `training/scripts/validate_datasets.py`
+
+```bash
+make synthetic-data ROLE=ba MODE=local NUM_SAMPLES=10 BATCH_SIZE=5
+make synthetic-validate ROLE=ba
+make test-distilabel-all
+```
+
+### Cómo encaja DSPy con Graph RAG + Distilabel
+
+Estas capas son complementarias:
+
+- **DSPy**: optimiza programas/prompts de ejecución por rol (calidad de inferencia y evaluación).
+- **Graph RAG**: mejora contexto estructurado para runtime de agentes.
+- **Distilabel (2A/2B)**: genera datasets sintéticos para fine-tuning (Fase 3).
+
+En síntesis: DSPy mejora cómo responden los agentes hoy; Distilabel prepara cómo entrenar mejores modelos mañana.
+
 ---
 
 ### Database Layer (optional)
@@ -401,6 +428,10 @@ make fix-stories                 # Normalize stories.yaml
 
 ### Project Documentation
 
+- **General Conceptual Map (Fase 1 + Fase 2A + Fase 3)**: `docs/GENERAL_MAP.MD`
+- **Distilabel 2A Usage**: `docs/DISTILABEL_USAGE.md`
+- **Distilabel 2A Troubleshooting**: `docs/DISTILABEL_TROUBLESHOOTING.md`
+- **Distilabel 2A Completion Forensics**: `docs/PHASE2A_COMPLETION.md`
 - **Complexity Routing**: `docs/COMPLEXITY_ROUTING_PLAN.md`, `docs/COMPLEXITY_ANALYZER.md`
 - **Database Layer**: `docs/DATABASE_LAYER_PLAN.md`
 - **Driver Layer**: `docs/DRIVER_LAYER_GUIDE.md`

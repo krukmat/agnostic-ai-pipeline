@@ -207,6 +207,9 @@ Guardrails:
 
 ## Fases de Implementación
 
+> Nota de trazabilidad (Fase 2A): la implementación detallada de Distilabel local/dev-first se rige por
+> `docs/PHASE2A_IMPLEMENTATION_CONTRACT.md`, que consolida contratos de validación, ejecución y testing.
+
 ### FASE 1: Graph RAG con LightRAG
 **Duración estimada**: ~1-2 semanas
 **GPU requerida**: No (solo CPU local + Ollama)

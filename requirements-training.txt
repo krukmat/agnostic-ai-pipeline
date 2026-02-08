@@ -1,0 +1,10 @@
+# Training profile dependencies (Phase 2A / 2B)
+#
+# Local/dev-first (2A): no GPU stack required to run mock pipelines.
+# GPU/real execution (2B): install extras below in a GPU-ready environment.
+
+PyYAML>=6.0
+
+# Optional for real synthetic generation on GPU (Phase 2B)
+distilabel[vllm,hf]>=1.4.0
+vllm>=0.4.0

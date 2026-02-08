@@ -5,6 +5,7 @@ Automatically categorize tests for CI/offline profiles.
 """
 
 import pytest
+import importlib.util
 
 
 @pytest.fixture(autouse=True)
@@ -64,3 +65,18 @@ def pytest_collection_modifyitems(config, items):
         # Mark skipped tests as smoke tests (verified separately)
         if "skip" in str(item.keywords):
             item.add_marker(pytest.mark.smoke)
+
+
+def has_gpu_stack() -> bool:
+    return importlib.util.find_spec("vllm") is not None
+
+
+def has_distilabel() -> bool:
+    return importlib.util.find_spec("distilabel") is not None
+
+
+def pytest_runtest_setup(item):
+    if "integration_gpu" in item.keywords and not has_gpu_stack():
+        pytest.skip("GPU stack not available: requires vLLM and CUDA")
+    if "integration_real" in item.keywords and not has_distilabel():
+        pytest.skip("Distilabel package not installed")
