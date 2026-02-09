@@ -267,5 +267,111 @@ vertex-ping:
 provider-vertex-cli:
 	@python3 scripts/providers/vertex_cli.py < prompts/vertex_payload.json
 
+# Phase 1: Graph RAG with LightRAG (F1-T6: Makefile targets)
+.PHONY: rag-index rag-status rag-query rag-visualize
+
+rag-index:
+	@echo "==> Building/updating Knowledge Graph from pipeline artifacts"
+	$(PY) -c "import asyncio; from graph_rag.ingestion import ingest_pipeline_artifacts; from graph_rag.engine import GraphRAGEngine; from scripts.llm import load_config; cfg = load_config(); engine = GraphRAGEngine(cfg.get('graph_rag', {})); asyncio.run(engine.initialize()); asyncio.run(ingest_pipeline_artifacts(engine)); asyncio.run(engine.finalize())"
+	@echo "✓ Graph RAG Knowledge Graph indexed"
+
+rag-status:
+	@echo "==> Graph RAG Status"
+	@ls -lah artifacts/graph_rag/ 2>/dev/null || echo "  (KG not yet created - run 'make rag-index' first)"
+
+rag-query:
+	@if [ -z "$$QUERY" ]; then echo "Usage: make rag-query QUERY=\"your question\" [MODE=mix|hybrid|local|global|naive] [ROLE=architect]"; exit 1; fi
+	@MODE=$${MODE:-mix} ROLE=$${ROLE:-architect} $(PY) scripts/rag_query_cli.py --query "$$QUERY" --mode "$$MODE" --role "$$ROLE"
+
+rag-visualize:
+	@echo "==> Starting LightRAG WebUI at http://localhost:9621"
+	@echo "    (Ctrl+C to stop)"
+	@lightrag-server --working-dir ./artifacts/graph_rag --port 9621
+
+.PHONY: test-fast test-rag-real test-no-integration test-integration test-integration-real test-with-integration test-all
+
+test-fast:
+	@echo "==> Running fast tests (excluding integration_real)"
+	PYTHONPATH=. $(PY) -m pytest -m "not integration_real" -q
+
+test-no-integration:
+	@echo "==> Running unit-only profile (no integration)"
+	PYTHONPATH=. $(PY) -m pytest -m "unit and not integration and not integration_real" -q
+
+test-integration:
+	@echo "==> Running integration profile (integration marker)"
+	PYTHONPATH=. $(PY) -m pytest -m "integration and not integration_real" -q
+
+test-integration-real:
+	@echo "==> Running integration_real profile"
+	PYTHONPATH=. $(PY) -m pytest -m integration_real -q
+
+test-with-integration:
+	@echo "==> Running unit + integration + integration_real profile"
+	PYTHONPATH=. $(PY) -m pytest -m "unit or integration or integration_real" -q
+
+test-all:
+	@echo "==> Running full test suite (optional deps may be skipped)"
+	PYTHONPATH=. $(PY) -m pytest -q
+
+test-rag-real:
+	@echo "==> Running real Graph RAG integration tests"
+	PYTHONPATH=. $(PY) -m pytest -m integration_real -q
+
+# ═════════════════════════════════════════════════════════════════
+# SYNTHETIC DATA GENERATION (Distilabel Phase 2A)
+# ═════════════════════════════════════════════════════════════════
+
+.PHONY: synthetic-data synthetic-validate synthetic-stats synthetic-stats-all synthetic-all-local synthetic-all-gpu synthetic-clean test-distilabel-local test-distilabel-gpu test-distilabel-all
+
+DRY_RUN_FLAG := $(if $(DRY_RUN),--dry-run,)
+
+synthetic-data:
+	@echo "==> Generating synthetic data for role: $(ROLE)"
+	PYTHONPATH=. ./.venv/bin/python -m training.scripts.run_synthetic_pipeline \
+		--role $(ROLE) \
+		--mode $(or $(MODE),local) \
+		--num-samples $(or $(NUM_SAMPLES),10) \
+		--batch-size $(or $(BATCH_SIZE),5) \
+		$(DRY_RUN_FLAG)
+
+synthetic-validate:
+	@echo "==> Validating synthetic dataset for role: $(ROLE)"
+	PYTHONPATH=. ./.venv/bin/python -m training.scripts.validate_datasets \
+		--role $(ROLE) \
+		--output-dir $(or $(OUTPUT_DIR),training/datasets)
+
+synthetic-stats:
+	@echo "==> Stats for role: $(ROLE)"
+	PYTHONPATH=. ./.venv/bin/python -c "from pathlib import Path; role='$(ROLE)'; p=Path('training/datasets')/role; files=list(p.glob('*.jsonl')); total=sum(sum(1 for _ in f.open('r', encoding='utf-8')) for f in files); print({'role': role, 'files': len(files), 'rows': total})"
+
+synthetic-stats-all:
+	@for role in ba product_owner architect dev qa; do \
+		$(MAKE) --no-print-directory synthetic-stats ROLE=$$role; \
+	done
+
+synthetic-all-local:
+	@for role in ba product_owner architect dev qa; do \
+		$(MAKE) --no-print-directory synthetic-data ROLE=$$role MODE=local; \
+	done
+
+synthetic-all-gpu:
+	@for role in ba product_owner architect dev qa; do \
+		$(MAKE) --no-print-directory synthetic-data ROLE=$$role MODE=gpu; \
+	done
+
+synthetic-clean:
+	@rm -rf training/datasets/* artifacts/training/checkpoints/*
+	@echo "==> Synthetic artifacts cleaned"
+
+test-distilabel-local:
+	PYTHONPATH=. ./.venv/bin/pytest tests/test_distilabel*.py -m "not integration_gpu" -q
+
+test-distilabel-gpu:
+	PYTHONPATH=. ./.venv/bin/pytest tests/test_distilabel*.py -m "integration_gpu" -q
+
+test-distilabel-all:
+	PYTHONPATH=. ./.venv/bin/pytest tests/test_distilabel*.py -q
+
 # Post-training targets
 include post_training/Makefile.posttrain.mk

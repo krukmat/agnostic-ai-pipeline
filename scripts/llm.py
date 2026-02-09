@@ -40,6 +40,12 @@ except Exception as exc:  # pragma: no cover - recommender optional
 PROVIDER_REGISTRY: dict[str, Any] = {}
 _providers_import_err: Exception | None = None
 
+# TECH DEBT - High cyclomatic complexity in this module
+# Current issue: High CC in _cli_chat_async, _cli_chat
+# Root cause: Multiple provider handling, fallback logic, and CLI bridging mixed in main logic
+# Refactor plan: Extract provider-specific logic to separate provider classes or factories
+# Priority: Medium
+
 try:
     from .providers import PROVIDER_REGISTRY  # type: ignore
 except Exception as exc_relative:  # pragma: no cover - providers optional
@@ -86,6 +92,64 @@ def _default_role() -> str:
     return "dev"
 
 
+def truncate_context_hierarchically(context: str, budget: int) -> str:
+    """
+    R1-T3: Truncate context to fit budget, preserving paragraph boundaries.
+
+    Splits by double newlines (paragraph separator) and includes complete paragraphs
+    until budget is exceeded. Ensures truncation happens at logical boundaries,
+    not mid-sentence.
+
+    Args:
+        context: Full context string
+        budget: Maximum characters allowed
+
+    Returns:
+        Truncated context that fits within budget (or original if <= budget)
+    """
+    if len(context) <= budget:
+        return context
+
+    # Split by paragraph (double newline is typical separator)
+    paragraphs = context.split("\n\n")
+    truncated = ""
+
+    for para in paragraphs:
+        # Check if adding this paragraph would exceed budget
+        # +2 for the separator "\n\n"
+        next_length = len(truncated) + len(para) + (2 if truncated else 0)
+
+        if next_length <= budget:
+            if truncated:
+                truncated += "\n\n"
+            truncated += para
+        else:
+            # Budget exceeded - stop here with what we have
+            break
+
+    # If no paragraphs fit (first paragraph > budget), truncate that paragraph
+    # at sentence boundary as fallback
+    if not truncated and paragraphs:
+        first_para = paragraphs[0]
+        if len(first_para) > budget:
+            # Try to break at last sentence before budget
+            sentences = first_para.replace("! ", ".\n").replace("? ", ".\n").split(".\n")
+            truncated = ""
+            for sent in sentences:
+                if len(truncated) + len(sent) + 2 <= budget:
+                    if truncated:
+                        truncated += ". "
+                    truncated += sent
+                else:
+                    break
+            if truncated and not truncated.endswith((".","!", "?")):
+                truncated += "."
+        else:
+            truncated = first_para
+
+    return truncated if truncated else context[:budget]
+
+
 class Client:
     """
     Backward-compatible LLM client.
@@ -107,8 +171,51 @@ class Client:
         cfg = load_config()
         self.cfg = cfg
 
-        # Defaults
-        self.role = (role or _default_role()).lower() if isinstance(role, str) else _default_role()
+        # Extract initialization steps to reduce CC
+        # Detect legacy format: if role is a provider name and we have legacy_args, it's legacy mode
+        is_legacy_mode = (
+            isinstance(role, str) and
+            role.lower().strip() in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli", "google_ai_gemini") and
+            legacy_args
+        )
+
+        if is_legacy_mode:
+            # Legacy mode: role param was actually provider, shift legacy_args left
+            legacy_args = (role,) + legacy_args
+            self.role = _default_role()
+        else:
+            self.role = (role or _default_role()).lower() if isinstance(role, str) else _default_role()
+
+        self._initialize_defaults()
+        self._initialize_provider_config(cfg, complexity)
+        self._apply_legacy_overrides(legacy_args)
+        self._apply_keyword_overrides(overrides)
+
+        # Log complexity routing if applicable
+        routed_provider, routed_model = resolve_role_model_for_complexity(cfg, self.role, complexity)
+        if routed_provider and routed_model:
+            logger.info(
+                "[LLM] Complexity routing applied for role '%s' (complexity=%s) -> %s/%s",
+                self.role,
+                complexity or "auto",
+                routed_provider,
+                routed_model,
+            )
+
+        logger.debug(
+            f"[LLM] Client initialized for role '{self.role}': provider={self.provider_type}, model={self.model}, temp={self.temperature}, max_tokens={self.max_tokens}"
+        )
+
+    def _initialize_defaults(self):
+        """Initialize default values for model, temperature, max_tokens, and provider settings.
+
+        Extracted from __init__ to reduce CC (lines 175-204).
+        Sets defaults for:
+        - Model and hyperparameter defaults
+        - Provider-specific endpoints (ollama_base, oai_base, etc.)
+        - CLI provider configuration defaults
+        """
+        # Model and hyperparameter defaults
         self.model = "qwen2.5-coder:7b"
         self.temperature = 0.3
         self.max_tokens = 2048
@@ -138,11 +245,19 @@ class Client:
         self.cli_debug_args: list[str] = []
         self.cli_log_stderr = False
 
-        # Load from config.yaml (roles/providers)
+    def _initialize_provider_config(self, cfg: dict, complexity: Optional[str]):
+        """Load and apply provider configuration from config.yaml.
+
+        Extracted from __init__ to reduce CC (lines 206-275).
+        Handles role-based config resolution, provider config loading, and CLI provider setup.
+        Note: self.role must be set before calling this method.
+        """
+        # Load from config.yaml
         roles = cfg.get("roles", {}) if isinstance(cfg.get("roles", {}), dict) else {}
         role_cfg = roles.get(self.role, {}) if isinstance(roles, dict) else {}
         providers = cfg.get("providers", {}) if isinstance(cfg.get("providers", {}), dict) else {}
 
+        # Resolve provider configuration
         routed_provider, routed_model = resolve_role_model_for_complexity(cfg, self.role, complexity)
         provider_key = routed_provider or role_cfg.get("provider") or "ollama"
         provider_cfg = providers.get(provider_key, {"type": "ollama", "base_url": "http://localhost:11434"})
@@ -158,6 +273,10 @@ class Client:
         self.provider_options = provider_cfg
         base_url = provider_cfg.get("base_url")
 
+        # Initialize provider-specific settings
+        self._initialize_cli_provider(provider_cfg, base_url)
+
+        # Apply provider base URL
         if self.provider_type == "ollama":
             self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or base_url or self.ollama_base
         elif self.provider_type == "openai":
@@ -167,71 +286,108 @@ class Client:
         elif self.provider_type == "google_ai_gemini":
             if provider_cfg.get("api_key"):
                 self.google_api_key = provider_cfg["api_key"]
-        elif self.provider_type in ("codex_cli", "claude_cli"):
-            default_command = ["codex", "chat"] if self.provider_type == "codex_cli" else ["claude", "-p", "--print"]
-            self.cli_command = provider_cfg.get("command", default_command)
-            self.cli_cwd = provider_cfg.get("cwd", self.cli_cwd)
-            self.cli_env = provider_cfg.get("env", self.cli_env)
-            self.cli_timeout = int(provider_cfg.get("timeout", self.cli_timeout))
-            self.cli_input_format = provider_cfg.get("input_format", self.cli_input_format)
-            self.cli_output_clean = bool(provider_cfg.get("output_clean", self.cli_output_clean))
-            extra_args_cfg = provider_cfg.get("extra_args", [])
-            if isinstance(extra_args_cfg, (list, tuple)):
-                self.cli_extra_args = [str(arg) for arg in extra_args_cfg]
-            elif isinstance(extra_args_cfg, str) and extra_args_cfg.strip():
-                self.cli_extra_args = [extra_args_cfg]
+
+    def _initialize_cli_provider(self, provider_cfg: dict, base_url: Optional[str]):
+        """Initialize CLI provider settings (codex_cli, claude_cli).
+
+        Extracted from __init__ to reduce CC (lines 235-275, most complex section).
+        Handles CLI-specific configuration including commands, timeouts, and extra args.
+        CC reduced: ~50 lines of nested if/elif → focused helper method.
+        """
+        if self.provider_type not in ("codex_cli", "claude_cli"):
+            return
+
+        default_command = ["codex", "chat"] if self.provider_type == "codex_cli" else ["claude", "-p", "--print"]
+        self.cli_command = provider_cfg.get("command", default_command)
+        self.cli_cwd = provider_cfg.get("cwd", self.cli_cwd)
+        self.cli_env = provider_cfg.get("env", self.cli_env)
+        self.cli_timeout = int(provider_cfg.get("timeout", self.cli_timeout))
+        self.cli_input_format = provider_cfg.get("input_format", self.cli_input_format)
+        self.cli_output_clean = bool(provider_cfg.get("output_clean", self.cli_output_clean))
+
+        # Handle extra_args (list or string format)
+        extra_args_cfg = provider_cfg.get("extra_args", [])
+        if isinstance(extra_args_cfg, (list, tuple)):
+            self.cli_extra_args = [str(arg) for arg in extra_args_cfg]
+        elif isinstance(extra_args_cfg, str) and extra_args_cfg.strip():
+            self.cli_extra_args = [extra_args_cfg]
+        else:
+            self.cli_extra_args = []
+
+        # JSON parsing and flags
+        self.cli_parse_json = bool(provider_cfg.get("parse_json", self.provider_type == "claude_cli"))
+        self.cli_append_model_flag = bool(provider_cfg.get("append_model", True))
+        self.cli_append_system_prompt = bool(
+            provider_cfg.get("append_system_prompt", self.provider_type == "claude_cli")
+        )
+        self.cli_append_temperature_flag = bool(
+            provider_cfg.get("append_temperature", self.provider_type == "codex_cli")
+        )
+        self.cli_append_max_tokens_flag = bool(
+            provider_cfg.get("append_max_tokens", self.provider_type == "codex_cli")
+        )
+
+        # Prompt template
+        prompt_template_default = (
+            "{user}" if self.provider_type == "claude_cli" else
+            "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
+        )
+        self.cli_prompt_template = provider_cfg.get("prompt_template", prompt_template_default)
+
+        # Debug settings
+        default_debug_args = ["--verbose", "--debug"] if self.provider_type == "claude_cli" else []
+        debug_args_cfg = provider_cfg.get("debug_args", default_debug_args)
+        if isinstance(debug_args_cfg, (list, tuple)):
+            self.cli_debug_args = [str(arg) for arg in debug_args_cfg]
+        elif isinstance(debug_args_cfg, str) and debug_args_cfg.strip():
+            self.cli_debug_args = [debug_args_cfg]
+        else:
+            self.cli_debug_args = default_debug_args
+        self.cli_debug = bool(provider_cfg.get("debug", False))
+        self.cli_log_stderr = bool(provider_cfg.get("log_stderr", self.cli_debug))
+
+    def _apply_legacy_overrides(self, legacy_args: tuple):
+        """Apply legacy positional argument overrides.
+
+        Extracted from __init__ to reduce CC (lines 277-297).
+        Legacy format: Client(provider, model, temperature, max_tokens, base_url)
+        Validates provider type before applying override.
+        """
+        if not legacy_args:
+            return
+
+        # Unpack legacy args
+        prov = str(legacy_args[0]).strip().lower() if len(legacy_args) >= 1 else None
+        model = legacy_args[1] if len(legacy_args) >= 2 else None
+        temp = legacy_args[2] if len(legacy_args) >= 3 else None
+        maxt = legacy_args[3] if len(legacy_args) >= 4 else None
+        base = legacy_args[4] if len(legacy_args) >= 5 else None
+
+        # Apply overrides with validation
+        if prov in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli", "google_ai_gemini"):
+            self.provider_type = prov
+        if isinstance(model, str) and model:
+            self.model = model
+        if isinstance(temp, (int, float)):
+            self.temperature = float(temp)
+        if isinstance(maxt, (int, float)):
+            self.max_tokens = int(maxt)
+        if isinstance(base, str) and base:
+            if self.provider_type == "ollama":
+                self.ollama_base = base
             else:
-                self.cli_extra_args = []
-            self.cli_parse_json = bool(provider_cfg.get("parse_json", self.provider_type == "claude_cli"))
-            self.cli_append_model_flag = bool(provider_cfg.get("append_model", True))
-            self.cli_append_system_prompt = bool(
-                provider_cfg.get("append_system_prompt", self.provider_type == "claude_cli")
-            )
-            self.cli_append_temperature_flag = bool(
-                provider_cfg.get("append_temperature", self.provider_type == "codex_cli")
-            )
-            self.cli_append_max_tokens_flag = bool(
-                provider_cfg.get("append_max_tokens", self.provider_type == "codex_cli")
-            )
-            prompt_template_default = (
-                "{user}" if self.provider_type == "claude_cli" else
-                "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
-            )
-            self.cli_prompt_template = provider_cfg.get("prompt_template", prompt_template_default)
-            default_debug_args = ["--verbose", "--debug"] if self.provider_type == "claude_cli" else []
-            debug_args_cfg = provider_cfg.get("debug_args", default_debug_args)
-            if isinstance(debug_args_cfg, (list, tuple)):
-                self.cli_debug_args = [str(arg) for arg in debug_args_cfg]
-            elif isinstance(debug_args_cfg, str) and debug_args_cfg.strip():
-                self.cli_debug_args = [debug_args_cfg]
-            else:
-                self.cli_debug_args = default_debug_args
-            self.cli_debug = bool(provider_cfg.get("debug", False))
-            self.cli_log_stderr = bool(provider_cfg.get("log_stderr", self.cli_debug))
+                self.oai_base = base
 
-        # Legacy positional override (provider, model, temp, max_tokens, base_url)
-        if legacy_args:
-            prov = str(legacy_args[0]).strip().lower() if len(legacy_args) >= 1 else None
-            model = legacy_args[1] if len(legacy_args) >= 2 else None
-            temp = legacy_args[2] if len(legacy_args) >= 3 else None
-            maxt = legacy_args[3] if len(legacy_args) >= 4 else None
-            base = legacy_args[4] if len(legacy_args) >= 5 else None
+    def _apply_keyword_overrides(self, overrides: dict):
+        """Apply keyword argument overrides.
 
-            if prov in ("ollama", "openai", "codex_cli", "vertex_cli", "vertex_sdk", "claude_cli", "google_ai_gemini"):
-                self.provider_type = prov
-            if isinstance(model, str) and model:
-                self.model = model
-            if isinstance(temp, (int, float)):
-                self.temperature = float(temp)
-            if isinstance(maxt, (int, float)):
-                self.max_tokens = int(maxt)
-            if isinstance(base, str) and base:
-                if self.provider_type == "ollama":
-                    self.ollama_base = base
-                else:
-                    self.oai_base = base
+        Extracted from __init__ to reduce CC (lines 299-314).
+        Supports: model, temperature, max_tokens, provider, base_url overrides.
+        Validates provider type before applying override.
+        """
+        if not overrides:
+            return
 
-        # Keyword overrides (model=..., temperature=..., max_tokens=..., provider="..." base_url="...")
         if "model" in overrides and overrides["model"]:
             self.model = str(overrides["model"])
         if "temperature" in overrides and overrides["temperature"] is not None:
@@ -247,21 +403,71 @@ class Client:
                 self.ollama_base = str(overrides["base_url"])
             else:
                 self.oai_base = str(overrides["base_url"])
-        if routed_provider and routed_model:
-            logger.info(
-                "[LLM] Complexity routing applied for role '%s' (complexity=%s) -> %s/%s",
-                self.role,
-                complexity or "auto",
-                routed_provider,
-                routed_model,
-            )
 
-        logger.debug(
-            f"[LLM] Client initialized for role '{self.role}': provider={self.provider_type}, model={self.model}, temp={self.temperature}, max_tokens={self.max_tokens}"
-        )
 
+    async def _augment_with_graph_rag(self, user: str) -> str:
+        """
+        F1-T5: Optionally augment user prompt with Graph RAG context.
+        R1-T3: Apply budget guard to prevent context token overflow.
+
+        Returns: augmented user prompt (or original if RAG disabled/unavailable)
+        Injection point: provides project knowledge graph context before LLM call.
+        """
+        try:
+            cfg = load_config()
+            graph_rag_cfg = cfg.get("graph_rag", {})
+            if not graph_rag_cfg.get("enabled", False):
+                return user
+
+            # Lazy import to avoid hard dependency
+            from graph_rag.retrieval import AgentRetriever
+            from graph_rag.engine import GraphRAGEngine
+
+            # R1-T3: Get budget settings from config
+            context_budget = graph_rag_cfg.get("context_budget_chars", 4000)
+            truncation_strategy = graph_rag_cfg.get("context_truncation_strategy", "hierarchical")
+
+            engine = GraphRAGEngine.instance(graph_rag_cfg)
+            retriever = AgentRetriever(engine)
+
+            # Record timing for telemetry
+            start_time = time.time()
+            context = await retriever.retrieve_for_role(self.role, user)
+            retrieval_time = (time.time() - start_time) * 1000  # Convert to ms
+
+            if context:
+                # R1-T3: Apply budget guard - truncate if exceeds limit
+                original_size = len(context)
+                if len(context) > context_budget:
+                    if truncation_strategy == "hierarchical":
+                        context = truncate_context_hierarchically(context, context_budget)
+                    else:
+                        # Fallback: simple truncation
+                        context = context[:context_budget]
+
+                # R1-T3: Log telemetry metrics
+                logger.info(
+                    f"[GRAPH_RAG] role={self.role} context={len(context)} chars "
+                    f"(original={original_size}, budget={context_budget}), "
+                    f"retrieval_latency={retrieval_time:.1f}ms"
+                )
+
+                return (
+                    f"## Relevant Project Context (from Knowledge Graph)\n\n"
+                    f"{context}\n\n"
+                    f"---\n\n"
+                    f"## Task\n\n"
+                    f"{user}"
+                )
+        except Exception as exc:
+            logger.warning(f"[LLM] Graph RAG augmentation failed for role {self.role}: {exc}")
+
+        return user  # Fallback to original
 
     async def chat(self, system: str, user: str) -> str:
+        # F1-T5: Graph RAG augmentation (optional)
+        user = await self._augment_with_graph_rag(user)
+
         if recommend_model and _reco_enabled():
             prompt = f"{system.strip()}\n\n{user.strip()}"
             try:
@@ -462,28 +668,32 @@ class Client:
 
         raise RuntimeError("Google Gemini response did not contain text output.")
 
-    async def _cli_chat_async(self, system: str, user: str) -> str:
-        """Async version of _cli_chat using asyncio subprocess.
+    # ========================================================================
+    # CLI Chat Refactoring - Helper Methods (CC Reduction)
+    # ========================================================================
 
-        Task: fix async CLI execution - native async subprocess instead of thread pool
+    def _build_cli_command_args(self, system: str, user: str, prompt_text: str) -> list:
         """
-        start_time = time.perf_counter()
-        logger.debug(f"[LLM] _cli_chat_async: Entered for provider {self.provider_type}")
+        Build CLI command arguments with flags and settings.
 
-        if not self.cli_command:
-            label = self.provider_type.upper()
-            logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
-            raise RuntimeError(f"{label}_NO_COMMAND")
+        Extracted helper to reduce CC in _cli_chat and _cli_chat_async.
+        Handles: model flag, temperature flag, max-tokens flag, system prompt flag.
 
-        # Build command arguments
-        cmd_args = list(self.cli_command)
+        Args:
+            system: System prompt
+            user: User prompt
+            prompt_text: Formatted prompt text
+
+        Returns:
+            List of command arguments with all flags appended
+
+        CC: ≤ 5 (follows Phase 1 standards)
+        """
+        cmd_args = list(self.cli_command)  # Copy command list
         if self.cli_extra_args:
             cmd_args.extend(self.cli_extra_args)
-
         if self.cli_debug and self.cli_debug_args:
             cmd_args.extend(self.cli_debug_args)
-
-        logger.debug(f"[LLM] _cli_chat_async: Full command args: {cmd_args}")
 
         def _has_flag(flag: str) -> bool:
             for arg in cmd_args:
@@ -491,24 +701,55 @@ class Client:
                     return True
             return False
 
+        # Append model flag
         if self.cli_append_model_flag and not _has_flag("--model"):
             cmd_args.extend(["--model", self.model])
 
+        # Append temperature flag
         if self.cli_append_temperature_flag and not _has_flag("--temperature"):
             cmd_args.extend(["--temperature", str(self.temperature)])
 
+        # Append max-tokens flag (provider-specific)
         if self.provider_type == "claude_cli":
             if not _has_flag("--settings"):
-                settings_json = json.dumps({"max_tokens_to_sample": self.max_tokens}, separators=(',', ':'))
+                settings_json = json.dumps(
+                    {"max_tokens_to_sample": self.max_tokens},
+                    separators=(',', ':')
+                )
                 cmd_args.extend(["--settings", settings_json])
         elif self.cli_append_max_tokens_flag and not _has_flag("--max-tokens"):
             cmd_args.extend(["--max-tokens", str(self.max_tokens)])
 
-        if self.cli_append_system_prompt and self.provider_type != "claude_cli" and not _has_flag("--system-prompt"):
+        # Append system prompt flag
+        if (self.cli_append_system_prompt and
+            self.provider_type != "claude_cli" and
+            not _has_flag("--system-prompt")):
             cmd_args.extend(["--system-prompt", system])
 
+        return cmd_args
+
+    def _prepare_cli_input(
+        self, system: str, user: str
+    ) -> tuple:
+        """
+        Prepare CLI input based on format configuration.
+
+        Extracted helper to reduce CC in _cli_chat and _cli_chat_async.
+        Handles: JSON input, text input, direct argument input.
+
+        Args:
+            system: System prompt
+            user: User prompt
+
+        Returns:
+            Tuple of (input_data: str|None, prompt_text: str)
+
+        CC: ≤ 5 (follows Phase 1 standards)
+        """
+        # Build prompt text
         prompt_template = self.cli_prompt_template or (
-            "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
+            "System: {system}\n\nUser: {user}\n\n"
+            "Settings: temperature={temperature}, max_tokens={max_tokens}"
         )
 
         if self.provider_type == "claude_cli" and self.cli_input_format == "stdin_text":
@@ -525,6 +766,7 @@ class Client:
         # Prepare input based on format
         input_data = None
         normalized_format = (self.cli_input_format or "").lower()
+
         if normalized_format in ("stdin", "stdin_json", "json"):
             payload = {
                 "system": system,
@@ -540,18 +782,182 @@ class Client:
             input_data = prompt_text
             logger.debug("[LLM] CLI input format: stdin (text payload)")
         else:
-            cmd_args.append(prompt_text)
             logger.debug("[LLM] CLI input format: direct argument (combined prompt)")
 
-        logger.debug(f"[LLM] _cli_chat_async: Input data length: {len(input_data) if input_data else 0} chars")
+        return input_data, prompt_text
+
+    def _handle_cli_error(
+        self, returncode: int, stdout_text: str, stderr_text: str
+    ) -> str:
+        """
+        Extract error message from CLI command execution.
+
+        Extracted helper to reduce CC in _cli_chat and _cli_chat_async.
+        Tries multiple sources: stdout JSON, stderr, generic message.
+
+        Args:
+            returncode: Process return code
+            stdout_text: Process stdout
+            stderr_text: Process stderr
+
+        Returns:
+            Error message string
+
+        CC: ≤ 5 (follows Phase 1 standards)
+        """
+        error_msg = "Unknown error"
+
+        # Try to parse JSON error from stdout (some CLIs return errors in JSON)
+        if stdout_text:
+            try:
+                data = json.loads(stdout_text.strip())
+                if isinstance(data, dict) and data.get("is_error"):
+                    error_msg = data.get("result") or data.get("error") or error_msg
+            except json.JSONDecodeError:
+                pass
+
+        # Fall back to stderr
+        if error_msg == "Unknown error" and stderr_text:
+            error_msg = stderr_text.strip()[:200]
+
+        return error_msg
+
+    def _process_cli_response(self, response: str) -> str:
+        """
+        Clean and parse CLI response.
+
+        Extracted helper to reduce CC in _cli_chat and _cli_chat_async.
+        Handles: ANSI code removal, JSON parsing, whitespace trimming.
+
+        Args:
+            response: Raw response from CLI
+
+        Returns:
+            Processed response string
+
+        CC: ≤ 5 (follows Phase 1 standards)
+        """
+        # Remove ANSI escape codes if configured
+        if self.cli_output_clean:
+            response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
+            response = response.strip()
+            logger.debug("[LLM] CLI response cleaned.")
+
+        # Parse JSON if configured
+        if self.cli_parse_json:
+            parsed = self._parse_cli_json_output(response)
+            if parsed is not None:
+                response = parsed
+            else:
+                logger.warning(f"[LLM] Failed to parse JSON from response: {response[:500]}")
+
+        return response
+
+    def _ensure_cli_command_configured(self) -> None:
+        """Validate CLI command is configured."""
+        if self.cli_command:
+            return
+        label = self.provider_type.upper()
+        logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
+        raise RuntimeError(f"{label}_NO_COMMAND")
+
+    def _append_prompt_if_direct_mode(self, cmd_args: list[str], prompt_text: str) -> None:
+        """Append prompt directly to args when input format is argument-based."""
+        normalized_format = (self.cli_input_format or "").lower()
+        if normalized_format in ("stdin", "stdin_json", "json", "stdin_text", "stdin-raw", "text"):
+            return
+        cmd_args.append(prompt_text)
+
+    def _prepare_cli_execution(self, system: str, user: str, method_name: str) -> tuple[float, list[str], str | None]:
+        """Prepare common execution context for sync/async CLI calls."""
+        self._ensure_cli_command_configured()
+
+        start_time = time.perf_counter()
+        logger.debug(f"[LLM] {method_name}: Entered for provider {self.provider_type}")
+        logger.debug(f"[LLM] {method_name}: Command to execute: {self.cli_command}")
+
+        input_data, prompt_text = self._prepare_cli_input(system, user)
+        cmd_args = self._build_cli_command_args(system, user, prompt_text)
+        self._append_prompt_if_direct_mode(cmd_args, prompt_text)
+
+        logger.debug(f"[LLM] {method_name}: Full command args: {cmd_args}")
+        logger.debug(f"[LLM] {method_name}: Input data length: {len(input_data) if input_data else 0} chars")
+        return start_time, cmd_args, input_data
+
+    def _build_cli_env(self, method_name: str) -> dict[str, str]:
+        """Build process env for CLI execution."""
+        env = os.environ.copy()
+        env.update(self.cli_env)
+        if self.cli_env:
+            logger.debug(f"[LLM] CLI environment updated with: {self.cli_env}")
+        logger.debug(f"[LLM] {method_name}: Environment prepared, timeout: {self.cli_timeout}s")
+        return env
+
+    def _handle_cli_completion(
+        self,
+        *,
+        cmd_args: list[str],
+        duration: float,
+        returncode: int,
+        stdout_text: str,
+        stderr_text: str,
+    ) -> str:
+        """Handle common completion logic for sync/async CLI calls."""
+        stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
+        label = self.provider_type.upper()
+
+        if returncode != 0:
+            error_msg = self._handle_cli_error(returncode, stdout_text, stderr_text)
+            self._log_cli_operation(
+                cmd_args,
+                duration,
+                error_msg,
+                success=False,
+                stderr=stderr_for_log,
+                debug_enabled=self.cli_debug,
+            )
+            logger.error(f"[LLM] {label}_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
+            if stderr_text:
+                logger.warning(f"[LLM] Stderr from {label}: {stderr_text.strip()}")
+            raise RuntimeError(f"{label}_FAILED: {error_msg}")
+
+        if stderr_text and (self.cli_log_stderr or self.cli_debug):
+            logger.info(f"[LLM] Stderr from {label}: {stderr_text.strip()}")
+
+        response = self._process_cli_response(stdout_text)
+        if not response:
+            self._log_cli_operation(
+                cmd_args,
+                duration,
+                "Empty response",
+                success=False,
+                stderr=stderr_for_log,
+                debug_enabled=self.cli_debug,
+            )
+            logger.error(f"[LLM] {label}_EMPTY_RESPONSE: Empty response from CLI.")
+            raise RuntimeError(f"{label}_EMPTY_RESPONSE")
+
+        self._log_cli_operation(
+            cmd_args,
+            duration,
+            response,
+            success=True,
+            stderr=stderr_for_log,
+            debug_enabled=self.cli_debug,
+        )
+        logger.debug("[LLM] CLI operation logged successfully.")
+        return response
+
+    async def _cli_chat_async(self, system: str, user: str) -> str:
+        """Async version of _cli_chat using asyncio subprocess.
+
+        Refactored to use helper methods for CC reduction.
+        Uses native async subprocess instead of thread pool.
+        """
+        start_time, cmd_args, input_data = self._prepare_cli_execution(system, user, "_cli_chat_async")
 
         try:
-            # Prepare environment
-            env = os.environ.copy()
-            env.update(self.cli_env)
-            if self.cli_env:
-                logger.debug(f"[LLM] CLI environment updated with: {self.cli_env}")
-            logger.debug(f"[LLM] _cli_chat_async: Environment prepared, timeout: {self.cli_timeout}s")
+            env = self._build_cli_env("_cli_chat_async")
 
             # Execute command using async subprocess
             logger.debug("[LLM] _cli_chat_async: Using asyncio.create_subprocess_exec")
@@ -597,77 +1003,13 @@ class Client:
                 f"[LLM] CLI command for provider '{self.provider_type}' executed in {duration:.3f} seconds. "
                 f"Return code: {returncode}"
             )
-
-            stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
-
-            if returncode != 0:
-                error_msg = "Unknown error"
-                if stdout_text:
-                    try:
-                        data = json.loads(stdout_text.strip())
-                        if isinstance(data, dict) and data.get("is_error"):
-                            error_msg = data.get("result") or data.get("error") or error_msg
-                    except json.JSONDecodeError:
-                        pass
-
-                if error_msg == "Unknown error" and stderr_text:
-                    error_msg = stderr_text.strip()[:200]
-
-                self._log_cli_operation(
-                    cmd_args,
-                    duration,
-                    error_msg,
-                    success=False,
-                    stderr=stderr_for_log,
-                    debug_enabled=self.cli_debug,
-                )
-                label = self.provider_type.upper()
-                logger.error(f"[LLM] {label}_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
-                if stderr_text:
-                    logger.warning(f"[LLM] Stderr from {label}: {stderr_text.strip()}")
-                raise RuntimeError(f"{label}_FAILED: {error_msg}")
-
-            response = stdout_text
-            if stderr_text and (self.cli_log_stderr or self.cli_debug):
-                logger.info(f"[LLM] Stderr from {self.provider_type.upper()}: {stderr_text.strip()}")
-
-            if self.cli_output_clean:
-                response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
-                response = response.strip()
-                logger.debug("[LLM] CLI response cleaned.")
-
-            if self.cli_parse_json:
-                # This logic is now robust enough for any provider.
-                parsed = self._parse_cli_json_output(response)
-                if parsed is not None:
-                    response = parsed
-                else:
-                    logger.warning(f"[LLM] Failed to parse JSON from response: {response[:500]}")
-
-            if not response:
-                self._log_cli_operation(
-                    cmd_args,
-                    duration,
-                    "Empty response",
-                    success=False,
-                    stderr=stderr_for_log,
-                    debug_enabled=self.cli_debug,
-                )
-                label = self.provider_type.upper()
-                logger.error(f"[LLM] {label}_EMPTY_RESPONSE: Empty response from CLI.")
-                raise RuntimeError(f"{label}_EMPTY_RESPONSE")
-
-            self._log_cli_operation(
-                cmd_args,
-                duration,
-                response,
-                success=True,
-                stderr=stderr_for_log,
-                debug_enabled=self.cli_debug,
+            return self._handle_cli_completion(
+                cmd_args=cmd_args,
+                duration=duration,
+                returncode=returncode,
+                stdout_text=stdout_text,
+                stderr_text=stderr_text,
             )
-            logger.debug("[LLM] CLI operation logged successfully.")
-
-            return response
 
         except Exception as exc:
             if "TIMEOUT" not in str(exc) and "FAILED" not in str(exc):
@@ -676,102 +1018,14 @@ class Client:
             raise
 
     def _cli_chat(self, system: str, user: str) -> str:
-        """Execute configured CLI provider command and return response with timing and logging."""
-        logger.debug(f"[LLM] _cli_chat: Entered for provider {self.provider_type}")
-        if not self.cli_command:
-            label = self.provider_type.upper()
-            logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
-            raise RuntimeError(f"{label}_NO_COMMAND")
+        """Execute configured CLI provider command and return response with timing and logging.
 
-        start_time = time.perf_counter()
-        logger.debug(f"[LLM] _cli_chat: Command to execute: {self.cli_command}")
-        logger.debug(f"[LLM] Starting CLI chat for provider '{self.provider_type}'. Command: {self.cli_command}")
-
-
-        # Build command arguments
-        cmd_args = list(self.cli_command)  # Copy the command list
-        if self.cli_extra_args:
-            cmd_args.extend(self.cli_extra_args)
-
-        if self.cli_debug and self.cli_debug_args:
-            cmd_args.extend(self.cli_debug_args)
-
-        logger.debug(f"[LLM] _cli_chat: Full command args: {cmd_args}")
-
-        def _has_flag(flag: str) -> bool:
-            for arg in cmd_args:
-                if arg == flag or arg.startswith(f"{flag}="):
-                    return True
-            return False
-
-        if self.cli_append_model_flag and not _has_flag("--model"):
-            cmd_args.extend(["--model", self.model])
-
-        if self.cli_append_temperature_flag and not _has_flag("--temperature"):
-            cmd_args.extend(["--temperature", str(self.temperature)])
-
-        if self.provider_type == "claude_cli":
-            if not _has_flag("--settings"):
-                # The Claude CLI uses the API parameter name `max_tokens_to_sample` within its settings.
-                # Wrap in quotes to ensure proper shell interpretation.
-                settings_json = json.dumps({"max_tokens_to_sample": self.max_tokens}, separators=(',', ':'))
-                # The settings_json is already a string, it will be properly quoted by subprocess
-                cmd_args.extend(["--settings", settings_json])
-        elif self.cli_append_max_tokens_flag and not _has_flag("--max-tokens"):
-            cmd_args.extend(["--max-tokens", str(self.max_tokens)])
-
-        # The system prompt is now combined with the user prompt for stdin_text format
-        if self.cli_append_system_prompt and self.provider_type != "claude_cli" and not _has_flag("--system-prompt"):
-            cmd_args.extend(["--system-prompt", system])
-
-        prompt_template = self.cli_prompt_template or (
-            "System: {system}\n\nUser: {user}\n\nSettings: temperature={temperature}, max_tokens={max_tokens}"
-        )
-        
-        # For claude_cli with stdin_text, we combine system and user prompts.
-        if self.provider_type == "claude_cli" and self.cli_input_format == "stdin_text":
-            prompt_text = f"{system}\n\n{user}"
-        else:
-            prompt_text = prompt_template.format(
-                system=system,
-                user=user,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                model=self.model,
-            )
-
-        # Prepare input based on format
-        input_data = None
-        normalized_format = (self.cli_input_format or "").lower()
-        if normalized_format in ("stdin", "stdin_json", "json"):
-            payload = {
-                "system": system,
-                "user": user,
-                "model": self.model,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "prompt": prompt_text,
-            }
-            input_data = json.dumps(payload, ensure_ascii=False)
-            logger.debug("[LLM] CLI input format: stdin (JSON payload)")
-        elif normalized_format in ("stdin_text", "stdin-raw", "text"):
-            input_data = prompt_text
-            logger.debug("[LLM] CLI input format: stdin (text payload)")
-        else:
-            cmd_args.append(prompt_text)
-            logger.debug("[LLM] CLI input format: direct argument (combined prompt)")
-
-
-        logger.debug(f"[LLM] _cli_chat: About to execute subprocess. Input format: {self.cli_input_format}")
-        logger.debug(f"[LLM] _cli_chat: Input data length: {len(input_data) if input_data else 0} chars")
+        Refactored to use helper methods for CC reduction.
+        """
+        start_time, cmd_args, input_data = self._prepare_cli_execution(system, user, "_cli_chat")
 
         try:
-            # Prepare environment
-            env = os.environ.copy()
-            env.update(self.cli_env)
-            if self.cli_env:
-                logger.debug(f"[LLM] CLI environment updated with: {self.cli_env}")
-            logger.debug(f"[LLM] _cli_chat: Environment prepared, timeout: {self.cli_timeout}s")
+            env = self._build_cli_env("_cli_chat")
 
 
             # Execute command directly with subprocess.run (simpler and more reliable than pty)
@@ -793,83 +1047,13 @@ class Client:
                 f"[LLM] CLI command for provider '{self.provider_type}' executed in {duration:.3f} seconds. "
                 f"Return code: {result.returncode}"
             )
-
-            stderr_text = result.stderr or ""
-            stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
-
-
-            if result.returncode != 0:
-                error_msg = "Unknown error"
-                # Claude CLI can return errors in stdout as JSON, even with a non-zero exit code.
-                if result.stdout:
-                    try:
-                        data = json.loads(result.stdout.strip())
-                        if isinstance(data, dict) and data.get("is_error"):
-                            error_msg = data.get("result") or data.get("error") or error_msg
-                    except json.JSONDecodeError:
-                        pass  # Not a JSON error, fall back to stderr.
-
-                if error_msg == "Unknown error" and result.stderr:
-                    error_msg = result.stderr.strip()[:200]
-
-                # Log timing and error for debugging
-                self._log_cli_operation(
-                    cmd_args,
-                    duration,
-                    error_msg,
-                    success=False,
-                    stderr=stderr_for_log,
-                    debug_enabled=self.cli_debug,
-                )
-                label = self.provider_type.upper()
-                logger.error(f"[LLM] {label}_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
-                if result.stderr:
-                    logger.warning(f"[LLM] Stderr from {label}: {result.stderr.strip()}")
-                raise RuntimeError(f"{label}_FAILED: {error_msg}")
-
-            response = result.stdout
-            if result.stderr and (self.cli_log_stderr or self.cli_debug):
-                logger.info(f"[LLM] Stderr from {self.provider_type.upper()}: {result.stderr.strip()}")
-
-            # Clean response if configured
-            if self.cli_output_clean:
-                # Remove ANSI escape codes
-                response = re.sub(r'\x1b\[[0-9;]*[mG]', '', response)
-                # Trim whitespace
-                response = response.strip()
-                logger.debug("[LLM] CLI response cleaned.")
-
-            if self.cli_parse_json:
-                parsed = self._parse_cli_json_output(response)
-                if parsed is not None:
-                    response = parsed
-
-            if not response:
-                self._log_cli_operation(
-                    cmd_args,
-                    duration,
-                    "Empty response",
-                    success=False,
-                    stderr=stderr_for_log,
-                    debug_enabled=self.cli_debug,
-                )
-                label = self.provider_type.upper()
-                logger.error(f"[LLM] {label}_EMPTY_RESPONSE: Empty response from CLI.")
-                raise RuntimeError(f"{label}_EMPTY_RESPONSE")
-
-            # Log successful operation
-            self._log_cli_operation(
-                cmd_args,
-                duration,
-                response,
-                success=True,
-                stderr=stderr_for_log,
-                debug_enabled=self.cli_debug,
+            return self._handle_cli_completion(
+                cmd_args=cmd_args,
+                duration=duration,
+                returncode=result.returncode,
+                stdout_text=result.stdout,
+                stderr_text=result.stderr or "",
             )
-            logger.debug("[LLM] CLI operation logged successfully.")
-
-
-            return response
 
         except subprocess.TimeoutExpired:
             duration = time.perf_counter() - start_time
@@ -913,59 +1097,79 @@ class Client:
         if not raw_output:
             return None
 
-        # Regex to find a JSON code block, supporting both ```json and ```
-        json_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_output, re.DOTALL)
-        
-        candidate = raw_output.strip()
-        if json_block_match:
-            candidate = json_block_match.group(1).strip()
-
-        data = None
-        try:
-            data = json.loads(candidate)
-        except json.JSONDecodeError:
-            # Fallback for streaming or line-delimited JSON
-            for line in reversed(raw_output.strip().splitlines()):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    break 
-                except json.JSONDecodeError:
-                    continue
-
+        candidate = self._extract_json_candidate_from_output(raw_output)
+        data = self._load_json_with_fallback(raw_output, candidate)
         if not data:
             return None
 
+        return self._extract_text_from_json_payload(data)
+
+    def _extract_json_candidate_from_output(self, raw_output: str) -> str:
+        """Extract primary JSON candidate from raw CLI output."""
+        # Regex to find a JSON code block, supporting both ```json and ```
+        json_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_output, re.DOTALL)
+        if json_block_match:
+            return json_block_match.group(1).strip()
+        return raw_output.strip()
+
+    def _load_json_with_fallback(self, raw_output: str, candidate: str) -> Any | None:
+        """Load JSON from candidate; fallback to line-delimited/streaming chunks."""
+        parsed = self._safe_json_loads(candidate)
+        if parsed is not None:
+            return parsed
+
+        for line in reversed(raw_output.strip().splitlines()):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            parsed = self._safe_json_loads(stripped)
+            if parsed is not None:
+                return parsed
+        return None
+
+    def _safe_json_loads(self, value: str) -> Any | None:
+        """Best-effort JSON parsing helper."""
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+
+    def _extract_text_segments_from_content(self, content: Any) -> list[str]:
+        """Extract text fragments from content-style arrays."""
+        if not isinstance(content, list):
+            return []
+
+        segments: list[str] = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") != "text":
+                continue
+            text = part.get("text")
+            if text:
+                segments.append(text)
+        return segments
+
+    def _extract_text_from_json_payload(self, data: Any) -> str | None:
+        """Extract assistant text from dict/list JSON payloads."""
+        segments: list[str] = []
+
         if isinstance(data, dict):
-            content = data.get("content")
-            if isinstance(content, list):
-                segments = []
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text = part.get("text")
-                        if text:
-                            segments.append(text)
-                if segments:
-                    return "\n".join(segments).strip()
+            segments.extend(self._extract_text_segments_from_content(data.get("content")))
+            if segments:
+                return "\n".join(segments).strip()
             if "text" in data and isinstance(data["text"], str):
                 return data["text"].strip()
+            return None
 
         if isinstance(data, list):
-            segments = []
             for item in data:
-                if isinstance(item, dict):
-                    maybe_text = item.get("text")
-                    if isinstance(maybe_text, str):
-                        segments.append(maybe_text)
-                    content = item.get("content")
-                    if isinstance(content, list):
-                        for part in content:
-                            if isinstance(part, dict) and part.get("type") == "text":
-                                text = part.get("text")
-                                if text:
-                                    segments.append(text)
+                if not isinstance(item, dict):
+                    continue
+                maybe_text = item.get("text")
+                if isinstance(maybe_text, str):
+                    segments.append(maybe_text)
+                segments.extend(self._extract_text_segments_from_content(item.get("content")))
             if segments:
                 return "\n".join(segments).strip()
 

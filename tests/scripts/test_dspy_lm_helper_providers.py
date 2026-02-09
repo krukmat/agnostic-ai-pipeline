@@ -2,14 +2,15 @@ import os
 import sys
 import types
 
-if "dspy" not in sys.modules:
-    class DummyLM:
-        def __init__(self, model, **kwargs):
-            self.model = model
-            for key, value in kwargs.items():
-                setattr(self, key, value)
 
-    sys.modules["dspy"] = types.SimpleNamespace(LM=DummyLM)
+class DummyLM:
+    def __init__(self, model, **kwargs):
+        self.model = model
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+sys.modules.setdefault("dspy", types.SimpleNamespace(LM=DummyLM))
 
 from scripts import dspy_lm_helper as lm_helper
 

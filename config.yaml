@@ -309,3 +309,35 @@ orchestration:
     llm_role: orchestrator
     max_tokens: 2000
     temperature: 0.3
+
+# Phase 1: Graph RAG with LightRAG (F1-T5: LLM Client Integration)
+graph_rag:
+  enabled: true                                # F1-T5: Enable Graph RAG context augmentation
+  working_dir: "./artifacts/graph_rag"
+  llm_model: "qwen2.5:7b-instruct"            # For entity extraction
+  embedding_model: "bge-m3"                    # Multilingual embeddings (1024-dim)
+  embedding_dim: 1024
+  chunk_token_size: 1200
+  top_k: 60
+  default_mode: "mix"                          # Graph + vector combined (recommended)
+  auto_ingest: false                           # R2-T2: Manual indexing (use 'make rag-index' post-iteration)
+  sources:                                     # Directories to ingest
+    - "planning/"
+    - "project/"
+    - "artifacts/"
+    - "docs/"
+  # Budget guard for context injection into LLM prompts
+  context_budget_chars: 4000                  # Max chars of context to inject (prevents token overflow)
+  context_truncation_strategy: "hierarchical" # Truncate by paragraph boundaries, not mid-word
+  # Query caching for 3-5x latency reduction
+  cache_enabled: false                        # Enable in-memory query cache (default: false)
+  cache_ttl: 3600                             # Cache time-to-live in seconds (default: 1 hour)
+  cache_max_size: 1000                        # Max number of cached queries (default: 1000)
+  # Multi-language support for global queries
+  language_detection: true                    # Enable automatic language detection
+  supported_languages: ["en", "es", "fr", "de", "zh"]  # ISO 639-1 codes
+  default_language: "en"                      # Fallback language for unsupported input
+  # Note: Role-specific policies configured in AgentRetriever.ROLE_POLICIES
+  # - architect: mode=hybrid (graph-heavy for design relationships)
+  # - dev: mode=local (nearby entities for code)
+  # - others: mode=mix (balanced)

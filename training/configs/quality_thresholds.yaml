@@ -1,0 +1,16 @@
+quality_thresholds:
+  ba: 0.85
+  product_owner: 0.85
+  architect: 0.85
+  dev: 0.85
+  qa: 0.85
+
+retry_policies:
+  max_retries: 3
+  backoff_multiplier: 2.0
+  min_score_increase: 0.05
+
+regeneration_strategies:
+  - retry_with_different_seed
+  - retry_with_enhanced_prompt
+  - promote_to_expensive_teacher

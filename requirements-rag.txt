@@ -1,0 +1,12 @@
+# RAG-specific dependencies for LightRAG Graph RAG integration
+# F1-T1: Graph RAG with LightRAG (Knowledge Graph + Vector Store hybrid)
+
+lightrag-hku[api]>=1.0.0      # Graph RAG framework (MIT license, EMNLP 2025)
+ollama>=0.1.0                 # Python client for Ollama
+
+# Note: lightrag-hku brings these as dependencies:
+# - networkx: Knowledge Graph storage (local, no server needed)
+# - nano-vectordb: Vector Store (local, no server needed)
+# - ollama: Python client for Ollama integration
+# - pydantic: Data validation
+# - httpx: Async HTTP client for LLM calls

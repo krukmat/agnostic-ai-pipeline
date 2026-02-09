@@ -1,0 +1,30 @@
+name: complexity-gate
+
+'on':
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  complexity-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install gate deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install radon
+
+      - name: Run complexity gate
+        run: |
+          python scripts/ci/complexity_gate.py \
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --head-ref "${{ github.event.pull_request.head.sha }}"
