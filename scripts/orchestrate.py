@@ -830,6 +830,277 @@ def analyze_failure_and_suggest_model(story: Dict[str, Any], config: Dict[str, A
     }
 
 
+def _ensure_story_metadata(story: dict[str, Any]) -> dict[str, Any]:
+    """Ensure story metadata exists and return it."""
+    if "metadata" not in story:
+        story["metadata"] = {}
+    return story["metadata"]
+
+
+def _is_recovery_budget_exceeded(
+    story: dict[str, Any],
+    *,
+    sid: str,
+    max_recovery_attempts: int,
+) -> bool:
+    """Check and apply blocked status if recovery budget exceeded."""
+    current_recovery_attempts = story.get("metadata", {}).get("recovery_attempts", 0)
+    if current_recovery_attempts < max_recovery_attempts:
+        return False
+
+    story["status"] = "blocked_recovery_budget"
+    append_note(
+        f"- {sid} BLOCKED: Recovery budget exceeded ({current_recovery_attempts}/{max_recovery_attempts})"
+    )
+    logger.error(
+        f"[loop] {sid} -> blocked_recovery_budget "
+        f"(attempts={current_recovery_attempts}, max={max_recovery_attempts})"
+    )
+    return True
+
+
+def _register_dev_model_history_and_db(
+    *,
+    story: dict[str, Any],
+    sid: str,
+    dev_result: dict[str, Any],
+    dev_status: str,
+    db_ctx: Any,
+) -> None:
+    """Persist model attempt history and optional DB attempt log."""
+    model_info = dev_result.get("model_info")
+    if not model_info:
+        return
+
+    metadata = _ensure_story_metadata(story)
+    if "model_history" not in metadata:
+        metadata["model_history"] = []
+
+    metadata["model_history"].append(
+        {
+            "provider": model_info.get("provider"),
+            "model": model_info.get("model"),
+            "timestamp": model_info.get("timestamp"),
+            "attempt": len(metadata["model_history"]) + 1,
+            "status": dev_status,
+        }
+    )
+    logger.debug(
+        "[loop] Registered model attempt in history: "
+        f"{model_info.get('provider')}/{model_info.get('model')}"
+    )
+
+    if not db_ctx:
+        return
+
+    db_ctx.log_attempt(
+        story_id=sid,
+        role="dev",
+        provider=model_info.get("provider", "unknown"),
+        model=model_info.get("model", "unknown"),
+        status="success" if dev_status == "ok" else "error",
+        duration_ms=dev_result.get("duration_ms"),
+        tokens_in=dev_result.get("tokens_in"),
+        tokens_out=dev_result.get("tokens_out"),
+        error_message=dev_result.get("error") if dev_status != "ok" else None,
+        artifacts_path=dev_result.get("artifacts_dir"),
+    )
+    db_ctx.update_story_status(sid, "in_progress")
+
+
+def _maybe_set_model_override(
+    *,
+    story: dict[str, Any],
+    sid: str,
+    config: Dict[str, Any] | None,
+    dev_attempt_count: int,
+) -> None:
+    """Set/clear model override suggestion for next retry when configured."""
+    if not config or dev_attempt_count >= DEV_RETRY_THRESHOLD:
+        return
+
+    model_fallback_enabled = config.get("pipeline", {}).get("model_fallback", {}).get("enabled", True)
+    if not model_fallback_enabled:
+        return
+
+    metadata = _ensure_story_metadata(story)
+    suggested_model = analyze_failure_and_suggest_model(story, config)
+    if suggested_model:
+        metadata["model_override"] = suggested_model
+        logger.info(
+            f"[loop] Model override suggested for {sid}: {suggested_model['provider']}/{suggested_model['model']} "
+            f"(reason: {suggested_model['reason']})"
+        )
+        return
+
+    metadata.pop("model_override", None)
+
+
+def _handle_dev_failure(
+    *,
+    story: dict[str, Any],
+    sid: str,
+    dev_result: dict[str, Any],
+    dev_status: str,
+    config: Dict[str, Any] | None,
+) -> None:
+    """Apply failure transitions and metadata for developer step failures."""
+    dev_attempt_count = story_dev_attempts.get(sid, 0)
+    exit_code = int(dev_result.get("exit_code", 1))
+    error_details = (
+        dev_result.get("error")
+        or dev_result.get("detail")
+        or dev_result.get("message")
+        or f"Developer status {dev_status}"
+    )
+
+    metadata = _ensure_story_metadata(story)
+    metadata["recovery_attempts"] = metadata.get("recovery_attempts", 0) + 1
+    metadata["last_failure_reason"] = "blocked_dev"
+    metadata["last_dev_error"] = error_details
+    metadata["timestamp"] = datetime.datetime.now().isoformat()
+
+    if dev_result.get("artifacts_dir"):
+        metadata["artifacts_snapshot"] = dev_result["artifacts_dir"]
+
+    _maybe_set_model_override(
+        story=story,
+        sid=sid,
+        config=config,
+        dev_attempt_count=dev_attempt_count,
+    )
+
+    if dev_attempt_count >= DEV_RETRY_THRESHOLD:
+        story["status"] = "blocked_dev"
+        append_note(f"- {sid} BLOCKED_DEV: {error_details}")
+        report_developer_failure(sid, error_details, qa_failure_details={})
+        logger.error(
+            f"[loop] {sid} -> blocked_dev (status={dev_status}, attempts={dev_attempt_count}, exit_code={exit_code})"
+        )
+        story_dev_attempts.pop(sid, None)
+        return
+
+    story["status"] = "in_review"
+    append_note(
+        f"- Dev no pudo implementar {sid} (status={dev_status}). Revisa artifacts/auto-dev. "
+        f"Reintentando (intento {dev_attempt_count}/{DEV_RETRY_THRESHOLD})."
+    )
+    logger.warning(
+        f"[loop] {sid} -> in_review (Developer status={dev_status}, exit_code={exit_code}, reintentando)"
+    )
+
+
+def _handle_skip_qa_success(*, story: dict[str, Any], sid: str) -> None:
+    """Finalize story when QA is intentionally skipped."""
+    story["status"] = "done"
+    story_dev_attempts.pop(sid, None)
+    story_arch_attempts.pop(sid, None)
+    logger.info(f"[loop] {sid} -> done (skip_qa=True, no QA execution)")
+    append_note(f"- {sid} aprobado (dev_only mode, sin QA).")
+
+
+def _handle_qa_pass(*, story: dict[str, Any], sid: str, db_ctx: Any) -> None:
+    """Finalize story when QA passes."""
+    story["status"] = "done"
+    story_dev_attempts.pop(sid, None)
+    story_arch_attempts.pop(sid, None)
+    logger.info(f"[loop] {sid} -> done (QA pass)")
+    append_note(f"- {sid} aprobado por QA.")
+
+    if not db_ctx:
+        return
+
+    db_ctx.log_attempt(
+        story_id=sid,
+        role="qa",
+        provider="qa",
+        model="qa",
+        status="success",
+    )
+    db_ctx.update_story_status(sid, "done")
+    db_ctx.log_event("story_done", f"Story {sid} completed", role="qa")
+
+
+def _handle_qa_no_tests(
+    *,
+    story: dict[str, Any],
+    sid: str,
+    allow_no_tests: bool,
+    status_no_tests: str,
+) -> None:
+    """Apply transitions for QA no_tests outcome."""
+    if allow_no_tests:
+        story["status"] = "in_review"
+        append_note(f"- {sid} QA -> in_review (no tests, allowed).")
+        logger.info(f"[loop] {sid} -> in_review (QA: no tests allowed)")
+        return
+
+    story["status"] = status_no_tests
+    append_note(f"- {sid} BLOQUEADO por falta de tests (QA). Requiere intervención.")
+    logger.warning(f"[loop] {sid} -> {status_no_tests} (QA: no tests not allowed)")
+
+
+def _status_from_qa_severity(story: dict[str, Any], sid: str, severity: str) -> str:
+    """Resolve target story status from QA severity level."""
+    if severity == "blocked_fatal":
+        return "blocked_fatal"
+    if severity == "force_applicable":
+        attempt_counter = story_arch_attempts.get(sid, 0) + 1
+        story_arch_attempts[sid] = attempt_counter
+        if attempt_counter >= FORCE_APPROVAL_THRESHOLD and story.get("priority") in ["P1", "P0"]:
+            return "done_force_architect"
+        return "in_review"
+    if severity == "test_only":
+        return "in_review_tests"
+    if severity == "persistent":
+        iteration_count = story_dev_attempts.get(sid, 0)
+        if iteration_count >= DEV_RETRY_THRESHOLD:
+            return "blocked_quality_issues"
+        return "in_review_retry"
+    return "in_review"
+
+
+def _handle_qa_failure(
+    *,
+    story: dict[str, Any],
+    sid: str,
+    qa_result: dict[str, Any],
+    failure_analysis: Dict[str, Any],
+    db_ctx: Any,
+) -> None:
+    """Apply metadata/status for QA failure branch."""
+    severity = failure_analysis.get("severity", "standard")
+
+    append_note(f"- QA FAIL {sid}: {failure_analysis.get('details', 'Sin detalle')}")
+    metadata = _ensure_story_metadata(story)
+    metadata["recovery_attempts"] = metadata.get("recovery_attempts", 0) + 1
+    metadata["last_failure_reason"] = f"qa_fail_{severity}"
+    metadata["last_qa_error"] = failure_analysis.get("details", "Sin detalle")
+    metadata["timestamp"] = datetime.datetime.now().isoformat()
+
+    artifacts_dir = qa_result.get("report", {}).get("artifacts_dir")
+    if artifacts_dir:
+        metadata["qa_artifacts_snapshot"] = artifacts_dir
+
+    story["status"] = _status_from_qa_severity(story, sid, severity)
+    logger.info(f"[loop] {sid} -> {story['status']} (QA fail - severity: {severity})")
+
+    if not db_ctx:
+        return
+
+    db_ctx.log_attempt(
+        story_id=sid,
+        role="qa",
+        provider="qa",
+        model="qa",
+        status="error",
+        error_message=failure_analysis.get("details"),
+        error_category=severity,
+    )
+    db_ctx.update_story_status(sid, story["status"])
+    db_ctx.update_story_metadata(sid, story.get("metadata", {}))
+
+
 async def _process_story(
     story: dict[str, Any],
     *,
@@ -843,12 +1114,11 @@ async def _process_story(
     sid = story["id"]
     db_ctx = get_current_context()  # Task: database-layer - Get DB context
 
-    # Task: recovery-system - Check if recovery budget exceeded
-    current_recovery_attempts = story.get("metadata", {}).get("recovery_attempts", 0)
-    if current_recovery_attempts >= max_recovery_attempts:
-        story["status"] = "blocked_recovery_budget"
-        append_note(f"- {sid} BLOCKED: Recovery budget exceeded ({current_recovery_attempts}/{max_recovery_attempts})")
-        logger.error(f"[loop] {sid} -> blocked_recovery_budget (attempts={current_recovery_attempts}, max={max_recovery_attempts})")
+    if _is_recovery_budget_exceeded(
+        story,
+        sid=sid,
+        max_recovery_attempts=max_recovery_attempts,
+    ):
         return
 
     story_dev_attempts[sid] = story_dev_attempts.get(sid, 0) + 1
@@ -860,38 +1130,13 @@ async def _process_story(
     dev_result = await execute_role("developer", dev_payload)
     dev_status = dev_result.get("status", "unknown")
 
-    # Task: fix-metadata-persistence - Register model_history from dev result
-    model_info = dev_result.get("model_info")
-    if model_info:
-        if "metadata" not in story:
-            story["metadata"] = {}
-        if "model_history" not in story["metadata"]:
-            story["metadata"]["model_history"] = []
-
-        story["metadata"]["model_history"].append({
-            "provider": model_info.get("provider"),
-            "model": model_info.get("model"),
-            "timestamp": model_info.get("timestamp"),
-            "attempt": len(story["metadata"]["model_history"]) + 1,
-            "status": dev_status
-        })
-        logger.debug(f"[loop] Registered model attempt in history: {model_info.get('provider')}/{model_info.get('model')}")
-
-        # Task: database-layer - Log dev attempt to DB
-        if db_ctx:
-            db_ctx.log_attempt(
-                story_id=sid,
-                role="dev",
-                provider=model_info.get("provider", "unknown"),
-                model=model_info.get("model", "unknown"),
-                status="success" if dev_status == "ok" else "error",
-                duration_ms=dev_result.get("duration_ms"),
-                tokens_in=dev_result.get("tokens_in"),
-                tokens_out=dev_result.get("tokens_out"),
-                error_message=dev_result.get("error") if dev_status != "ok" else None,
-                artifacts_path=dev_result.get("artifacts_dir"),
-            )
-            db_ctx.update_story_status(sid, "in_progress")
+    _register_dev_model_history_and_db(
+        story=story,
+        sid=sid,
+        dev_result=dev_result,
+        dev_status=dev_status,
+        db_ctx=db_ctx,
+    )
 
     # Fire post-step hooks for auto-ingestion
     if dev_status == "ok":
@@ -904,68 +1149,18 @@ async def _process_story(
         })
 
     if dev_status != "ok":
-        dev_attempt_count = story_dev_attempts.get(sid, 0)
-        exit_code = int(dev_result.get("exit_code", 1))
-        error_details = (
-            dev_result.get("error")
-            or dev_result.get("detail")
-            or dev_result.get("message")
-            or f"Developer status {dev_status}"
+        _handle_dev_failure(
+            story=story,
+            sid=sid,
+            dev_result=dev_result,
+            dev_status=dev_status,
+            config=config,
         )
-
-        # Task: recovery-system - Capture metadata on dev failure
-        if "metadata" not in story:
-            story["metadata"] = {}
-
-        story["metadata"]["recovery_attempts"] = story["metadata"].get("recovery_attempts", 0) + 1
-        story["metadata"]["last_failure_reason"] = "blocked_dev"
-        story["metadata"]["last_dev_error"] = error_details
-        story["metadata"]["timestamp"] = datetime.datetime.now().isoformat()
-
-        if dev_result.get("artifacts_dir"):
-            story["metadata"]["artifacts_snapshot"] = dev_result["artifacts_dir"]
-
-        # Task: recovery-system - Suggest alternative model for next attempt
-        if config and dev_attempt_count < DEV_RETRY_THRESHOLD:
-            model_fallback_enabled = config.get("pipeline", {}).get("model_fallback", {}).get("enabled", True)
-            if model_fallback_enabled:
-                suggested_model = analyze_failure_and_suggest_model(story, config)
-                if suggested_model:
-                    story["metadata"]["model_override"] = suggested_model
-                    logger.info(
-                        f"[loop] Model override suggested for {sid}: {suggested_model['provider']}/{suggested_model['model']} "
-                        f"(reason: {suggested_model['reason']})"
-                    )
-                else:
-                    # Clear any previous override if no more alternatives
-                    story["metadata"].pop("model_override", None)
-
-        if dev_attempt_count >= DEV_RETRY_THRESHOLD:
-            story["status"] = "blocked_dev"
-            append_note(f"- {sid} BLOCKED_DEV: {error_details}")
-            report_developer_failure(sid, error_details, qa_failure_details={})
-            logger.error(
-                f"[loop] {sid} -> blocked_dev (status={dev_status}, attempts={dev_attempt_count}, exit_code={exit_code})"
-            )
-            story_dev_attempts.pop(sid, None)
-        else:
-            story["status"] = "in_review"
-            append_note(
-                f"- Dev no pudo implementar {sid} (status={dev_status}). Revisa artifacts/auto-dev. "
-                f"Reintentando (intento {dev_attempt_count}/{DEV_RETRY_THRESHOLD})."
-            )
-            logger.warning(
-                f"[loop] {sid} -> in_review (Developer status={dev_status}, exit_code={exit_code}, reintentando)"
-            )
         return
 
     # Task: recovery-system - Skip QA when LOOP_MODE=dev_only
     if skip_qa:
-        story["status"] = "done"
-        story_dev_attempts.pop(sid, None)
-        story_arch_attempts.pop(sid, None)
-        logger.info(f"[loop] {sid} -> done (skip_qa=True, no QA execution)")
-        append_note(f"- {sid} aprobado (dev_only mode, sin QA).")
+        _handle_skip_qa_success(story=story, sid=sid)
         return
 
     qa_payload = {"allow_no_tests": allow_no_tests, "story_id": sid}
@@ -981,82 +1176,28 @@ async def _process_story(
         qa_status = qa_report.get("status", qa_status)
 
     if qa_status == "pass":
-        story["status"] = "done"
-        story_dev_attempts.pop(sid, None)
-        story_arch_attempts.pop(sid, None)
-        logger.info(f"[loop] {sid} -> done (QA pass)")
-        append_note(f"- {sid} aprobado por QA.")
-        # Task: database-layer - Update story status and log QA attempt
-        if db_ctx:
-            db_ctx.log_attempt(
-                story_id=sid, role="qa", provider="qa", model="qa",
-                status="success",
-            )
-            db_ctx.update_story_status(sid, "done")
-            db_ctx.log_event("story_done", f"Story {sid} completed", role="qa")
+        _handle_qa_pass(story=story, sid=sid, db_ctx=db_ctx)
         return
 
     if qa_status == "no_tests":
-        if allow_no_tests:
-            story["status"] = "in_review"
-            append_note(f"- {sid} QA -> in_review (no tests, allowed).")
-            logger.info(f"[loop] {sid} -> in_review (QA: no tests allowed)")
-        else:
-            story["status"] = status_no_tests
-            append_note(f"- {sid} BLOQUEADO por falta de tests (QA). Requiere intervención.")
-            logger.warning(f"[loop] {sid} -> {status_no_tests} (QA: no tests not allowed)")
+        _handle_qa_no_tests(
+            story=story,
+            sid=sid,
+            allow_no_tests=allow_no_tests,
+            status_no_tests=status_no_tests,
+        )
         return
 
     failure_analysis = analyze_qa_failure_severity(qa_failure_details)
     severity = failure_analysis.get("severity", "standard")
     logger.info(f"[loop] QA failure severity for {sid}: {severity}")
-
-    append_note(f"- QA FAIL {sid}: {failure_analysis.get('details', 'Sin detalle')}")
-
-    # Task: recovery-system - Capture metadata on QA failure
-    if "metadata" not in story:
-        story["metadata"] = {}
-
-    story["metadata"]["recovery_attempts"] = story["metadata"].get("recovery_attempts", 0) + 1
-    story["metadata"]["last_failure_reason"] = f"qa_fail_{severity}"
-    story["metadata"]["last_qa_error"] = failure_analysis.get("details", "Sin detalle")
-    story["metadata"]["timestamp"] = datetime.datetime.now().isoformat()
-
-    if qa_result.get("report", {}).get("artifacts_dir"):
-        story["metadata"]["qa_artifacts_snapshot"] = qa_result["report"]["artifacts_dir"]
-
-    if severity == "blocked_fatal":
-        story["status"] = "blocked_fatal"
-    elif severity == "force_applicable":
-        attempt_counter = story_arch_attempts.get(sid, 0) + 1
-        story_arch_attempts[sid] = attempt_counter
-        if attempt_counter >= FORCE_APPROVAL_THRESHOLD and story.get("priority") in ["P1", "P0"]:
-            story["status"] = "done_force_architect"
-        else:
-            story["status"] = "in_review"
-    elif severity == "test_only":
-        story["status"] = "in_review_tests"
-    elif severity == "persistent":
-        iteration_count = story_dev_attempts.get(sid, 0)
-        if iteration_count >= DEV_RETRY_THRESHOLD:
-            story["status"] = "blocked_quality_issues"
-        else:
-            story["status"] = "in_review_retry"
-    else:
-        story["status"] = "in_review"
-    
-    logger.info(f"[loop] {sid} -> {story['status']} (QA fail - severity: {severity})")
-
-    # Task: database-layer - Log QA failure and update status
-    if db_ctx:
-        db_ctx.log_attempt(
-            story_id=sid, role="qa", provider="qa", model="qa",
-            status="error",
-            error_message=failure_analysis.get("details"),
-            error_category=severity,
-        )
-        db_ctx.update_story_status(sid, story["status"])
-        db_ctx.update_story_metadata(sid, story.get("metadata", {}))
+    _handle_qa_failure(
+        story=story,
+        sid=sid,
+        qa_result=qa_result,
+        failure_analysis=failure_analysis,
+        db_ctx=db_ctx,
+    )
 
 
 async def _process_iteration(

@@ -853,41 +853,111 @@ class Client:
 
         return response
 
+    def _ensure_cli_command_configured(self) -> None:
+        """Validate CLI command is configured."""
+        if self.cli_command:
+            return
+        label = self.provider_type.upper()
+        logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
+        raise RuntimeError(f"{label}_NO_COMMAND")
+
+    def _append_prompt_if_direct_mode(self, cmd_args: list[str], prompt_text: str) -> None:
+        """Append prompt directly to args when input format is argument-based."""
+        normalized_format = (self.cli_input_format or "").lower()
+        if normalized_format in ("stdin", "stdin_json", "json", "stdin_text", "stdin-raw", "text"):
+            return
+        cmd_args.append(prompt_text)
+
+    def _prepare_cli_execution(self, system: str, user: str, method_name: str) -> tuple[float, list[str], str | None]:
+        """Prepare common execution context for sync/async CLI calls."""
+        self._ensure_cli_command_configured()
+
+        start_time = time.perf_counter()
+        logger.debug(f"[LLM] {method_name}: Entered for provider {self.provider_type}")
+        logger.debug(f"[LLM] {method_name}: Command to execute: {self.cli_command}")
+
+        input_data, prompt_text = self._prepare_cli_input(system, user)
+        cmd_args = self._build_cli_command_args(system, user, prompt_text)
+        self._append_prompt_if_direct_mode(cmd_args, prompt_text)
+
+        logger.debug(f"[LLM] {method_name}: Full command args: {cmd_args}")
+        logger.debug(f"[LLM] {method_name}: Input data length: {len(input_data) if input_data else 0} chars")
+        return start_time, cmd_args, input_data
+
+    def _build_cli_env(self, method_name: str) -> dict[str, str]:
+        """Build process env for CLI execution."""
+        env = os.environ.copy()
+        env.update(self.cli_env)
+        if self.cli_env:
+            logger.debug(f"[LLM] CLI environment updated with: {self.cli_env}")
+        logger.debug(f"[LLM] {method_name}: Environment prepared, timeout: {self.cli_timeout}s")
+        return env
+
+    def _handle_cli_completion(
+        self,
+        *,
+        cmd_args: list[str],
+        duration: float,
+        returncode: int,
+        stdout_text: str,
+        stderr_text: str,
+    ) -> str:
+        """Handle common completion logic for sync/async CLI calls."""
+        stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
+        label = self.provider_type.upper()
+
+        if returncode != 0:
+            error_msg = self._handle_cli_error(returncode, stdout_text, stderr_text)
+            self._log_cli_operation(
+                cmd_args,
+                duration,
+                error_msg,
+                success=False,
+                stderr=stderr_for_log,
+                debug_enabled=self.cli_debug,
+            )
+            logger.error(f"[LLM] {label}_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
+            if stderr_text:
+                logger.warning(f"[LLM] Stderr from {label}: {stderr_text.strip()}")
+            raise RuntimeError(f"{label}_FAILED: {error_msg}")
+
+        if stderr_text and (self.cli_log_stderr or self.cli_debug):
+            logger.info(f"[LLM] Stderr from {label}: {stderr_text.strip()}")
+
+        response = self._process_cli_response(stdout_text)
+        if not response:
+            self._log_cli_operation(
+                cmd_args,
+                duration,
+                "Empty response",
+                success=False,
+                stderr=stderr_for_log,
+                debug_enabled=self.cli_debug,
+            )
+            logger.error(f"[LLM] {label}_EMPTY_RESPONSE: Empty response from CLI.")
+            raise RuntimeError(f"{label}_EMPTY_RESPONSE")
+
+        self._log_cli_operation(
+            cmd_args,
+            duration,
+            response,
+            success=True,
+            stderr=stderr_for_log,
+            debug_enabled=self.cli_debug,
+        )
+        logger.debug("[LLM] CLI operation logged successfully.")
+        return response
+
     async def _cli_chat_async(self, system: str, user: str) -> str:
         """Async version of _cli_chat using asyncio subprocess.
 
         Refactored to use helper methods for CC reduction.
         Uses native async subprocess instead of thread pool.
         """
-        start_time = time.perf_counter()
-        logger.debug(f"[LLM] _cli_chat_async: Entered for provider {self.provider_type}")
-
-        if not self.cli_command:
-            label = self.provider_type.upper()
-            logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
-            raise RuntimeError(f"{label}_NO_COMMAND")
-
-        # Use helper to prepare input
-        input_data, prompt_text = self._prepare_cli_input(system, user)
-
-        # Use helper to build command args
-        cmd_args = self._build_cli_command_args(system, user, prompt_text)
-
-        # Handle direct argument input format (append to cmd_args)
-        normalized_format = (self.cli_input_format or "").lower()
-        if normalized_format not in ("stdin", "stdin_json", "json", "stdin_text", "stdin-raw", "text"):
-            cmd_args.append(prompt_text)
-
-        logger.debug(f"[LLM] _cli_chat_async: Full command args: {cmd_args}")
-        logger.debug(f"[LLM] _cli_chat_async: Input data length: {len(input_data) if input_data else 0} chars")
+        start_time, cmd_args, input_data = self._prepare_cli_execution(system, user, "_cli_chat_async")
 
         try:
-            # Prepare environment
-            env = os.environ.copy()
-            env.update(self.cli_env)
-            if self.cli_env:
-                logger.debug(f"[LLM] CLI environment updated with: {self.cli_env}")
-            logger.debug(f"[LLM] _cli_chat_async: Environment prepared, timeout: {self.cli_timeout}s")
+            env = self._build_cli_env("_cli_chat_async")
 
             # Execute command using async subprocess
             logger.debug("[LLM] _cli_chat_async: Using asyncio.create_subprocess_exec")
@@ -933,58 +1003,13 @@ class Client:
                 f"[LLM] CLI command for provider '{self.provider_type}' executed in {duration:.3f} seconds. "
                 f"Return code: {returncode}"
             )
-
-            stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
-
-            if returncode != 0:
-                # Use helper to extract error message
-                error_msg = self._handle_cli_error(returncode, stdout_text, stderr_text)
-
-                self._log_cli_operation(
-                    cmd_args,
-                    duration,
-                    error_msg,
-                    success=False,
-                    stderr=stderr_for_log,
-                    debug_enabled=self.cli_debug,
-                )
-                label = self.provider_type.upper()
-                logger.error(f"[LLM] {label}_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
-                if stderr_text:
-                    logger.warning(f"[LLM] Stderr from {label}: {stderr_text.strip()}")
-                raise RuntimeError(f"{label}_FAILED: {error_msg}")
-
-            response = stdout_text
-            if stderr_text and (self.cli_log_stderr or self.cli_debug):
-                logger.info(f"[LLM] Stderr from {self.provider_type.upper()}: {stderr_text.strip()}")
-
-            # Use helper to process response
-            response = self._process_cli_response(response)
-
-            if not response:
-                self._log_cli_operation(
-                    cmd_args,
-                    duration,
-                    "Empty response",
-                    success=False,
-                    stderr=stderr_for_log,
-                    debug_enabled=self.cli_debug,
-                )
-                label = self.provider_type.upper()
-                logger.error(f"[LLM] {label}_EMPTY_RESPONSE: Empty response from CLI.")
-                raise RuntimeError(f"{label}_EMPTY_RESPONSE")
-
-            self._log_cli_operation(
-                cmd_args,
-                duration,
-                response,
-                success=True,
-                stderr=stderr_for_log,
-                debug_enabled=self.cli_debug,
+            return self._handle_cli_completion(
+                cmd_args=cmd_args,
+                duration=duration,
+                returncode=returncode,
+                stdout_text=stdout_text,
+                stderr_text=stderr_text,
             )
-            logger.debug("[LLM] CLI operation logged successfully.")
-
-            return response
 
         except Exception as exc:
             if "TIMEOUT" not in str(exc) and "FAILED" not in str(exc):
@@ -997,38 +1022,10 @@ class Client:
 
         Refactored to use helper methods for CC reduction.
         """
-        logger.debug(f"[LLM] _cli_chat: Entered for provider {self.provider_type}")
-        if not self.cli_command:
-            label = self.provider_type.upper()
-            logger.critical(f"[LLM] FATAL: {label}_NO_COMMAND - CLI command not configured.")
-            raise RuntimeError(f"{label}_NO_COMMAND")
-
-        start_time = time.perf_counter()
-        logger.debug(f"[LLM] _cli_chat: Command to execute: {self.cli_command}")
-        logger.debug(f"[LLM] Starting CLI chat for provider '{self.provider_type}'. Command: {self.cli_command}")
-
-        # Use helper to prepare input
-        input_data, prompt_text = self._prepare_cli_input(system, user)
-
-        # Use helper to build command args
-        cmd_args = self._build_cli_command_args(system, user, prompt_text)
-
-        # Handle direct argument input format (append to cmd_args)
-        normalized_format = (self.cli_input_format or "").lower()
-        if normalized_format not in ("stdin", "stdin_json", "json", "stdin_text", "stdin-raw", "text"):
-            cmd_args.append(prompt_text)
-
-        logger.debug(f"[LLM] _cli_chat: Full command args: {cmd_args}")
-        logger.debug(f"[LLM] _cli_chat: About to execute subprocess. Input format: {self.cli_input_format}")
-        logger.debug(f"[LLM] _cli_chat: Input data length: {len(input_data) if input_data else 0} chars")
+        start_time, cmd_args, input_data = self._prepare_cli_execution(system, user, "_cli_chat")
 
         try:
-            # Prepare environment
-            env = os.environ.copy()
-            env.update(self.cli_env)
-            if self.cli_env:
-                logger.debug(f"[LLM] CLI environment updated with: {self.cli_env}")
-            logger.debug(f"[LLM] _cli_chat: Environment prepared, timeout: {self.cli_timeout}s")
+            env = self._build_cli_env("_cli_chat")
 
 
             # Execute command directly with subprocess.run (simpler and more reliable than pty)
@@ -1050,62 +1047,13 @@ class Client:
                 f"[LLM] CLI command for provider '{self.provider_type}' executed in {duration:.3f} seconds. "
                 f"Return code: {result.returncode}"
             )
-
-            stderr_text = result.stderr or ""
-            stderr_for_log = stderr_text if self.cli_log_stderr and stderr_text else None
-
-            if result.returncode != 0:
-                # Use helper to extract error message
-                error_msg = self._handle_cli_error(result.returncode, result.stdout, result.stderr)
-
-                # Log timing and error for debugging
-                self._log_cli_operation(
-                    cmd_args,
-                    duration,
-                    error_msg,
-                    success=False,
-                    stderr=stderr_for_log,
-                    debug_enabled=self.cli_debug,
-                )
-                label = self.provider_type.upper()
-                logger.error(f"[LLM] {label}_FAILED: Command '{' '.join(cmd_args[:3])}...' failed. Error: {error_msg}")
-                if result.stderr:
-                    logger.warning(f"[LLM] Stderr from {label}: {result.stderr.strip()}")
-                raise RuntimeError(f"{label}_FAILED: {error_msg}")
-
-            response = result.stdout
-            if result.stderr and (self.cli_log_stderr or self.cli_debug):
-                logger.info(f"[LLM] Stderr from {self.provider_type.upper()}: {result.stderr.strip()}")
-
-            # Use helper to process response
-            response = self._process_cli_response(response)
-
-            if not response:
-                self._log_cli_operation(
-                    cmd_args,
-                    duration,
-                    "Empty response",
-                    success=False,
-                    stderr=stderr_for_log,
-                    debug_enabled=self.cli_debug,
-                )
-                label = self.provider_type.upper()
-                logger.error(f"[LLM] {label}_EMPTY_RESPONSE: Empty response from CLI.")
-                raise RuntimeError(f"{label}_EMPTY_RESPONSE")
-
-            # Log successful operation
-            self._log_cli_operation(
-                cmd_args,
-                duration,
-                response,
-                success=True,
-                stderr=stderr_for_log,
-                debug_enabled=self.cli_debug,
+            return self._handle_cli_completion(
+                cmd_args=cmd_args,
+                duration=duration,
+                returncode=result.returncode,
+                stdout_text=result.stdout,
+                stderr_text=result.stderr or "",
             )
-            logger.debug("[LLM] CLI operation logged successfully.")
-
-
-            return response
 
         except subprocess.TimeoutExpired:
             duration = time.perf_counter() - start_time
@@ -1149,59 +1097,79 @@ class Client:
         if not raw_output:
             return None
 
-        # Regex to find a JSON code block, supporting both ```json and ```
-        json_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_output, re.DOTALL)
-        
-        candidate = raw_output.strip()
-        if json_block_match:
-            candidate = json_block_match.group(1).strip()
-
-        data = None
-        try:
-            data = json.loads(candidate)
-        except json.JSONDecodeError:
-            # Fallback for streaming or line-delimited JSON
-            for line in reversed(raw_output.strip().splitlines()):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    break 
-                except json.JSONDecodeError:
-                    continue
-
+        candidate = self._extract_json_candidate_from_output(raw_output)
+        data = self._load_json_with_fallback(raw_output, candidate)
         if not data:
             return None
 
+        return self._extract_text_from_json_payload(data)
+
+    def _extract_json_candidate_from_output(self, raw_output: str) -> str:
+        """Extract primary JSON candidate from raw CLI output."""
+        # Regex to find a JSON code block, supporting both ```json and ```
+        json_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_output, re.DOTALL)
+        if json_block_match:
+            return json_block_match.group(1).strip()
+        return raw_output.strip()
+
+    def _load_json_with_fallback(self, raw_output: str, candidate: str) -> Any | None:
+        """Load JSON from candidate; fallback to line-delimited/streaming chunks."""
+        parsed = self._safe_json_loads(candidate)
+        if parsed is not None:
+            return parsed
+
+        for line in reversed(raw_output.strip().splitlines()):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            parsed = self._safe_json_loads(stripped)
+            if parsed is not None:
+                return parsed
+        return None
+
+    def _safe_json_loads(self, value: str) -> Any | None:
+        """Best-effort JSON parsing helper."""
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+
+    def _extract_text_segments_from_content(self, content: Any) -> list[str]:
+        """Extract text fragments from content-style arrays."""
+        if not isinstance(content, list):
+            return []
+
+        segments: list[str] = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") != "text":
+                continue
+            text = part.get("text")
+            if text:
+                segments.append(text)
+        return segments
+
+    def _extract_text_from_json_payload(self, data: Any) -> str | None:
+        """Extract assistant text from dict/list JSON payloads."""
+        segments: list[str] = []
+
         if isinstance(data, dict):
-            content = data.get("content")
-            if isinstance(content, list):
-                segments = []
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text = part.get("text")
-                        if text:
-                            segments.append(text)
-                if segments:
-                    return "\n".join(segments).strip()
+            segments.extend(self._extract_text_segments_from_content(data.get("content")))
+            if segments:
+                return "\n".join(segments).strip()
             if "text" in data and isinstance(data["text"], str):
                 return data["text"].strip()
+            return None
 
         if isinstance(data, list):
-            segments = []
             for item in data:
-                if isinstance(item, dict):
-                    maybe_text = item.get("text")
-                    if isinstance(maybe_text, str):
-                        segments.append(maybe_text)
-                    content = item.get("content")
-                    if isinstance(content, list):
-                        for part in content:
-                            if isinstance(part, dict) and part.get("type") == "text":
-                                text = part.get("text")
-                                if text:
-                                    segments.append(text)
+                if not isinstance(item, dict):
+                    continue
+                maybe_text = item.get("text")
+                if isinstance(maybe_text, str):
+                    segments.append(maybe_text)
+                segments.extend(self._extract_text_segments_from_content(item.get("content")))
             if segments:
                 return "\n".join(segments).strip()
 
