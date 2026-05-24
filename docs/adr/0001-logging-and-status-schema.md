@@ -1,3 +1,23 @@
+---
+id: ADR-0001
+title: Logging Standard and QA/Dev Status Schema
+status: accepted
+date: 2025-11-24
+deciders:
+  - Project lead
+tags:
+  - adr
+  - quality
+  - process
+  - status/accepted
+  - phase/F4
+supersedes:
+superseded-by:
+related:
+  - "[[0008-iteration-snapshot-immutability]]"
+  - "[[0007-tdd-enforcement-dev-role]]"
+---
+
 # ADR 0001 — Logging Standard and QA/Dev Status Schema
 
 - Status: Accepted
@@ -45,3 +65,4 @@
 ## Notes
 - This ADR consolidates the outcomes from S4.1–S4.5 (Smoke Reliability) and sets a baseline for future refactors (Phase 7).
 - Summaries are additive; they do not replace detailed logs.
+- Related: [[0008-iteration-snapshot-immutability]] (snapshot policy that depends on `dev_summary.json`), [[0007-tdd-enforcement-dev-role]] (Dev role that emits these logs).
